@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="cancel">Cancel</string>
+	<string name="cannot_open_document">Cannot open document</string>
+	<string name="cannot_open_document_Reason">Cannot open document: %1$s</string>
+	<string name="dismiss">Dismiss</string>
+	<string name="enter_password">Enter password</string>
+	<string name="no_further_occurrences_found">No further occurrences found</string>
+	<string name="not_supported">Not supported</string>
+	<string name="okay">Okay</string>
+	<string name="search">Search&#x2026;</string>
+	<string name="searching_">Searching&#x2026;</string>
+	<string name="text_not_found">Text not found</string>
+	<string name="your_screenshot">Your screenshot</string>
+	<string name="open_document_fail">文档打开失败，是否尝试使用外部程序打开？</string>
+	<string name="determine">外部打开</string>
+	<string name="exit_review">退出预览</string>
+
+	<string name="open_document_tip">是否确认尝试使用外部程序打开？</string>
+	<string name="mupdf_ensure">打开</string>
+	<string name="mupdf_cancel">取消</string>
+
+
+</resources>
