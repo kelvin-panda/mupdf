@@ -21,6 +21,14 @@ Add it in your settings.gradle.kts at the end of repositories:
 	        implementation("com.github.cdck:mupdf-library:1.0")
 	}
 ```
+**步骤3**
+```
+android{
+    //... ...
+    
+    
+}
+```
 
 **使用**
 

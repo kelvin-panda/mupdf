@@ -38,8 +38,8 @@ afterEvaluate {
     publishing {
         publications {
             // Creates a Maven publication called "release".
-            group = 'com.github.cdck'
-            version = '1.0'
+            group = 'com.gitee.xlk_gitee'
+            version = '1.0.2'
             //发布release版本
             release(MavenPublication) {
                 // Applies the component for the release build variant.
