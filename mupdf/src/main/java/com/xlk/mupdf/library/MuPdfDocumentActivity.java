@@ -206,7 +206,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         DisplayMetrics metrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
         mDisplayDPI = (int) metrics.densityDpi;
-        MupdfMacro.isPreviewingPdf = true;
         mAlertBuilder = new AlertDialog.Builder(this);
 
         if (core == null) {
@@ -1490,7 +1489,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         }
         ActUtil.removeActivity(this);
         unregisterEventBus();
-        MupdfMacro.isPreviewingPdf = false;
         MupdfMacro.isSharing = false;
         MupdfMacro.launchSrcmemid = 0;
         MupdfMacro.launchSrcwbid = 0;

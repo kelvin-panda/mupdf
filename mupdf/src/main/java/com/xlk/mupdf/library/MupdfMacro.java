@@ -25,11 +25,6 @@ public class MupdfMacro {
     public static boolean delete_history_annotation = false;
     //</editor-fold>
 
-    /**
-     * 记录当前是否正在查看pdf
-     */
-    public static boolean isPreviewingPdf = false;
-
     //<editor-fold desc="bundle key值">
     public static final String mupdf_bundle_key = "mupdf_bundle";
     /**

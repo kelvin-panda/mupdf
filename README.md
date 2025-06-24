@@ -26,7 +26,18 @@ Add it in your settings.gradle.kts at the end of repositories:
 android{
     //... ...
     
-    
+    //解决API 28只创建arm64目录，导致找不到库的问题
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a'
+            universalApk false
+        }
+    }
+    packagingOptions {
+        resources.pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
+    }
 }
 ```
 
