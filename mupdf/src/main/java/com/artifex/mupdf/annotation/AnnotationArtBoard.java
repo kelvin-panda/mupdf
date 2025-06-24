@@ -1,6 +1,6 @@
 package com.artifex.mupdf.annotation;
 
-import static com.xlk.mupdf.library.MupdfConfig.TAG;
+import static com.xlk.mupdf.library.MupdfMacro.TAG;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -21,7 +21,7 @@ import com.artifex.mupdf.fitz.PDFAnnotation;
 import com.artifex.mupdf.fitz.Point;
 import com.artifex.mupdf.viewer.MuPDFCore;
 import com.artifex.mupdf.viewer.ReaderView;
-import com.xlk.mupdf.library.MupdfConfig;
+import com.xlk.mupdf.library.MupdfMacro;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -220,7 +220,9 @@ public class AnnotationArtBoard extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         // 在之前画板上画过得显示出来
-        canvas.drawBitmap(mBitmap, 0, 0, mBitmapPaint);
+        if (mBitmap != null && !mBitmap.isRecycled()) {
+            canvas.drawBitmap(mBitmap, 0, 0, mBitmapPaint);
+        }
         if (mPath != null) {
             canvas.drawPath(mPath, mPaint);//实时的显示
         }
@@ -367,7 +369,7 @@ public class AnnotationArtBoard extends View {
                     //橡皮搽
                     case DRAW_ERASER:
                         eraserPath(x, y);
-                        if (MupdfConfig.delete_history_annotation && core != null && docView != null) {
+                        if (MupdfMacro.delete_history_annotation && core != null && docView != null) {
                             core.deleteAnnotation(docView, screenWidth, screenHeight, x, y);
                         }
                         break;

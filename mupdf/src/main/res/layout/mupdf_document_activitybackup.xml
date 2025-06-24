@@ -19,17 +19,10 @@
             android:id="@+id/mainBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_gravity="center"
             android:background="@color/toolbar"
+            android:gravity="center"
             android:orientation="horizontal">
-
-            <ImageButton
-                android:id="@+id/closeButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_chevron_left_white_24dp"
-                android:visibility="gone"
-                tools:visibility="visible" />
 
             <TextView
                 android:id="@+id/docNameText"
@@ -46,179 +39,173 @@
                 tools:text="文件名称文件名称文件名称文件.pdf" />
 
             <ImageButton
-                android:id="@+id/outOpen"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_mupdf_out" />
-
-            <ImageButton
-                android:id="@+id/screenshotButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_mupdf_screenshot" />
-
-            <androidx.appcompat.widget.SwitchCompat
-                android:id="@+id/switch_upload"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:layout_gravity="center"
-                android:text="批注后上传"
-                android:textColor="@color/white"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <ImageButton
-                android:id="@+id/refreshButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_mupdf_refresh" />
-
-            <ImageButton
-                android:id="@+id/signatureButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_mupdf_signature_white" />
-
-            <ImageButton
                 android:id="@+id/annotationButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_brush_white" />
 
             <ImageButton
+                android:id="@+id/signatureButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_signature_white" />
+
+            <ImageButton
+                android:id="@+id/screenshotButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_screenshot" />
+
+            <ImageButton
+                android:id="@+id/refreshButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_refresh" />
+
+            <ImageButton
+                android:id="@+id/outOpen"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_out" />
+
+            <ImageButton
+                android:id="@+id/uploadButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_upload" />
+
+            <ImageButton
                 android:id="@+id/outlineButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_toc_white_24dp" />
 
-            <TextView
-                android:id="@+id/iv_exit"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:layout_gravity="center"
-                android:drawableLeft="@drawable/ic_mupdf_home"
-                android:gravity="center"
-                android:paddingEnd="5dp"
-                android:text="退出文档"
-                android:textColor="@color/white"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-            <!--            <ImageView-->
-            <!--                android:id="@+id/iv_exit"-->
-            <!--                android:layout_width="wrap_content"-->
-            <!--                android:layout_height="wrap_content"-->
-            <!--                android:layout_gravity="center"-->
-            <!--                android:src="@drawable/icon_white_exit_document" />-->
+            <ImageButton
+                android:id="@+id/exitMupdfButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_close_white" />
+
         </LinearLayout>
 
     </ViewAnimator>
 
-    <LinearLayout
-        android:id="@+id/inkOperationLayout"
+    <ViewAnimator
+        android:id="@+id/inkOperationSwitcher"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
         android:layout_alignParentEnd="true"
         android:layout_centerVertical="true"
         android:background="@drawable/layout_bg"
-        android:orientation="vertical"
         android:visibility="invisible"
-        tools:visibility="visible">
+        tools:visibility="visible"
+        android:layout_height="wrap_content">
 
-        <ImageButton
-            android:id="@+id/doneButton"
+        <LinearLayout
+            android:id="@+id/inkOperationLayout"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_done_white" />
+            android:orientation="vertical">
 
-        <ImageButton
-            android:id="@+id/revokeButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_revoke_white" />
+            <ImageButton
+                android:id="@+id/exitButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_close_white" />
 
-        <ImageButton
-            android:id="@+id/deleteButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_delete_white" />
+            <ImageButton
+                android:id="@+id/penButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_pen_white" />
 
-        <ImageButton
-            android:id="@+id/penButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_pen_white" />
+            <ImageButton
+                android:id="@+id/inkSizeButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_line_weight_white" />
 
-        <ImageButton
-            android:id="@+id/colorButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_color_white"
-            android:visibility="visible"
-            tools:visibility="visible" />
+            <ImageButton
+                android:id="@+id/lineButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_line_white" />
 
-        <ImageButton
-            android:id="@+id/inkSizeButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_line_weight_white" />
+            <ImageButton
+                android:id="@+id/deleteButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_delete_white" />
 
-        <ImageButton
-            android:id="@+id/lineButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_line_white" />
+            <ImageButton
+                android:id="@+id/colorButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_color_white"
+                android:visibility="visible"
+                tools:visibility="visible" />
 
-        <ImageButton
-            android:id="@+id/inviteButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/vector_invite" />
+            <ImageButton
+                android:id="@+id/inviteButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/vector_invite"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
-        <ImageButton
-            android:id="@+id/deleteLineButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/vector_del_bom_line" />
+            <ImageButton
+                android:id="@+id/deleteLineButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/vector_del_bom_line" />
 
-        <ImageButton
-            android:id="@+id/highlightButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/vector_highlight" />
+            <ImageButton
+                android:id="@+id/highlightButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/vector_highlight" />
 
-        <ImageButton
-            android:id="@+id/exitButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/button"
-            android:src="@drawable/ic_mupdf_close_white" />
-    </LinearLayout>
+            <ImageButton
+                android:id="@+id/revokeButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_revoke_white" />
+
+            <ImageButton
+                android:id="@+id/doneButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:src="@drawable/ic_mupdf_done_white" />
+        </LinearLayout>
+    </ViewAnimator>
 
     <LinearLayout
         android:id="@+id/inkSizeLayout"
         android:layout_width="200dp"
         android:layout_height="wrap_content"
         android:layout_centerVertical="true"
-        android:layout_toLeftOf="@+id/inkOperationLayout"
+        android:layout_toLeftOf="@+id/inkOperationSwitcher"
         android:orientation="horizontal"
         android:visibility="gone"
-        tools:visibility="gone">
+        tools:visibility="visible">
 
         <SeekBar
             android:id="@+id/inkSizeSeekBar"

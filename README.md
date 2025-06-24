@@ -1,4 +1,6 @@
-[![](https://jitpack.io/v/cdck/mupdf-library.svg)](https://jitpack.io/#cdck/mupdf-library)
+
+[![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
+
 
 **步骤1**
 Add it in your settings.gradle.kts at the end of repositories:
@@ -33,8 +35,8 @@ Add it in your settings.gradle.kts at the end of repositories:
 
 
 
-![](https://github.com/cdck/mupdf-library/blob/master/screenshot/1.png?raw=true)
+![](https://gitee.com/xlk_gitee/mupdf-library/raw/master/screenshot/1.png)
 
 
 
-![](https://github.com/cdck/mupdf-library/blob/master/screenshot/2.png?raw=true)
+![](https://gitee.com/xlk_gitee/mupdf-library/raw/master/screenshot/2.png)

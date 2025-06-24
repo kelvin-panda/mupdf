@@ -16,10 +16,7 @@ public class MupdfConfig {
     private final boolean uploadEnable;
     private final int uploadDirId;
     private final boolean onlyPreview;
-    private final boolean isSharing;
-
-    public static final String TAG = "MuPDF";
-    public static boolean delete_history_annotation = false;
+    private final int pageIndex;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -31,7 +28,7 @@ public class MupdfConfig {
         this.uploadEnable = builder.uploadEnable;
         this.uploadDirId = builder.uploadDirId;
         this.onlyPreview = builder.onlyPreview;
-        this.isSharing = builder.isSharing;
+        this.pageIndex = builder.pageIndex;
     }
 
     public String getFilePath() {
@@ -70,8 +67,24 @@ public class MupdfConfig {
         return onlyPreview;
     }
 
-    public boolean isSharing() {
-        return isSharing;
+    public int getPageIndex() {
+        return pageIndex;
+    }
+
+    @Override
+    public String toString() {
+        return "MupdfConfig{" +
+                "filePath='" + filePath + '\'' +
+                ", fileUri='" + fileUri + '\'' +
+                ", mediaId=" + mediaId +
+                ", watermarkEnable=" + watermarkEnable +
+                ", watermarkContent='" + watermarkContent + '\'' +
+                ", deleteSourceFile=" + deleteSourceFile +
+                ", uploadEnable=" + uploadEnable +
+                ", uploadDirId=" + uploadDirId +
+                ", onlyPreview=" + onlyPreview +
+                ", pageIndex=" + pageIndex +
+                '}';
     }
 
     public static class Builder {
@@ -80,11 +93,11 @@ public class MupdfConfig {
         private int mediaId = 0;
         private boolean watermarkEnable = false;
         private String watermarkContent = "";
-        private boolean deleteSourceFile = true;
+        private boolean deleteSourceFile = false;
         private boolean uploadEnable = true;
         private int uploadDirId = 0;
         private boolean onlyPreview = false;
-        private boolean isSharing = false;
+        private int pageIndex = 0;
 
         public Builder filePath(String filePath) {
             this.filePath = filePath;
@@ -131,8 +144,8 @@ public class MupdfConfig {
             return this;
         }
 
-        public Builder isSharing(boolean isSharing) {
-            this.isSharing = isSharing;
+        public Builder pageIndex(int pageIndex) {
+            this.pageIndex = pageIndex;
             return this;
         }
 

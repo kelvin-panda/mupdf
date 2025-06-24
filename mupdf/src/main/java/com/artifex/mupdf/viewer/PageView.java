@@ -1,6 +1,6 @@
 package com.artifex.mupdf.viewer;
 
-import static com.xlk.mupdf.library.MupdfConfig.TAG;
+import static com.xlk.mupdf.library.MupdfMacro.TAG;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -25,7 +25,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
-import android.widget.Toast;
 
 import com.artifex.mupdf.fitz.Cookie;
 import com.artifex.mupdf.fitz.Link;

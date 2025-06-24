@@ -8,6 +8,28 @@ import java.util.List;
  * created on 2025/6/20 15:22
  */
 public class MupdfMacro {
+    public static final String TAG = "MuPDF";
+
+    //<editor-fold desc="功能开关">
+    /**
+     * 恒迅版本的图标不同
+     */
+    public static boolean isHengXunVersion = false;
+    /**
+     * 共享pdf批注开关，默认false
+     */
+    public static boolean shareAnnotationEnable = false;
+    /**
+     * 可删除之前的批注的开关，默认false
+     */
+    public static boolean delete_history_annotation = false;
+    //</editor-fold>
+
+    /**
+     * 记录当前是否正在查看pdf
+     */
+    public static boolean isPreviewingPdf = false;
+
     //<editor-fold desc="bundle key值">
     public static final String mupdf_bundle_key = "mupdf_bundle";
     /**
@@ -43,7 +65,7 @@ public class MupdfMacro {
     /**
      * 打开时是否是共享状态
      */
-    public static final String bundle_key_isSharing = "isSharing";
+    public static final String bundle_key_page_index = "page_index";
     //</editor-fold>
 
     //<editor-fold desc="共享批注相关">
@@ -54,7 +76,6 @@ public class MupdfMacro {
     public static List<Integer> sharingIds = new ArrayList<>();
 
     public static boolean isSharing;
-    public static int operid;
     public static long launchSrcwbid;//发起人的白板标识 取微秒级的时间作标识 白板标识使用
     public static int launchSrcmemid;//发起人的人员ID
     //</editor-fold>

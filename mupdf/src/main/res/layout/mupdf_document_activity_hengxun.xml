@@ -19,7 +19,9 @@
             android:id="@+id/mainBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_gravity="center"
             android:background="@color/toolbar"
+            android:gravity="center"
             android:orientation="horizontal">
 
             <TextView
@@ -38,64 +40,64 @@
 
             <ImageButton
                 android:id="@+id/annotationButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_brush" />
 
             <ImageButton
                 android:id="@+id/signatureButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_autograph" />
 
             <ImageButton
                 android:id="@+id/screenshotButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_screenshot" />
 
             <ImageButton
                 android:id="@+id/refreshButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_refresh" />
 
             <ImageButton
                 android:id="@+id/outOpen"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_jump" />
 
             <ImageButton
-                android:id="@+id/saveButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:id="@+id/uploadButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_save" />
 
             <ImageButton
                 android:id="@+id/outlineButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_doc" />
 
             <ImageButton
                 android:id="@+id/exitMupdfButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_top_close" />
@@ -104,97 +106,122 @@
 
     </ViewAnimator>
 
-    <ScrollView
-        android:id="@+id/slOperationLayout"
+    <ViewAnimator
+        android:id="@+id/inkOperationSwitcher"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_alignParentEnd="true"
+        android:layout_centerVertical="true"
+        android:background="@drawable/layout_bg"
         android:visibility="invisible"
-        tools:visibility="visible"
-        android:layout_centerVertical="true">
+        tools:visibility="visible">
 
         <LinearLayout
             android:id="@+id/inkOperationLayout"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:background="@drawable/layout_bg"
             android:orientation="vertical">
 
             <ImageButton
                 android:id="@+id/exitButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_close" />
 
             <ImageButton
                 android:id="@+id/penButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_pen" />
 
             <ImageButton
                 android:id="@+id/inkSizeButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_size" />
 
             <ImageButton
                 android:id="@+id/lineButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_line" />
 
-<!--            <ImageButton-->
-<!--                android:id="@+id/colorButton"-->
-<!--                android:layout_width="48dp"-->
-<!--                android:layout_height="48dp"-->
-<!--                android:background="@drawable/button"-->
-<!--                android:visibility="visible"-->
-<!--                tools:visibility="visible"-->
-<!--                android:src="@drawable/ic_mupdf_color_white" />-->
-
             <ImageButton
                 android:id="@+id/deleteButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_delete" />
 
             <ImageButton
+                android:id="@+id/colorButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:scaleType="fitXY"
+                android:src="@drawable/ic_mupdf_color_white"
+                android:visibility="visible"
+                tools:visibility="visible" />
+
+            <ImageButton
+                android:id="@+id/inviteButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:scaleType="fitXY"
+                android:src="@drawable/vector_invite"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <ImageButton
+                android:id="@+id/deleteLineButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:scaleType="fitXY"
+                android:src="@drawable/vector_del_bom_line" />
+
+            <ImageButton
+                android:id="@+id/highlightButton"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/button"
+                android:scaleType="fitXY"
+                android:src="@drawable/vector_highlight" />
+
+            <ImageButton
                 android:id="@+id/revokeButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_revoke" />
 
             <ImageButton
                 android:id="@+id/doneButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
                 android:src="@drawable/icon_mupdf_art_done" />
         </LinearLayout>
-    </ScrollView>
+    </ViewAnimator>
 
     <LinearLayout
         android:id="@+id/inkSizeLayout"
         android:layout_width="200dp"
         android:layout_height="wrap_content"
         android:layout_centerVertical="true"
-        android:layout_toLeftOf="@+id/slOperationLayout"
+        android:layout_toLeftOf="@+id/inkOperationSwitcher"
         android:orientation="horizontal"
         android:visibility="gone"
         tools:visibility="visible">
@@ -280,7 +307,7 @@
         android:rotation="30"
         android:textColor="#66F4511E"
         android:textSize="30sp"
-        tools:text="撒旦风口浪尖上的克" />
+        tools:text="自定义的水印" />
 
     <LinearLayout
         android:id="@+id/ll_signature_layout"
@@ -321,4 +348,5 @@
             android:textColor="@color/white"
             android:textSize="18sp" />
     </LinearLayout>
+
 </RelativeLayout>

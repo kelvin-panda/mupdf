@@ -22,5 +22,5 @@ dependencyResolutionManagement {
 
 enableFeaturePreview("VERSION_CATALOGS")
 rootProject.name = "mupdf-library"
-include(":mupdf")
 include(":example")
+include(":mupdf")

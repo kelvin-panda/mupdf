@@ -53,8 +53,12 @@ public class MupdfBusType {
      */
     public static final String receive_annotation_info = "receive_annotation_info";
     /**
-     * 通知本机前端共享批注出去 {@link MupdfAnnotationBean}
+     * 通知本机前端共享自己的批注出去 {@link MupdfAnnotationBean}
      */
     public static final String inform_share_annotation = "inform_share_annotation";
+    /**
+     * 通知自己退出PDF批注，jni层调用
+     */
+    public static final String inform_exit_annotation = "inform_exit_annotation";
     //</editor-fold>
 }

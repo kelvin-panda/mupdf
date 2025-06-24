@@ -81,6 +81,10 @@ public class MuPDFCore {
         this(Document.openDocument(stm, magic));
     }
 
+    public Document getDoc() {
+        return doc;
+    }
+
     public String getTitle() {
         return doc.getMetaData(Document.META_INFO_TITLE);
     }
@@ -314,52 +318,79 @@ public class MuPDFCore {
         return new float[]{red / 255f, green / 255f, blue / 255f};
     }
 
+    public void addShareInk(int pageNum, float paintSize, int paintColor, Point[] inkList) {
+        Page page = doc.loadPage(pageNum);
+        PDFPage pdfPage = new PDFPage(page.pointer);
+        PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_INK);
+        float[] color = parseColor(paintColor);
+        pdfAnnotation.setColor(color);
+        pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
+        pdfAnnotation.addInkList(inkList);
+        boolean update = pdfAnnotation.update();
+        boolean update1 = pdfPage.update();
+        LogUtils.i(TAG, "addShareInk 添加共享批注 update=" + update + ",update1=" + update1);
+    }
+
     public void addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
         try {
-            LogUtils.i(TAG, "MuPDFCore.addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize);
             Page page = doc.loadPage(pageNum);
             Rect bounds = page.getBounds();
             float realWidth = bounds.x1 - bounds.x0;
             float realHeight = bounds.y1 - bounds.y0;
+            LogUtils.i(TAG, "addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize + ",page宽高=" + realWidth + "," + realHeight);
             for (Point point : inkList) {
+                float tx = point.x;
+                float ty = point.y;
                 point.x = realWidth / width * point.x;
                 point.y = realHeight / height * point.y;
+                LogUtils.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
             }
             PDFPage pdfPage = new PDFPage(page.pointer);
             PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(type);
             float[] color = parseColor(paintColor);
             pdfAnnotation.setColor(color);
-            if (type == TYPE_LINE) {//直线
-                float x0 = inkList[0].x;
-                float y0 = inkList[0].y;
-                float x1 = inkList[1].x;
-                float y1 = inkList[1].y;
-                LogUtils.e(TAG, "addAnnotation: 直线=" + x0 + "," + y0 + "," + x1 + "," + y1);
-                pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-                pdfAnnotation.setLine(new Point(x0, y0), new Point(x1, y1));
-            } else if (type == TYPE_SQUARE) {
-                float x0 = inkList[0].x;
-                float y0 = inkList[0].y;
-                float x1 = inkList[1].x;
-                float y1 = inkList[1].y;
-                LogUtils.e(TAG, "addAnnotation: 矩形=" + x0 + "," + y0 + "," + x1 + "," + y1);
-                pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-                Rect rect = new Rect(x0, y0, x1, y1);
-                pdfAnnotation.setRect(rect);
-            } else if (type == PDFAnnotation.TYPE_HIGHLIGHT) {
-                float x0 = inkList[0].x;
-                float y0 = inkList[0].y;
-                float x1 = inkList[1].x;
-                float y1 = inkList[1].y;
-                LogUtils.e(TAG, "addAnnotation: 高亮=" + x0 + "," + y0 + "," + x1 + "," + y1);
-                pdfAnnotation.setOpacity(0.5f);//设置透明度
-                pdfAnnotation.setColor(new float[]{1f, 1f, 0f});
-                Quad quad = new Quad(x0, y0, x1, y0, x0, y1, x1, y1);
+            switch (type) {
+                //直线
+                case TYPE_LINE: {
+                    float x0 = inkList[0].x;
+                    float y0 = inkList[0].y;
+                    float x1 = inkList[1].x;
+                    float y1 = inkList[1].y;
+                    LogUtils.e(TAG, "addAnnotation: 直线=" + x0 + "," + y0 + "," + x1 + "," + y1);
+                    pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
+                    pdfAnnotation.setLine(new Point(x0, y0), new Point(x1, y1));
+                    break;
+                }
+                //矩形
+                case TYPE_SQUARE: {
+                    float x0 = inkList[0].x;
+                    float y0 = inkList[0].y;
+                    float x1 = inkList[1].x;
+                    float y1 = inkList[1].y;
+                    LogUtils.e(TAG, "addAnnotation: 矩形=" + x0 + "," + y0 + "," + x1 + "," + y1);
+                    pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
+                    Rect rect = new Rect(x0, y0, x1, y1);
+                    pdfAnnotation.setRect(rect);
+                    break;
+                }
+                //高亮
+                case PDFAnnotation.TYPE_HIGHLIGHT: {
+                    float x0 = inkList[0].x;
+                    float y0 = inkList[0].y;
+                    float x1 = inkList[1].x;
+                    float y1 = inkList[1].y;
+                    LogUtils.e(TAG, "addAnnotation: 高亮=" + x0 + "," + y0 + "," + x1 + "," + y1);
+                    pdfAnnotation.setOpacity(0.5f);//设置透明度
+                    pdfAnnotation.setColor(new float[]{1f, 1f, 0f});
+                    Quad quad = new Quad(x0, y0, x1, y0, x0, y1, x1, y1);
 //                pdfAnnotation.addQuadPoint(quad);
-                pdfAnnotation.setQuadPoints(new Quad[]{quad});
-            } else {
-                pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-                pdfAnnotation.addInkList(inkList);
+                    pdfAnnotation.setQuadPoints(new Quad[]{quad});
+                    break;
+                }
+                default:
+                    pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
+                    pdfAnnotation.addInkList(inkList);
+                    break;
             }
             boolean update = pdfAnnotation.update();
             boolean update1 = pdfPage.update();
