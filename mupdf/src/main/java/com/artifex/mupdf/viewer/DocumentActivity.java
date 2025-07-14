@@ -652,20 +652,6 @@ public class DocumentActivity extends AppCompatActivity {
             Uri uri = Util.path2uri(this, filePath);
             Log.i(APP, "选择目录: " + uri);
             launcher.launch(uri);
-//            try {
-//                long l = System.currentTimeMillis();
-//                showLoading();
-//                String savePath = core.save(srcFilePath, getExternalFilesDir("批注文件").getAbsolutePath());
-//                new Timer().schedule(new TimerTask() {
-//                    @Override
-//                    public void run() {
-//                        hideLoading(savePath);
-//                    }
-//                }, 2000);
-//                Log.i(APP, "保存用时：" + (System.currentTimeMillis() - l));
-//            } catch (Exception e) {
-//                throw new RuntimeException(e);
-//            }
         });
         screenshotButton.setOnClickListener(v -> {
             PageView pageView = (PageView) mDocView.getDisplayedView();
@@ -715,10 +701,7 @@ public class DocumentActivity extends AppCompatActivity {
                             core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
                         }
                     }
-                    mDocView.setDisplayedViewIndex(mDocView.mCurrent);
-                    //使用下面这方式，在第二次重新绘制后更新无法显示绘制的内容
-//                    PageView pageView = (PageView) mDocView.getDisplayedView();
-//                    pageView.update();
+                    mDocView.afterAnnotation();
                 }
             });
             pageView.addView(artBoard);

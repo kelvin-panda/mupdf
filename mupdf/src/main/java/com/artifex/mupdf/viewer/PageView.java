@@ -94,7 +94,7 @@ public class PageView extends ViewGroup {
     protected Point mSize;   // 最小缩放时的页面大小
     protected float mSourceScale;
 
-    private ImageView mEntire; // Image rendered at minimum zoom
+    private ImageView mEntire; // 以最小缩放比例渲染的图像
     private Bitmap mEntireBm;
     private Matrix mEntireMat;
     private AsyncTask<Void, Void, Link[]> mGetLinkInfo;
@@ -487,13 +487,6 @@ public class PageView extends ViewGroup {
 
         Rect viewArea = new Rect(getLeft(), getTop(), getRight(), getBottom());
         Log.i(TAG, "PageView.updateHq: viewArea:" + viewArea + ",mSize:" + mSize);
-//        if (viewArea.width() == mSize.x || viewArea.height() == mSize.y) {
-//            // 如果 viewArea 的大小与未缩放的大小匹配，则不需要 hq 补丁
-//            if (mPatch != null) {
-//                mPatch.setImageBitmap(null);
-//                mPatch.invalidate();
-//            }
-//        } else {
         final Point patchViewSize = new Point(viewArea.width(), viewArea.height());
         final Rect patchArea = new Rect(0, 0, (int) mParentSize.x, (int) mParentSize.y);
         Log.i(TAG, "PageView.updateHq: patchViewSize:" + patchViewSize + ",patchArea:" + patchArea);
@@ -559,10 +552,10 @@ public class PageView extends ViewGroup {
         };
 
         mDrawPatch.execute();
-//        }
     }
 
     public void update() {
+        LogUtils.d(TAG, "PageView.update: ");
         // 取消待定的渲染任务
         if (mDrawEntire != null) {
             mDrawEntire.cancel();
@@ -595,6 +588,7 @@ public class PageView extends ViewGroup {
     }
 
     public void removeHq() {
+        LogUtils.d(TAG, "PageView.removeHq");
         // 如果仍在进行，则停止绘制补丁
         if (mDrawPatch != null) {
             mDrawPatch.cancel();

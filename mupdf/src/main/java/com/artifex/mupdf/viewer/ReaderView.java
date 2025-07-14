@@ -366,29 +366,47 @@ public class ReaderView
             mapper.applyToView(mChildViews.valueAt(i));
     }
 
+    /**
+     * 批注后调用
+     */
+    public void afterAnnotation() {
+        LogUtils.i("afterAnnotation：start");
+
+        mResetLayout = true;
+
+        //由于页面和屏幕的大小都发生了变化，导致大小和位图无效，因此所有页面视图都需要重新创建。
+        mAdapter.refresh();
+        for (int i = 0; i < mChildViews.size(); i++) {
+            if (mCurrent == i) {
+                View v = mChildViews.valueAt(i);
+                onNotInUse(v);
+                removeViewInLayout(v);
+            }
+        }
+        //需要清理缓存，不然会在加载存在批注的页面时闪烁
+        mViewCache.clear();
+
+        LogUtils.i("afterAnnotation：end");
+    }
+
     public void refresh() {
         LogUtils.i("---refresh---");
         mResetLayout = true;
 
-//        mScale = mDefaultScale;
-//        mXScroll = mYScroll = 0;
-//
-//        //所有的页面视图都需要重新创建，因为页面和屏幕的尺寸都发生了变化，使尺寸和位图都失效了。
-//        mAdapter.refresh();
-//        int numChildren = mChildViews.size();
-//        for (int i = 0; i < mChildViews.size(); i++) {
-//            View v = mChildViews.valueAt(i);
-//            onNotInUse(v);
-//            removeViewInLayout(v);
-//        }
-//        mChildViews.clear();
-//        mViewCache.clear();
-//
-//        requestLayout();
+        mScale = mDefaultScale;
+        mXScroll = mYScroll = 0;
 
-        View v = mChildViews.get(mCurrent);
-        if (v != null)
-            postSettle(v);
+        //由于页面和屏幕的大小都发生了变化，导致大小和位图无效，因此所有页面视图都需要重新创建。
+        mAdapter.refresh();
+        for (int i = 0; i < mChildViews.size(); i++) {
+            View v = mChildViews.valueAt(i);
+            onNotInUse(v);
+            removeViewInLayout(v);
+        }
+        mChildViews.clear();
+        mViewCache.clear();
+
+        requestLayout();
     }
 
     public View getView(int i) {
@@ -400,6 +418,7 @@ public class ReaderView
     }
 
     public void run() {
+        LogUtils.e(TAG, "run: mScroller.isFinished() =" + mScroller.isFinished() + ",mUserInteracting=" + mUserInteracting);
         if (!mScroller.isFinished()) {
             mScroller.computeScrollOffset();
             int x = mScroller.getCurrX();
@@ -493,7 +512,7 @@ public class ReaderView
 
             if (withinBoundsInDirectionOfTravel(bounds, velocityX, velocityY)
                     && expandedBounds.contains(0, 0)) {
-//                Log.i(TAG, "ReaderView.onFling: prod");
+//                LogUtils.i(TAG, "ReaderView.onFling: prod");
                 mScroller.fling(0, 0, (int) velocityX, (int) velocityY, bounds.left, bounds.right, bounds.top, bounds.bottom);
                 mStepper.prod();
             }
@@ -522,7 +541,7 @@ public class ReaderView
     }
 
     public void defaultScale(float scale) {
-        Log.i(TAG, "ReaderView.defaultScale: " + scale);
+        LogUtils.i(TAG, "ReaderView.defaultScale: " + scale);
         float previousScale = mScale;
         mScale = scale;
 
@@ -547,7 +566,7 @@ public class ReaderView
 
                 mLastScaleFocusX = currentFocusX;
                 mLastScaleFocusY = currentFocusY;
-//                Log.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
+//                LogUtils.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
 //                        + "\nscaleFactor:" + scaleFactor
 //                        + "\nmScale:" + mScale
 //                        + "\nfactor:" + factor
@@ -589,7 +608,7 @@ public class ReaderView
 
                 mLastScaleFocusX = currentFocusX;
                 mLastScaleFocusY = currentFocusY;
-                Log.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
+                LogUtils.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
                         + "\nscaleFactor:" + scaleFactor
                         + "\nmScale:" + mScale
                         + "\nfactor:" + factor
@@ -618,7 +637,7 @@ public class ReaderView
 
     public void onScaleEnd(ScaleGestureDetector detector) {
         mScaling = false;
-//        Log.i(TAG, "ReaderView.onScaleEnd: "
+//        LogUtils.i(TAG, "ReaderView.onScaleEnd: "
 //                + "\nmScale:" + mScale
 //                + "\nfactor:" + detector.getScaleFactor()
 //                + "\nmXScroll:" + mXScroll
@@ -692,13 +711,14 @@ public class ReaderView
 
     private void onLayout2(boolean changed, int left, int top, int right,
                            int bottom) {
+        LogUtils.i(TAG, "ReaderView.onLayout2: start");
         // "Edit mode" means when the View is being displayed in the Android GUI editor. (this class is instantiated in the IDE, so we need to be a bit careful what we do).
         if (isInEditMode())
             return;
-//        Log.i(TAG, "ReaderView.onLayout2: changed:" + changed + ",left:" + left + ",top:" + top + ",right:" + right + ",bottom:" + bottom + ",mResetLayout:" + mResetLayout);
         View cv = mChildViews.get(mCurrent);
         Point cvOffset;
-        Log.i(TAG, "ReaderView.onLayout2: mResetLayout=" + mResetLayout);
+        LogUtils.d(TAG, "ReaderView.onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent);
+        LogUtils.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         if (!mResetLayout) {
             // 如果当前充分偏离中心，则移动到下一个或上一个。
             if (cv != null) {
@@ -739,7 +759,7 @@ public class ReaderView
                 }
             }
 
-            // Remove not needed children and hold them for reuse
+            // 删除不需要的子项并保留它们以供重复使用
             int numChildren = mChildViews.size();
             int childIndices[] = new int[numChildren];
             for (int i = 0; i < numChildren; i++)
@@ -759,7 +779,7 @@ public class ReaderView
             mResetLayout = false;
             mXScroll = mYScroll = 0;
 
-            // Remove all children and hold them for reuse
+            // 移走所有子项并将其保留以供重复使用
             int numChildren = mChildViews.size();
             for (int i = 0; i < numChildren; i++) {
                 View v = mChildViews.valueAt(i);
@@ -772,7 +792,7 @@ public class ReaderView
             // post to ensure generation of hq area
             mStepper.prod();
         }
-
+        LogUtils.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         // Ensure current view is present
         int cvLeft, cvRight, cvTop, cvBottom;
         boolean notPresent = (mChildViews.get(mCurrent) == null);
@@ -815,7 +835,7 @@ public class ReaderView
             cvLeft += corr.x;
         }
 
-//        Log.i(TAG, "ReaderView.onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
+        LogUtils.i(TAG, "ReaderView.onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
         cv.layout(cvLeft, cvTop, cvRight, cvBottom);
 
         if (mCurrent > 0) {
@@ -853,9 +873,8 @@ public class ReaderView
                         cvBottom + gap + rv.getMeasuredHeight());
             }
         }
-
-        Log.i(TAG, "ReaderView.onLayout2: end");
         invalidate();
+        LogUtils.i(TAG, "ReaderView.onLayout2: end");
     }
 
     @Override
@@ -911,13 +930,12 @@ public class ReaderView
     }
 
     private void measureView(View v) {
-        // See what size the view wants to be
+        // 查看视图所需的尺寸
         v.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        // Work out a scale that will fit it to this view
+        // 制定一个适合此视图的比例
         float scale = Math.min((float) getWidth() / (float) v.getMeasuredWidth(),
                 (float) getHeight() / (float) v.getMeasuredHeight());
-        //LogUtils.i(" measureView:" + getWidth() + "," + v.getMeasuredWidth() + "," + getHeight() + "," + v.getMeasuredHeight());
-        // Use the fitting values scaled by our current scale factor
+        // 使用按当前比例因子缩放的拟合值
         v.measure(View.MeasureSpec.EXACTLY | (int) (v.getMeasuredWidth() * scale * mScale),
                 View.MeasureSpec.EXACTLY | (int) (v.getMeasuredHeight() * scale * mScale));
     }

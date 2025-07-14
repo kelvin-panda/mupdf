@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.xlk.example"
-    compileSdk = 32
+    compileSdk = 31
 
     defaultConfig {
         applicationId = "com.xlk.example"
@@ -47,7 +47,8 @@ dependencies {
     implementation 'com.google.android.material:material:1.5.0'
     implementation 'androidx.activity:activity:1.5.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    //implementation 'com.gitee.xlk_gitee:mupdf-library:2.0.0'
+    implementation("org.greenrobot:eventbus:3.3.1")
+//    implementation 'com.gitee.xlk_gitee:mupdf-library:3.0.0'
     implementation(project(":mupdf"))
 
 }

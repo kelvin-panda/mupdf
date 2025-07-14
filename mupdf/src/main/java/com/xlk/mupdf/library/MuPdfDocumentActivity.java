@@ -162,7 +162,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
      */
     private boolean hadAnnotation;
 
-    private int currentPage = 0;
+    /**
+     * 当前页：索引
+     */
+    private int currentPageIndex = 0;
     //</editor-fold>
 
     public static void jump(Context context, MupdfConfig config) {
@@ -189,7 +192,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
         intent.putExtra(MupdfMacro.mupdf_bundle_key, bundle);
-        LogUtils.e(TAG,"打开MuPdfDocumentActivity");
+        LogUtils.e(TAG, "打开MuPdfDocumentActivity");
         context.startActivity(intent);
     }
 
@@ -363,7 +366,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             protected void onMoveToChild(int i) {
                 if (core == null)
                     return;
-                currentPage = i;
+                currentPageIndex = i;
                 mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", i + 1, core.countPages()));
                 LogUtils.i(TAG, "MuPdfDocumentActivity.onMoveToChild: ");
                 super.onMoveToChild(i);
@@ -482,9 +485,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     float y = points[i].y;
                     array[i] = new Point(x, y);
                 }
-                core.addAnnotation(mDocView.mCurrent, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, Color.BLACK, array);
+                Point[] percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, Color.BLACK, array);
                 //points是经过core.addAnnotation方法计算后的实际坐标
-                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent, PDFAnnotation.TYPE_INK, 5 / 3.0f, Color.BLACK, array));
+                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent + 1, PDFAnnotation.TYPE_INK, 5 / 3.0f, Color.BLACK, percentPoints));
                 hadAnnotation = true;
             }
             if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {
@@ -500,7 +503,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             ll_signature_layout.setVisibility(View.GONE);
             isSigning = false;
             mDocView.setSigning(false);
-            mDocView.refresh();
+            mDocView.afterAnnotation();
         });
         //取消签名
         tv_cancel_signature.setOnClickListener(v -> {
@@ -567,15 +570,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         });
         //上一页
         mPrePageView.setOnClickListener(v -> {
-            if (currentPage > 0) {
-                mDocView.setDisplayedViewIndex(currentPage - 1);
+            LogUtils.i(TAG, "页码跳转 上一页:" + currentPageIndex);
+            if (currentPageIndex > 0) {
+                mDocView.setDisplayedViewIndex(currentPageIndex - 1);
             }
         });
         //下一页
         mNextPageView.setOnClickListener(v -> {
             int countPages = core.countPages();
-            if (currentPage <= countPages) {
-                mDocView.setDisplayedViewIndex(currentPage + 1);
+            LogUtils.i(TAG, "页码跳转 下一页:" + currentPageIndex + ",countPages=" + countPages);
+            if (currentPageIndex <= countPages) {
+                mDocView.setDisplayedViewIndex(currentPageIndex + 1);
             }
         });
 
@@ -645,17 +650,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     LogUtils.i(TAG, "onDrawAnnotations 将要绘制的批注数量： " + inkAnnotations.size() + ",MupdfMacro.isSharing=" + MupdfMacro.isSharing);
                     if (!inkAnnotations.isEmpty()) {
                         List<MupdfAnnotationBean> annotationBeans = new ArrayList<>();
-
                         for (AnnotationBean inkAnnotation : inkAnnotations) {
                             Point[] points = inkAnnotation.getPoints();
                             float paintSize = inkAnnotation.getPaintSize();
                             int paintColor = inkAnnotation.getPaintColor();
                             int type = inkAnnotation.getType();
                             paintSize = paintSize / 3.0f;
-                            core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
+                            Point[] percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
 
-                            //points是经过core.addAnnotation方法计算后的实际坐标
-                            annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent, type, paintSize, paintColor, points));
+                            if (MupdfMacro.isSharing) {
+                                //points是经过core.addAnnotation方法计算后的实际坐标
+                                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent + 1, type, paintSize, paintColor, percentPoints));
+                            }
                         }
                         if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {
                             LogUtils.i(TAG, "onDrawAnnotations 将要共享绘制的批注数量： " + annotationBeans.size());
@@ -664,8 +670,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                                     .objects(annotationBeans)
                                     .build());
                         }
-                        mDocView.refresh();
-                        //mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                        LogUtils.i(TAG, "onDrawAnnotations 批注完刷新页面");
+                        //批注后进行实时显示出来
+                        //方式一：无效
+//                        PageView displayedView = (PageView) mDocView.getDisplayedView();
+//                        if (displayedView != null) {
+//                            displayedView.update();
+//                        }
+
+                        //方式二：该方式有效，但是整个画面会重新加载且会回到页面顶部
+//                        mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+
+                        //方式三：
+                        mDocView.afterAnnotation();
                         hadAnnotation = true;
                     }
                 }
@@ -783,7 +800,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             LogUtils.e("邀请多人批注");
             EventBus.getDefault().post(new MupdfEventMessage.Builder()
                     .type(MupdfBusType.inform_invite_annotation)
-                    .objects(mDocTitle, mediaId, currentPage)
+                    .objects(mDocTitle, mediaId, currentPageIndex + 1)
                     .build());
         });
         //提交批注
@@ -890,12 +907,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 boolean onThisPage = false;
                 List<MupdfInkBean> inkList = (List<MupdfInkBean>) objects[0];
                 for (MupdfInkBean bean : inkList) {
-                    int pageindex = bean.getPageindex();
+                    int pageNumber = bean.getPageNumber();
                     int linesize = bean.getLinesize();
                     int argb = bean.getArgb();
                     Point[] array = bean.getArray();
-                    if (pageindex == currentPage) onThisPage = true;
-                    core.addShareInk(pageindex, linesize, argb, array);
+                    if (pageNumber == currentPageIndex + 1) onThisPage = true;
+                    core.addShareInk(pageNumber, linesize, argb, array);
                 }
                 if (onThisPage) {
                     LogUtils.e("收到其他人的绘制信息 当前页有更新，则进行刷新");
@@ -903,8 +920,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                         LogUtils.e("收到其他人的绘制信息 当前页正在批注，退出批注后再自动刷新");
                         afterAnnotationRefresh = true;
                     } else {
-                        mDocView.refresh();
-                        mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                        mDocView.afterAnnotation();
                     }
                 }
                 break;
@@ -1274,8 +1290,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     if (afterAnnotationRefresh) {
                         LogUtils.e("批注期间有收到别人的共享批注，现在进行刷新");
                         afterAnnotationRefresh = false;
-                        mDocView.refresh();
-                        mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                        mDocView.afterAnnotation();
+                        //mDocView.setDisplayedViewIndex(mDocView.mCurrent);
                     }
                 }
             });
@@ -1332,7 +1348,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private void updatePageNumView(int index) {
         if (core == null)
             return;
-        currentPage = index;
+        currentPageIndex = index;
         mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", index + 1, core.countPages()));
     }
 

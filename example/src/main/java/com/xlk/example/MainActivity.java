@@ -11,11 +11,12 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.artifex.mupdf.viewer.DocumentActivity;
 import com.xlk.mupdf.library.MuPdfDocumentActivity;
 import com.xlk.mupdf.library.MupdfConfig;
 
 public class MainActivity extends AppCompatActivity {
-
+    public String root_dir;//应用管理清除数据会删除
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -42,5 +43,6 @@ public class MainActivity extends AppCompatActivity {
                 .fileUri(uri.toString())
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);
+//        DocumentActivity.jump(this,uri);
     }
 }

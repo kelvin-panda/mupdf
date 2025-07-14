@@ -319,7 +319,17 @@ public class MuPDFCore {
     }
 
     public void addShareInk(int pageNum, float paintSize, int paintColor, Point[] inkList) {
-        Page page = doc.loadPage(pageNum);
+        Page page = doc.loadPage(pageNum - 1);
+        Rect bounds = page.getBounds();
+        float realWidth = bounds.x1 - bounds.x0;
+        float realHeight = bounds.y1 - bounds.y0;
+        for (Point point : inkList) {
+            float tx = point.x;
+            float ty = point.y;
+            point.x = point.x * realWidth;
+            point.y = point.y * realHeight;
+            LogUtils.i(TAG, "addShareInk: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
+        }
         PDFPage pdfPage = new PDFPage(page.pointer);
         PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_INK);
         float[] color = parseColor(paintColor);
@@ -331,18 +341,21 @@ public class MuPDFCore {
         LogUtils.i(TAG, "addShareInk 添加共享批注 update=" + update + ",update1=" + update1);
     }
 
-    public void addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
+    public Point[] addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
         try {
+            Point[] percentPoints = new Point[inkList.length];
             Page page = doc.loadPage(pageNum);
             Rect bounds = page.getBounds();
             float realWidth = bounds.x1 - bounds.x0;
             float realHeight = bounds.y1 - bounds.y0;
             LogUtils.i(TAG, "addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize + ",page宽高=" + realWidth + "," + realHeight);
-            for (Point point : inkList) {
+            for (int i = 0; i < inkList.length; i++) {
+                Point point = inkList[i];
                 float tx = point.x;
                 float ty = point.y;
                 point.x = realWidth / width * point.x;
                 point.y = realHeight / height * point.y;
+                percentPoints[i] = new Point(point.x / realWidth, point.y / realHeight);
                 LogUtils.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
             }
             PDFPage pdfPage = new PDFPage(page.pointer);
@@ -387,18 +400,22 @@ public class MuPDFCore {
                     pdfAnnotation.setQuadPoints(new Quad[]{quad});
                     break;
                 }
-                default:
+                //默认画笔
+                default: {
                     pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
                     pdfAnnotation.addInkList(inkList);
                     break;
+                }
             }
             boolean update = pdfAnnotation.update();
             boolean update1 = pdfPage.update();
             LogUtils.i(TAG, "MuPDFCore.addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
+            return percentPoints;
         } catch (Exception e) {
             LogUtils.e(TAG, "MuPDFCore.addAnnotation Exception: " + e);
             e.printStackTrace();
         }
+        return null;
     }
 
     public void logAnnotations(int pageNum) {
