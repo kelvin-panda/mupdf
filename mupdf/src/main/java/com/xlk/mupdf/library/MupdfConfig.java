@@ -95,7 +95,7 @@ public class MupdfConfig {
         private String watermarkContent = "";
         private boolean deleteSourceFile = false;
         private boolean uploadEnable = true;
-        private int uploadDirId = 1;
+        private int uploadDirId = 2;
         private boolean onlyPreview = false;
         private int pageIndex = 0;
 

@@ -18,7 +18,7 @@ Add it in your settings.gradle.kts at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.gitee.xlk_gitee:mupdf-library:3.0.0")
+	        implementation("com.gitee.xlk_gitee:mupdf-library:6.0.0")
 	}
 ```
 **依赖方module**
