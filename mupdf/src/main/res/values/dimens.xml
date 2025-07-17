@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <resources>
 
+    <dimen name="hengxun_vector_image_view_size">54dp</dimen>
+
     <!--  vector图标资源的大小  -->
-    <dimen name="vector_image_size">48dp</dimen>
+    <dimen name="vector_image_view_size">48dp</dimen>
+    <dimen name="vector_image_size">36dp</dimen>
 
 
 </resources>

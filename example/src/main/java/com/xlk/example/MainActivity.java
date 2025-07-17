@@ -14,13 +14,16 @@ import androidx.core.view.WindowInsetsCompat;
 import com.artifex.mupdf.viewer.DocumentActivity;
 import com.xlk.mupdf.library.MuPdfDocumentActivity;
 import com.xlk.mupdf.library.MupdfConfig;
+import com.xlk.mupdf.library.MupdfMacro;
 
 public class MainActivity extends AppCompatActivity {
     public String root_dir;//应用管理清除数据会删除
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        MupdfMacro.isHengXunVersion = true;
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
