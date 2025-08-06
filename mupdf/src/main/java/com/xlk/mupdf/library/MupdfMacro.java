@@ -42,6 +42,10 @@ public class MupdfMacro {
      */
     public static final String bundle_key_watermark_content = "watermark_content";
     /**
+     * 水印字体颜色
+     */
+    public static final String bundle_key_watermark_color = "watermark_color";
+    /**
      * 批注上传开关
      */
     public static final String bundle_key_upload_enable = "upload_enable";

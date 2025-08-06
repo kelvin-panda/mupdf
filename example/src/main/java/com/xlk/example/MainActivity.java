@@ -1,5 +1,6 @@
 package com.xlk.example;
 
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
@@ -23,7 +24,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        MupdfMacro.isHengXunVersion = true;
+        MupdfMacro.isHengXunVersion = false;
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
@@ -44,6 +45,9 @@ public class MainActivity extends AppCompatActivity {
     private void openMupdf(Uri uri) {
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
                 .fileUri(uri.toString())
+                .watermarkEnable(true)
+                .watermarkContent("测试会议-张大龙")
+//                .watermarkColor(Color.YELLOW)
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);
 //        DocumentActivity.jump(this,uri);

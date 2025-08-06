@@ -94,6 +94,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             revokeButton, deleteButton, colorButton, penButton, inkSizeButton, deleteLineButton,
             lineButton, inviteButton, highlightButton, outOpen, uploadButton, exitMupdfButton, screenshotButton, signatureButton, doneButton, exitButton;
     private String srcFilePath, srcUri, mWatermark;
+    private int mWatermarkColor;
     private int mediaId;
     private boolean uploadEnable, mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
     private AnnotationArtBoard artBoard;
@@ -133,6 +134,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private String mDocKey;
     private ReaderView mDocView;
     private RelativeLayout rootView;
+    private TextView mTvMark;
     private View mButtonsView;
     private boolean mButtonsVisible;
     private EditText mPasswordView;
@@ -175,6 +177,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         bundle.putInt(MupdfMacro.bundle_key_file_mediaId, config.getMediaId());
         bundle.putBoolean(MupdfMacro.bundle_key_watermark_enable, config.isWatermarkEnable());
         bundle.putString(MupdfMacro.bundle_key_watermark_content, config.getWatermarkContent());
+        bundle.putInt(MupdfMacro.bundle_key_watermark_color, config.getWatermarkColor());
         bundle.putBoolean(MupdfMacro.bundle_key_upload_enable, config.isUploadEnable());
         bundle.putInt(MupdfMacro.bundle_key_upload_dirId, config.getUploadDirId());
         bundle.putBoolean(MupdfMacro.bundle_key_delete_file, config.isDeleteSourceFile());
@@ -247,6 +250,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     boolean watermark = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
                     if (watermark) {
                         mWatermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
+                        mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, Color.parseColor("#66000000"));
                     }
                     LogUtils.i(TAG, "c bundle："
                             + "\nsrcFilePath=" + srcFilePath
@@ -401,7 +405,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 }
             }
         };
-        PageAdapter pageAdapter = new PageAdapter(this, core, fullWidthScale, mWatermark);
+        PageAdapter pageAdapter = new PageAdapter(this, core, fullWidthScale, "");
         mDocView.setAdapter(pageAdapter);
 
         makeButtonsView();
@@ -859,7 +863,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         mRootLayout.setBackgroundColor(Color.DKGRAY);
         mRootLayout.addView(mDocView);
         mRootLayout.addView(mButtonsView);
-
+        if (mWatermark != null && !mWatermark.isEmpty()) {
+            mTvMark.setVisibility(View.VISIBLE);
+            mTvMark.setText(mWatermark);
+            mTvMark.setTextColor(mWatermarkColor);
+            mTvMark.invalidate();
+        } else {
+            mTvMark.setVisibility(View.GONE);
+        }
         setContentView(mRootLayout);
         mainHandler.postDelayed(() -> {
             if (srcPageIndex != 0) {
@@ -1356,6 +1367,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hengxun : R.layout.mupdf_document_activitybackup;
         mButtonsView = getLayoutInflater().inflate(layoutResId, null);
         rootView = (RelativeLayout) mButtonsView.findViewById(R.id.rootView);
+        mTvMark = (TextView) mButtonsView.findViewById(R.id.tv_mark);
         mDocNameView = (TextView) mButtonsView.findViewById(R.id.docNameText);
         mLlPageView = (LinearLayout) mButtonsView.findViewById(R.id.ll_page_view);
         mPageNumberView = (TextView) mButtonsView.findViewById(R.id.pageNumber);//页码

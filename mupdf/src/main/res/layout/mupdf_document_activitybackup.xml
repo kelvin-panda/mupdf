@@ -278,17 +278,23 @@
 
     <TextView
         android:id="@+id/tv_mark"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_centerInParent="true"
+        android:autoSizeMaxTextSize="500sp"
+        android:autoSizeMinTextSize="12sp"
+        android:autoSizeStepGranularity="1sp"
+        android:autoSizeTextType="uniform"
         android:clickable="false"
         android:enabled="false"
         android:focusable="false"
+        android:focusableInTouchMode="false"
+        android:gravity="center"
         android:letterSpacing="1"
-        android:rotation="30"
-        android:textColor="#66F4511E"
-        android:textSize="30sp"
-        tools:text="自定义的水印" />
+        android:textColor="#66000000"
+        android:visibility="gone"
+        tools:text="测试会议-张大龙"
+        tools:visibility="visible" />
 
     <LinearLayout
         android:id="@+id/ll_signature_layout"

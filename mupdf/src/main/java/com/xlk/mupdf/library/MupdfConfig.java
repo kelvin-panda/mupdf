@@ -1,5 +1,7 @@
 package com.xlk.mupdf.library;
 
+import android.graphics.Color;
+
 /**
  * 宏开关
  *
@@ -12,6 +14,7 @@ public class MupdfConfig {
     private final int mediaId;
     private final boolean watermarkEnable;
     private final String watermarkContent;
+    private final int watermarkColor;
     private final boolean deleteSourceFile;
     private final boolean uploadEnable;
     private final int uploadDirId;
@@ -24,6 +27,7 @@ public class MupdfConfig {
         this.mediaId = builder.mediaId;
         this.watermarkEnable = builder.watermarkEnable;
         this.watermarkContent = builder.watermarkContent;
+        this.watermarkColor = builder.watermarkColor;
         this.deleteSourceFile = builder.deleteSourceFile;
         this.uploadEnable = builder.uploadEnable;
         this.uploadDirId = builder.uploadDirId;
@@ -49,6 +53,10 @@ public class MupdfConfig {
 
     public String getWatermarkContent() {
         return watermarkContent;
+    }
+
+    public int getWatermarkColor() {
+        return watermarkColor;
     }
 
     public boolean isDeleteSourceFile() {
@@ -93,6 +101,7 @@ public class MupdfConfig {
         private int mediaId = 0;
         private boolean watermarkEnable = false;
         private String watermarkContent = "";
+        private int watermarkColor = Color.parseColor("#66000000");
         private boolean deleteSourceFile = false;
         private boolean uploadEnable = true;
         private int uploadDirId = 2;
@@ -121,6 +130,11 @@ public class MupdfConfig {
 
         public Builder watermarkContent(String watermark) {
             this.watermarkContent = watermark;
+            return this;
+        }
+
+        public Builder watermarkColor(int color) {
+            this.watermarkColor = color;
             return this;
         }
 
