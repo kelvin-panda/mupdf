@@ -12,41 +12,42 @@ import java.util.StringTokenizer;
  * @author : Administrator
  * created on 2024/6/26 17:50
  */
-public class LogUtils {
+public class Debugger {
     private static final String LINE_SEP = System.getProperty("line.separator");
+    private static final String TAG = "mupdf";
 
     public static void e(Exception e) {
         String fullStackTrace = getFullStackTrace(e);
-        Log.e("mupdf_tag", fullStackTrace);
+        Log.e(TAG, fullStackTrace);
     }
 
     public static void e(String tag, Exception e) {
         String fullStackTrace = getFullStackTrace(e);
-        Log.e("mupdf_tag", tag + " - " + fullStackTrace);
+        Log.e(TAG, tag + " - " + fullStackTrace);
     }
 
     public static void e(String tag, String msg) {
-        Log.e("mupdf_tag", tag + " - " + msg);
+        Log.e(TAG, tag + " - " + msg);
     }
 
     public static void i(String tag, String msg) {
-        Log.i("mupdf_tag", tag + " - " + msg);
+        Log.i(TAG, tag + " - " + msg);
     }
 
     public static void d(String tag, String msg) {
-        Log.d("mupdf_tag", tag + " - " + msg);
+        Log.d(TAG, tag + " - " + msg);
     }
 
     public static void e(String msg) {
-        Log.e("mupdf_tag", msg);
+        Log.e(TAG, msg);
     }
 
     public static void i(String msg) {
-        Log.i("mupdf_tag", msg);
+        Log.i(TAG, msg);
     }
 
     public static void d(String msg) {
-        Log.d("mupdf_tag", msg);
+        Log.d(TAG, msg);
     }
 
     public static String getFullStackTrace(Throwable throwable) {

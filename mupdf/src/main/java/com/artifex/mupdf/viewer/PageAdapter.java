@@ -12,7 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 
-import com.artifex.mupdf.util.LogUtils;
+import com.artifex.mupdf.util.Debugger;
 
 public class PageAdapter extends BaseAdapter {
     private final Context mContext;
@@ -68,7 +68,7 @@ public class PageAdapter extends BaseAdapter {
             int parentWidth = parent.getWidth();
             int parentHeight = parent.getHeight();
             if (mSharedHqBm != null) {
-                LogUtils.i(TAG, "getView: mSharedHqBm Size=" + mSharedHqBm.getWidth() + "," + mSharedHqBm.getHeight());
+                Debugger.i(TAG, "getView: mSharedHqBm Size=" + mSharedHqBm.getWidth() + "," + mSharedHqBm.getHeight());
             }
             if (mSharedHqBm == null || mSharedHqBm.getWidth() != parentWidth || mSharedHqBm.getHeight() != parentHeight) {
                 if (parentWidth > 0 && parentHeight > 0)
@@ -78,14 +78,14 @@ public class PageAdapter extends BaseAdapter {
             }
 
             Point parentSize = new Point(parentWidth, parentHeight);
-            LogUtils.i(TAG, "getView: parentSize=" + parentSize);
+            Debugger.i(TAG, "getView: parentSize=" + parentSize);
             pageView = new PageView(mContext, mCore, parentSize, mSharedHqBm, mWaterMark);
         } else {
             pageView = (PageView) convertView;
         }
 
         PointF pageSize = mPageSizes.get(position);
-        LogUtils.i(TAG, "getView: position=" + position + ",pageSize=" + pageSize);
+        Debugger.i(TAG, "getView: position=" + position + ",pageSize=" + pageSize);
         if (pageSize != null) {
             // 我们已经知道页面大小。
             // 立即设置
@@ -97,7 +97,7 @@ public class PageAdapter extends BaseAdapter {
                 @Override
                 protected PointF doInBackground(Void... arg0) {
                     try {
-                        LogUtils.i(TAG, "PageAdapter.doInBackground: ");
+                        Debugger.i(TAG, "PageAdapter.doInBackground: ");
                         return mCore.getPageSize(position);
                     } catch (RuntimeException e) {
                         return null;
@@ -107,7 +107,7 @@ public class PageAdapter extends BaseAdapter {
                 @Override
                 protected void onPostExecute(PointF result) {
                     int page = pageView.getPage();
-                    LogUtils.i(TAG, "PageAdapter.onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
+                    Debugger.i(TAG, "PageAdapter.onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
                     result = new PointF(result.x * mScale, result.y * mScale);
                     super.onPostExecute(result);
                     // We now know the page size

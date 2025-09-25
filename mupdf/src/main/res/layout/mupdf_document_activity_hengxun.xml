@@ -310,7 +310,8 @@
         android:focusableInTouchMode="false"
         android:gravity="center"
         android:letterSpacing="1"
-        android:textColor="#66000000"
+        tools:text="保密文件限制外露"
+        android:textColor="#66FFAB00"
         android:visibility="gone"
         tools:visibility="visible" />
 

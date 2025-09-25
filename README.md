@@ -1,9 +1,15 @@
 
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
+#### 更新
+
+- 6.0.3
+  - 优化颜色选择器，主要添加颜色透明度的功能
+
+#### 使用
 
 **步骤1**
-Add it in your settings.gradle.kts at the end of repositories:
+Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencyResolutionManagement {

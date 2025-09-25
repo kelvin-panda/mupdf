@@ -16,12 +16,12 @@ public class ActUtil {
 
     public static void addActivity(Activity activity) {
         activities.add(activity);
-        LogUtils.e(TAG, "addActivity");
+        Debugger.e(TAG, "addActivity");
     }
 
     public static void removeActivity(Activity activity) {
         activities.remove(activity);
-        LogUtils.e(TAG, "removeActivity");
+        Debugger.e(TAG, "removeActivity");
     }
 
     public static void finishActivity(Class<?> activityClass) {
@@ -29,7 +29,7 @@ public class ActUtil {
         while (iterator.hasNext()) {
             Activity activity = iterator.next();
             if (activity.getClass().equals(activityClass)) {
-                LogUtils.e(TAG, "结束旧的MuPdfDocumentActivity");
+                Debugger.e(TAG, "结束旧的MuPdfDocumentActivity");
                 activity.finish();
                 iterator.remove();
                 break;

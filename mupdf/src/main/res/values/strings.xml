@@ -19,6 +19,7 @@
 	<string name="open_document_tip">是否确认尝试使用外部程序打开？</string>
 	<string name="mupdf_ensure">打开</string>
 	<string name="mupdf_cancel">取消</string>
+	<string name="mupdf_confirm">确认</string>
 
 
 </resources>

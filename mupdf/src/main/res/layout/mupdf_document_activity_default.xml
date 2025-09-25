@@ -281,7 +281,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_centerInParent="true"
-        android:autoSizeMaxTextSize="500sp"
+        android:autoSizeMaxTextSize="200sp"
         android:autoSizeMinTextSize="12sp"
         android:autoSizeStepGranularity="1sp"
         android:autoSizeTextType="uniform"
@@ -293,7 +293,7 @@
         android:letterSpacing="1"
         android:textColor="#66000000"
         android:visibility="gone"
-        tools:text="测试会议-张大龙"
+        tools:text="保密文件限制外露"
         tools:visibility="visible" />
 
     <LinearLayout

@@ -3,7 +3,7 @@ package com.artifex.mupdf.viewer;
 import static com.xlk.mupdf.library.MupdfMacro.TAG;
 
 import com.artifex.mupdf.fitz.Link;
-import com.artifex.mupdf.util.LogUtils;
+import com.artifex.mupdf.util.Debugger;
 import com.xlk.mupdf.library.R;
 
 import java.util.LinkedList;
@@ -15,7 +15,6 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.util.SparseArray;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -370,7 +369,7 @@ public class ReaderView
      * 批注后调用
      */
     public void afterAnnotation() {
-        LogUtils.i("afterAnnotation：start");
+        Debugger.i("afterAnnotation：start");
 
         mResetLayout = true;
 
@@ -386,11 +385,11 @@ public class ReaderView
         //需要清理缓存，不然会在加载存在批注的页面时闪烁
         mViewCache.clear();
 
-        LogUtils.i("afterAnnotation：end");
+        Debugger.i("afterAnnotation：end");
     }
 
     public void refresh() {
-        LogUtils.i("---refresh---");
+        Debugger.i("---refresh---");
         mResetLayout = true;
 
         mScale = mDefaultScale;
@@ -418,7 +417,7 @@ public class ReaderView
     }
 
     public void run() {
-        LogUtils.e(TAG, "run: mScroller.isFinished() =" + mScroller.isFinished() + ",mUserInteracting=" + mUserInteracting);
+        Debugger.e(TAG, "run: mScroller.isFinished() =" + mScroller.isFinished() + ",mUserInteracting=" + mUserInteracting);
         if (!mScroller.isFinished()) {
             mScroller.computeScrollOffset();
             int x = mScroller.getCurrX();
@@ -512,7 +511,7 @@ public class ReaderView
 
             if (withinBoundsInDirectionOfTravel(bounds, velocityX, velocityY)
                     && expandedBounds.contains(0, 0)) {
-//                LogUtils.i(TAG, "ReaderView.onFling: prod");
+//                Debugger.i(TAG, "ReaderView.onFling: prod");
                 mScroller.fling(0, 0, (int) velocityX, (int) velocityY, bounds.left, bounds.right, bounds.top, bounds.bottom);
                 mStepper.prod();
             }
@@ -541,7 +540,7 @@ public class ReaderView
     }
 
     public void defaultScale(float scale) {
-        LogUtils.i(TAG, "ReaderView.defaultScale: " + scale);
+        Debugger.i(TAG, "ReaderView.defaultScale: " + scale);
         float previousScale = mScale;
         mScale = scale;
 
@@ -566,7 +565,7 @@ public class ReaderView
 
                 mLastScaleFocusX = currentFocusX;
                 mLastScaleFocusY = currentFocusY;
-//                LogUtils.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
+//                Debugger.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
 //                        + "\nscaleFactor:" + scaleFactor
 //                        + "\nmScale:" + mScale
 //                        + "\nfactor:" + factor
@@ -608,7 +607,7 @@ public class ReaderView
 
                 mLastScaleFocusX = currentFocusX;
                 mLastScaleFocusY = currentFocusY;
-                LogUtils.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
+                Debugger.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
                         + "\nscaleFactor:" + scaleFactor
                         + "\nmScale:" + mScale
                         + "\nfactor:" + factor
@@ -637,7 +636,7 @@ public class ReaderView
 
     public void onScaleEnd(ScaleGestureDetector detector) {
         mScaling = false;
-//        LogUtils.i(TAG, "ReaderView.onScaleEnd: "
+//        Debugger.i(TAG, "ReaderView.onScaleEnd: "
 //                + "\nmScale:" + mScale
 //                + "\nfactor:" + detector.getScaleFactor()
 //                + "\nmXScroll:" + mXScroll
@@ -711,14 +710,14 @@ public class ReaderView
 
     private void onLayout2(boolean changed, int left, int top, int right,
                            int bottom) {
-        LogUtils.i(TAG, "ReaderView.onLayout2: start");
+        Debugger.i(TAG, "ReaderView.onLayout2: start");
         // "Edit mode" means when the View is being displayed in the Android GUI editor. (this class is instantiated in the IDE, so we need to be a bit careful what we do).
         if (isInEditMode())
             return;
         View cv = mChildViews.get(mCurrent);
         Point cvOffset;
-        LogUtils.d(TAG, "ReaderView.onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent);
-        LogUtils.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
+        Debugger.d(TAG, "ReaderView.onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent);
+        Debugger.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         if (!mResetLayout) {
             // 如果当前充分偏离中心，则移动到下一个或上一个。
             if (cv != null) {
@@ -792,7 +791,7 @@ public class ReaderView
             // post to ensure generation of hq area
             mStepper.prod();
         }
-        LogUtils.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
+        Debugger.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         // Ensure current view is present
         int cvLeft, cvRight, cvTop, cvBottom;
         boolean notPresent = (mChildViews.get(mCurrent) == null);
@@ -835,7 +834,7 @@ public class ReaderView
             cvLeft += corr.x;
         }
 
-        LogUtils.i(TAG, "ReaderView.onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
+        Debugger.i(TAG, "ReaderView.onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
         cv.layout(cvLeft, cvTop, cvRight, cvBottom);
 
         if (mCurrent > 0) {
@@ -874,7 +873,7 @@ public class ReaderView
             }
         }
         invalidate();
-        LogUtils.i(TAG, "ReaderView.onLayout2: end");
+        Debugger.i(TAG, "ReaderView.onLayout2: end");
     }
 
     @Override

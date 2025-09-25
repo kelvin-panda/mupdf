@@ -20,7 +20,6 @@ import com.artifex.mupdf.fitz.Link;
 import com.artifex.mupdf.fitz.Matrix;
 import com.artifex.mupdf.fitz.Outline;
 import com.artifex.mupdf.fitz.PDFAnnotation;
-import com.artifex.mupdf.fitz.PDFDocument;
 import com.artifex.mupdf.fitz.PDFPage;
 import com.artifex.mupdf.fitz.Page;
 import com.artifex.mupdf.fitz.Point;
@@ -28,15 +27,9 @@ import com.artifex.mupdf.fitz.Quad;
 import com.artifex.mupdf.fitz.Rect;
 import com.artifex.mupdf.fitz.RectI;
 import com.artifex.mupdf.fitz.SeekableInputStream;
-import com.artifex.mupdf.fitz.StructuredText;
 import com.artifex.mupdf.fitz.android.AndroidDrawDevice;
-import com.artifex.mupdf.util.LogUtils;
+import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.util.Util;
-import com.xlk.mupdf.library.MupdfMacro;
-import com.xlk.mupdf.library.bus.MupdfBusType;
-import com.xlk.mupdf.library.bus.MupdfEventMessage;
-
-import org.greenrobot.eventbus.EventBus;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -99,7 +92,7 @@ public class MuPDFCore {
 
     public synchronized int layout(int oldPage, int w, int h, int em) {
         if (w != layoutW || h != layoutH || em != layoutEM) {
-//            LogUtils.i(TAG, "MuPDFCore.layout: " + w + "," + h + ",em:" + em);
+//            Debugger.i(TAG, "MuPDFCore.layout: " + w + "," + h + ",em:" + em);
             layoutW = w;
             layoutH = h;
             layoutEM = em;
@@ -125,16 +118,16 @@ public class MuPDFCore {
                 pageNum = pageCount - 1;
             else if (pageNum < 0)
                 pageNum = 0;
-            LogUtils.e(TAG, "gotoPage currentPage=" + currentPage + "=pageNum =" + pageNum + ",samePage:" + (currentPage == pageNum));
+            Debugger.e(TAG, "gotoPage currentPage=" + currentPage + "=pageNum =" + pageNum + ",samePage:" + (currentPage == pageNum));
             /* *** 如果签名未完成期间激活了页面跳转，会概率性崩溃在page.destroy() *** */
             if (pageNum != currentPage) {
                 if (page != null) {
                     try {
-                        LogUtils.d("page destroy start");
+                        Debugger.d("page destroy start");
                         page.destroy();
-                        LogUtils.d("page destroy end");
+                        Debugger.d("page destroy end");
                     } catch (Exception e) {
-                        LogUtils.e("page destroy 异常：" + e);
+                        Debugger.e("page destroy 异常：" + e);
                     }
                 }
                 page = null;
@@ -147,20 +140,20 @@ public class MuPDFCore {
                 currentPage = -1;
 
                 if (doc != null) {
-                    LogUtils.i(TAG, "gotoPage: loadPage pageNum:" + pageNum);
+                    Debugger.i(TAG, "gotoPage: loadPage pageNum:" + pageNum);
                     page = doc.loadPage(pageNum);
                     Rect b = page.getBounds();
                     pageWidth = b.x1 - b.x0;
                     pageHeight = b.y1 - b.y0;
-                    LogUtils.i(TAG, "gotoPage: pageNum:" + pageNum + ",pageWidth:" + pageWidth + ",pageHeight:" + pageHeight);
+                    Debugger.i(TAG, "gotoPage: pageNum:" + pageNum + ",pageWidth:" + pageWidth + ",pageHeight:" + pageHeight);
                 } else {
-                    LogUtils.i(TAG, "gotoPage: doc is null");
+                    Debugger.i(TAG, "gotoPage: doc is null");
                 }
 
                 currentPage = pageNum;
             }
         } catch (Exception e) {
-            LogUtils.e(e);
+            Debugger.e(e);
         }
     }
 
@@ -175,7 +168,7 @@ public class MuPDFCore {
                                       int patchW, int patchH,
                                       Cookie cookie) {
         try {
-            LogUtils.d(TAG, "---MuPDFCore.drawPage gotoPage---");
+            Debugger.d(TAG, "---MuPDFCore.drawPage gotoPage---");
             gotoPage(pageNum);
 
             if (displayList == null && page != null)
@@ -189,13 +182,13 @@ public class MuPDFCore {
                 return;
             float zoom = resolution / 72;
             Matrix ctm = new Matrix(zoom, zoom);
-            LogUtils.i(TAG, "---MuPDFCore.drawPage getBounds---");
+            Debugger.i(TAG, "---MuPDFCore.drawPage getBounds---");
             Rect bounds = page.getBounds();
             RectI bbox = new RectI(bounds.transform(ctm));
             float xscale = (float) pageW / (float) (bbox.x1 - bbox.x0);
             float yscale = (float) pageH / (float) (bbox.y1 - bbox.y0);
             ctm.scale(xscale, yscale);
-            LogUtils.e(TAG, "MuPDFCore.drawPage: pageNum:" + pageNum
+            Debugger.e(TAG, "MuPDFCore.drawPage: pageNum:" + pageNum
                     + "\npageW:" + pageW + ",pageH:" + pageH
                     + "\npatchW:" + patchW + ",patchH:" + patchH
                     + "\npatchX:" + patchX + ",patchY:" + patchY
@@ -207,18 +200,18 @@ public class MuPDFCore {
             try {
                 throw new Exception("哪里调用");
             } catch (Exception e) {
-                LogUtils.e(e);
+                Debugger.e(e);
             }
             AndroidDrawDevice dev = new AndroidDrawDevice(bm, patchX, patchY);
             try {
                 displayList.run(dev, ctm, cookie);
-                LogUtils.d(TAG, "---MuPDFCore.drawPage end---");
+                Debugger.d(TAG, "---MuPDFCore.drawPage end---");
                 dev.close();
             } finally {
                 dev.destroy();
             }
         } catch (Exception e) {
-            LogUtils.e(e);
+            Debugger.e(e);
         }
     }
 
@@ -295,7 +288,7 @@ public class MuPDFCore {
         annotation.setContents("测试水印");
         boolean update = annotation.update();
         boolean update1 = pdfPage.update();
-        LogUtils.i(TAG, "MuPDFCore.addWaterMark 添加水印 update=" + update);
+        Debugger.i(TAG, "MuPDFCore.addWaterMark 添加水印 update=" + update);
     }
 
     public void addFreeText(int pageNum, int width, int height, String text) {
@@ -313,7 +306,7 @@ public class MuPDFCore {
         int green = Color.green(color);
         int blue = Color.blue(color);
         int alpha = Color.alpha(color);
-        LogUtils.i(TAG, "MuPDFCore.parseColor: color=" + color + ",[" + red + "," + green + "," + blue + "," + alpha + "]");
+        Debugger.i(TAG, "MuPDFCore.parseColor: color=" + color + ",[" + red + "," + green + "," + blue + "," + alpha + "]");
         // 红绿蓝 且颜色范围值都是 :0-1
         return new float[]{red / 255f, green / 255f, blue / 255f};
     }
@@ -328,7 +321,7 @@ public class MuPDFCore {
             float ty = point.y;
             point.x = point.x * realWidth;
             point.y = point.y * realHeight;
-            LogUtils.i(TAG, "addShareInk: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
+            Debugger.i(TAG, "addShareInk: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
         }
         PDFPage pdfPage = new PDFPage(page.pointer);
         PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_INK);
@@ -338,7 +331,7 @@ public class MuPDFCore {
         pdfAnnotation.addInkList(inkList);
         boolean update = pdfAnnotation.update();
         boolean update1 = pdfPage.update();
-        LogUtils.i(TAG, "addShareInk 添加共享批注 update=" + update + ",update1=" + update1);
+        Debugger.i(TAG, "addShareInk 添加共享批注 update=" + update + ",update1=" + update1);
     }
 
     public Point[] addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
@@ -348,7 +341,7 @@ public class MuPDFCore {
             Rect bounds = page.getBounds();
             float realWidth = bounds.x1 - bounds.x0;
             float realHeight = bounds.y1 - bounds.y0;
-            LogUtils.i(TAG, "addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize + ",page宽高=" + realWidth + "," + realHeight);
+            Debugger.i(TAG, "addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize + ",page宽高=" + realWidth + "," + realHeight);
             for (int i = 0; i < inkList.length; i++) {
                 Point point = inkList[i];
                 float tx = point.x;
@@ -356,7 +349,7 @@ public class MuPDFCore {
                 point.x = realWidth / width * point.x;
                 point.y = realHeight / height * point.y;
                 percentPoints[i] = new Point(point.x / realWidth, point.y / realHeight);
-                LogUtils.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
+                Debugger.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
             }
             PDFPage pdfPage = new PDFPage(page.pointer);
             PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(type);
@@ -369,7 +362,7 @@ public class MuPDFCore {
                     float y0 = inkList[0].y;
                     float x1 = inkList[1].x;
                     float y1 = inkList[1].y;
-                    LogUtils.e(TAG, "addAnnotation: 直线=" + x0 + "," + y0 + "," + x1 + "," + y1);
+                    Debugger.e(TAG, "addAnnotation: 直线=" + x0 + "," + y0 + "," + x1 + "," + y1);
                     pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
                     pdfAnnotation.setLine(new Point(x0, y0), new Point(x1, y1));
                     break;
@@ -380,7 +373,7 @@ public class MuPDFCore {
                     float y0 = inkList[0].y;
                     float x1 = inkList[1].x;
                     float y1 = inkList[1].y;
-                    LogUtils.e(TAG, "addAnnotation: 矩形=" + x0 + "," + y0 + "," + x1 + "," + y1);
+                    Debugger.e(TAG, "addAnnotation: 矩形=" + x0 + "," + y0 + "," + x1 + "," + y1);
                     pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
                     Rect rect = new Rect(x0, y0, x1, y1);
                     pdfAnnotation.setRect(rect);
@@ -392,7 +385,7 @@ public class MuPDFCore {
                     float y0 = inkList[0].y;
                     float x1 = inkList[1].x;
                     float y1 = inkList[1].y;
-                    LogUtils.e(TAG, "addAnnotation: 高亮=" + x0 + "," + y0 + "," + x1 + "," + y1);
+                    Debugger.e(TAG, "addAnnotation: 高亮=" + x0 + "," + y0 + "," + x1 + "," + y1);
                     pdfAnnotation.setOpacity(0.5f);//设置透明度
                     pdfAnnotation.setColor(new float[]{1f, 1f, 0f});
                     Quad quad = new Quad(x0, y0, x1, y0, x0, y1, x1, y1);
@@ -409,10 +402,10 @@ public class MuPDFCore {
             }
             boolean update = pdfAnnotation.update();
             boolean update1 = pdfPage.update();
-            LogUtils.i(TAG, "MuPDFCore.addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
+            Debugger.i(TAG, "MuPDFCore.addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
             return percentPoints;
         } catch (Exception e) {
-            LogUtils.e(TAG, "MuPDFCore.addAnnotation Exception: " + e);
+            Debugger.e(TAG, "MuPDFCore.addAnnotation Exception: " + e);
             e.printStackTrace();
         }
         return null;
@@ -425,16 +418,16 @@ public class MuPDFCore {
         if (annotations == null) {
             return;
         }
-        LogUtils.i(TAG, "MuPDFCore.logAnnotations: 批注数量：" + annotations.length);
+        Debugger.i(TAG, "MuPDFCore.logAnnotations: 批注数量：" + annotations.length);
         for (PDFAnnotation annotation : annotations) {
             boolean hasInkList = annotation.hasInkList();
             boolean hasLine = annotation.hasLine();
-            LogUtils.i(TAG, "MuPDFCore.logAnnotations: hasInkList:" + hasInkList + ",hasLine:" + hasLine);
+            Debugger.i(TAG, "MuPDFCore.logAnnotations: hasInkList:" + hasInkList + ",hasLine:" + hasLine);
             if (hasInkList) {
-                LogUtils.i(TAG, "MuPDFCore.logAnnotations: InkListCount：" + annotation.getInkListCount());
+                Debugger.i(TAG, "MuPDFCore.logAnnotations: InkListCount：" + annotation.getInkListCount());
                 Point[][] inkList = annotation.getInkList();
                 for (Point[] points : inkList) {
-                    LogUtils.d(TAG, "MuPDFCore.logAnnotations: 墨迹坐标数量：" + points.length);
+                    Debugger.d(TAG, "MuPDFCore.logAnnotations: 墨迹坐标数量：" + points.length);
                     System.out.println("换行");
                     for (Point point : points) {
                         System.out.print("  " + point.toString());
@@ -443,14 +436,14 @@ public class MuPDFCore {
             }
             if (hasLine) {
                 Point[] line = annotation.getLine();
-                LogUtils.d(TAG, "MuPDFCore.logAnnotations: 直线坐标数量：" + line.length);
+                Debugger.d(TAG, "MuPDFCore.logAnnotations: 直线坐标数量：" + line.length);
                 System.out.println("换行");
                 for (Point point : line) {
                     System.out.print("  " + point.toString());
                 }
             }
         }
-        LogUtils.i(TAG, "MuPDFCore.logAnnotations end");
+        Debugger.i(TAG, "MuPDFCore.logAnnotations end");
     }
 
     static class AnnotationPathBean {
@@ -481,7 +474,7 @@ public class MuPDFCore {
         List<AnnotationPathBean> annotationPathBeans = new ArrayList<>();
         List<Path> pathList = null;
         Path path = null;
-        LogUtils.i(TAG, "MuPDFCore.annotations2path: 批注数量：" + annotations.length);
+        Debugger.i(TAG, "MuPDFCore.annotations2path: 批注数量：" + annotations.length);
         for (PDFAnnotation annotation : annotations) {
             int type = annotation.getType();
             pathList = new ArrayList<>();
@@ -525,10 +518,10 @@ public class MuPDFCore {
                 path.addRect(rectF, Path.Direction.CCW);
                 pathList.add(path);
             }
-            LogUtils.i(TAG, "MuPDFCore.annotations2path pathList=" + pathList.size());
+            Debugger.i(TAG, "MuPDFCore.annotations2path pathList=" + pathList.size());
             annotationPathBeans.add(new AnnotationPathBean(pathList, annotation));
         }
-        LogUtils.i(TAG, "MuPDFCore.annotations2path annotationPathBeans=" + annotationPathBeans.size());
+        Debugger.i(TAG, "MuPDFCore.annotations2path annotationPathBeans=" + annotationPathBeans.size());
         return annotationPathBeans;
     }
 
@@ -591,7 +584,7 @@ public class MuPDFCore {
             if (pdfAnnotation != null) {
                 pdfPage.deleteAnnotation(pdfAnnotation);
 //                boolean update = pdfAnnotation.update();
-                LogUtils.d(TAG, "MuPDFCore.deleteAnnotation: 删除批注 ");
+                Debugger.d(TAG, "MuPDFCore.deleteAnnotation: 删除批注 ");
 //                PageView pageView = (PageView) docView.getDisplayedView();
 //                pageView.update();
 //                pageView.setPage(pageView.getPage(), new PointF(realWidth, realHeight));
@@ -616,16 +609,16 @@ public class MuPDFCore {
         boolean copy = Util.copyFile(new File(srcPath), new File(destPath), new Util.OnReplaceListener() {
             @Override
             public boolean onReplace(File srcFile, File destFile) {
-                LogUtils.i(TAG, "MuPDFCore.onReplace: " + destFile.getAbsolutePath() + " 已存在，需要删除才能继续");
+                Debugger.i(TAG, "MuPDFCore.onReplace: " + destFile.getAbsolutePath() + " 已存在，需要删除才能继续");
                 return destFile.delete();
             }
         }, new Util.OnProgressUpdateListener() {
             @Override
             public void onProgressUpdate(double progress) {
-                LogUtils.i(TAG, "MuPDFCore.onProgressUpdate: " + progress);
+                Debugger.i(TAG, "MuPDFCore.onProgressUpdate: " + progress);
             }
         });
-        LogUtils.i(TAG, "MuPDFCore.srcPath:" + srcPath + ",destPath:" + destPath + ",copy:" + copy);
+        Debugger.i(TAG, "MuPDFCore.srcPath:" + srcPath + ",destPath:" + destPath + ",copy:" + copy);
         doc.saveDoc(destPath, "incremental");
 //        pdfDocument.save(destPath, "incremental");
 //        pdfDocument.destroy();//fix: libc    : FORTIFY: pthread_mutex_lock called on a destroyed mutex (0xd4550a60)
@@ -633,7 +626,7 @@ public class MuPDFCore {
     }
 
     public synchronized void onDestroy() {
-        LogUtils.i(TAG, "onDestroy: start");
+        Debugger.i(TAG, "onDestroy: start");
         try {
             if (displayList != null)
                 displayList.destroy();
@@ -642,14 +635,14 @@ public class MuPDFCore {
                 page.destroy();
             page = null;
             if (doc != null) {
-                LogUtils.i(TAG, "onDestroy doc: start");
+                Debugger.i(TAG, "onDestroy doc: start");
                 doc.destroy();
-                LogUtils.i(TAG, "onDestroy doc: end");
+                Debugger.i(TAG, "onDestroy doc: end");
             }
             doc = null;
-            LogUtils.i(TAG, "onDestroy: end");
+            Debugger.i(TAG, "onDestroy: end");
         } catch (Exception e) {
-            LogUtils.e(e);
+            Debugger.e(e);
         }
     }
 

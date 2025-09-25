@@ -29,7 +29,7 @@ import android.widget.ProgressBar;
 import com.artifex.mupdf.fitz.Cookie;
 import com.artifex.mupdf.fitz.Link;
 import com.artifex.mupdf.fitz.Quad;
-import com.artifex.mupdf.util.LogUtils;
+import com.artifex.mupdf.util.Debugger;
 import com.xlk.mupdf.library.R;
 
 /**
@@ -475,7 +475,7 @@ public class PageView extends ViewGroup {
         try {
             throw new Exception("哪里调用");
         } catch (Exception e) {
-            LogUtils.e(e);
+            Debugger.e(e);
         }
         if (mErrorIndicator != null) {
             if (mPatch != null) {
@@ -555,7 +555,7 @@ public class PageView extends ViewGroup {
     }
 
     public void update() {
-        LogUtils.d(TAG, "PageView.update: ");
+        Debugger.d(TAG, "PageView.update: ");
         // 取消待定的渲染任务
         if (mDrawEntire != null) {
             mDrawEntire.cancel();
@@ -588,7 +588,7 @@ public class PageView extends ViewGroup {
     }
 
     public void removeHq() {
-        LogUtils.d(TAG, "PageView.removeHq");
+        Debugger.d(TAG, "PageView.removeHq");
         // 如果仍在进行，则停止绘制补丁
         if (mDrawPatch != null) {
             mDrawPatch.cancel();

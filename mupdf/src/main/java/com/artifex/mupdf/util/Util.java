@@ -244,12 +244,12 @@ public class Util {
      */
     public static File copyUri2File(Context context, String destDirPath, Uri srcFileUri) {
         try {
-            LogUtils.i("copy2local srcFileUri=" + srcFileUri);
+            Debugger.i("copy2local srcFileUri=" + srcFileUri);
             ContentResolver contentResolver = context.getContentResolver();
             InputStream is = contentResolver.openInputStream(srcFileUri);
             File tempDir = new File(destDirPath);
             if (!tempDir.exists() && !tempDir.createNewFile()) {
-                LogUtils.e("目录创建失败 destDirPath=" + destDirPath);
+                Debugger.e("目录创建失败 destDirPath=" + destDirPath);
                 return null;
             }
             String fileName = null;
@@ -259,14 +259,14 @@ public class Util {
                 }, null, null, null);
                 if (cursor.moveToFirst()) {
                     fileName = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME));
-                    LogUtils.i("fileName=" + fileName);
+                    Debugger.i("fileName=" + fileName);
                 }
                 cursor.close();
             }
             if (fileName != null && !fileName.isEmpty()) {
                 File file = new File(tempDir.getAbsolutePath() + File.separator + fileName);
                 if (file.exists()) {
-                    LogUtils.i("文件已经存在，无须再复制=" + file.getAbsolutePath());
+                    Debugger.i("文件已经存在，无须再复制=" + file.getAbsolutePath());
                     return file;
                 }
                 FileOutputStream fos = new FileOutputStream(file);
@@ -281,13 +281,13 @@ public class Util {
                 }
                 bos.close();
                 bis.close();
-                LogUtils.i("文件复制完毕=" + file.getAbsolutePath());
+                Debugger.i("文件复制完毕=" + file.getAbsolutePath());
                 return file;
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        LogUtils.i("文件复制失败 srcFileUri=" + srcFileUri);
+        Debugger.i("文件复制失败 srcFileUri=" + srcFileUri);
         return null;
     }
 
@@ -310,14 +310,14 @@ public class Util {
         }
         //获取文件file的MIME类型
         String type = "application/pdf";
-        LogUtils.i("打开文件=" + file.getAbsolutePath() + ",mime类型=" + type);
+        Debugger.i("打开文件=" + file.getAbsolutePath() + ",mime类型=" + type);
         //设置intent的data和Type属性。
         intent.setDataAndType(uri, type);
         //跳转
         try {
             context.startActivity(intent);
         } catch (Exception e) {
-            LogUtils.e(e);
+            Debugger.e(e);
 //            ToastUtils.showShort(R.string.no_application_can_open);
         }
     }

@@ -14,7 +14,7 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
-import com.artifex.mupdf.util.LogUtils;
+import com.artifex.mupdf.util.Debugger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -188,7 +188,7 @@ public class SignatureBoard extends View {
                 size.bottom = size.bottom == 0 ? y : Math.max(size.bottom, y);
             }
         }
-        LogUtils.i("区域：" + size);
+        Debugger.i("区域：" + size);
         return size;
     }
 

@@ -2,17 +2,19 @@ package com.xlk.mupdf.library.view;
 
 import android.app.Dialog;
 import android.content.Context;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.LinearGradient;
-import android.graphics.Paint;
-import android.graphics.RectF;
-import android.graphics.Shader;
-import android.graphics.SweepGradient;
-import android.view.MotionEvent;
-import android.view.View;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputFilter;
+import android.text.Spanned;
+import android.text.TextWatcher;
+import android.util.Log;
+import android.widget.EditText;
 
 import androidx.annotation.NonNull;
+
+import com.xlk.mupdf.library.R;
+
 
 /**
  * author : Administrator
@@ -20,193 +22,151 @@ import androidx.annotation.NonNull;
  * description :
  */
 public class ColorPickerDialog extends Dialog {
-    public ColorPickerDialog(@NonNull Context context, OnColorChangedListener listener, int color) {
+    private static final String TAG = "ColorPickerDialog";
+    private ColorPickerView.OnColorSubmitListener mListener;
+    private final int defaultColor;
+
+    public ColorPickerDialog(@NonNull Context context, ColorPickerView.OnColorSubmitListener listener, int color) {
         super(context);
-        OnColorChangedListener l = new OnColorChangedListener() {
+        mListener = listener;
+        defaultColor = color;
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Log.d(TAG, "onCreate: ");
+        setContentView(R.layout.color_picker_layout);
+        ColorPickerView colorPickerView = findViewById(R.id.colorPickerView);
+        EditText edtR = findViewById(R.id.edtR);
+        EditText edtG = findViewById(R.id.edtG);
+        EditText edtB = findViewById(R.id.edtB);
+        EditText edtA = findViewById(R.id.edtA);
+        EditText edtHex = findViewById(R.id.edtHex);
+
+        edtHex.setKeyListener(null);
+
+        colorPickerView.setColorChangedListener(new ColorPickerView.OnColorChangedListener() {
             @Override
             public void colorChanged(int color) {
-                listener.colorChanged(color);
-                dismiss();
+                int red = Color.red(color);
+                int green = Color.green(color);
+                int blue = Color.blue(color);
+                int alpha = Color.alpha(color);
+                edtR.setText(String.valueOf(red));
+                edtG.setText(String.valueOf(green));
+                edtB.setText(String.valueOf(blue));
+                edtA.setText(String.valueOf(alpha));
+                edtHex.setText(Integer.toHexString(color).toUpperCase());
+            }
+        });
+        TextWatcher textWatcher = new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                String r = edtR.getText().toString();
+                String g = edtG.getText().toString();
+                String b = edtB.getText().toString();
+                String a = edtA.getText().toString();
+                int red = format2Int(r);
+                int green = format2Int(g);
+                int blue = format2Int(b);
+                int alpha = format2Int(a);
+                int color = Color.argb(alpha, red, green, blue);
+                colorPickerView.setCurrentColor(color);
+                edtHex.setText(Integer.toHexString(color).toUpperCase());
             }
         };
-        setContentView(new ColorPickerView(context, l, color));
+        InputFilter[] filters = {new RangeInputFilter(0, 255)};
+        edtR.setFilters(filters);
+        edtG.setFilters(filters);
+        edtB.setFilters(filters);
+        edtA.setFilters(filters);
+
+        edtR.addTextChangedListener(textWatcher);
+        edtG.addTextChangedListener(textWatcher);
+        edtB.addTextChangedListener(textWatcher);
+        edtA.addTextChangedListener(textWatcher);
+
+        int red = Color.red(defaultColor);
+        int green = Color.green(defaultColor);
+        int blue = Color.blue(defaultColor);
+        int alpha = Color.alpha(defaultColor);
+        edtR.setText(String.valueOf(red));
+        edtG.setText(String.valueOf(green));
+        edtB.setText(String.valueOf(blue));
+        edtA.setText(String.valueOf(alpha));
+
+        findViewById(R.id.submit).setOnClickListener(v -> {
+            mListener.submitColor(colorPickerView.getCurrentColor());
+            dismiss();
+        });
     }
 
-    public interface OnColorChangedListener {
-        void colorChanged(int color);
+    @Override
+    public void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        Log.d(TAG, "onDetachedFromWindow: ");
+        mListener = null;
     }
 
-    public static class ColorPickerView extends View {
-        private Paint defaultPaint;
-        private Paint mGradientPaint;
-        private Paint mLinearPaint;
-        private Paint mCenterPaint;
-        private Paint mRadialPaint;
-        private OnColorChangedListener mListener;
-        private boolean mTrackingCenter;
-        private boolean mHighlightCenter;
-        private boolean mTrackingLinGradient;
-        private int[] mRadialColors = new int[]{
-                -0x10000, -0xff01, -0xffff01,
-                -0xff0001, -0xff0100, -0x100, -0x10000};
-        private int[] mLinearColors;
-        private final float PI = 3.1415926f;
-        private int magnification = 2;
-        private float centerX = 100f * magnification;
-        private float centerY = 100f * magnification;
-        private float defaultViewWidth = centerX * 2;
-        private float defaultViewHeight = centerY * 2;
-        private float defaultLinearHeight = 40f * magnification;
-        private float CENTER_RADIUS = 32f * magnification;
-
-        public ColorPickerView(Context context, OnColorChangedListener listener, int color) {
-            super(context);
-            mListener = listener;
-            mLinearColors = getColors(color);
-            SweepGradient sweepGradient = new SweepGradient(0f, 0f, mRadialColors, null);
-            mGradientPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            mGradientPaint.setStyle(Paint.Style.FILL_AND_STROKE);
-            mGradientPaint.setShader(sweepGradient);
-            mGradientPaint.setStrokeWidth(1f);
-
-            LinearGradient linearShader =
-                    new LinearGradient(
-                            0f,
-                            0f,
-                            defaultViewWidth,
-                            0f,
-                            mLinearColors,
-                            null,
-                            Shader.TileMode.CLAMP
-                    );
-            mLinearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            mLinearPaint.setStyle(Paint.Style.FILL_AND_STROKE);
-            mLinearPaint.setShader(linearShader);
-            mLinearPaint.setStrokeWidth(1f);
-
-            mCenterPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            mCenterPaint.setColor(color);
-            mCenterPaint.setStrokeWidth(3f * magnification);
-
-            mRadialPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            mRadialPaint.setColor(Color.BLACK);
-            mRadialPaint.setStrokeWidth(3f * magnification);
-
-            defaultPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            defaultPaint.setColor(Color.WHITE);
-            defaultPaint.setStyle(Paint.Style.FILL_AND_STROKE);
-            defaultPaint.setStrokeWidth(1f);
-        }
-
-        private int[] getColors(int color) {
-            if (color == Color.BLACK || color == Color.WHITE) {
-                return new int[]{Color.BLACK, Color.WHITE};
-            }
-            return new int[]{Color.BLACK, color, Color.WHITE};
-        }
-
-        @Override
-        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            setMeasuredDimension((int) defaultViewWidth, (int) (defaultViewHeight + defaultLinearHeight));
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            float viewWidth = getWidth();
-            float viewHeight = getHeight();
-            float min = Math.min(viewWidth, viewHeight);
-            float r = centerX;
-            canvas.translate(centerX, centerY);
-            canvas.drawOval(new RectF(-r, -r, r, r), mGradientPaint);
-            canvas.drawCircle(0f, 0f, CENTER_RADIUS + mCenterPaint.getStrokeWidth(), defaultPaint);
-            if (mTrackingCenter) {
-                int color = mCenterPaint.getColor();
-                mCenterPaint.setStyle(Paint.Style.STROKE);
-                if (mHighlightCenter) {
-                    mCenterPaint.setAlpha(0xff);
-                } else {
-                    mCenterPaint.setAlpha(0x80);
-                }
-                canvas.drawCircle(0f, 0f, CENTER_RADIUS + mCenterPaint.getStrokeWidth(), mCenterPaint);
-                mCenterPaint.setStyle(Paint.Style.FILL);
-                mCenterPaint.setColor(color);
-            }
-            canvas.drawCircle(0f, 0f, CENTER_RADIUS, mCenterPaint);
-            canvas.translate(-centerX, -centerY);
-            canvas.drawRect(10f, min + 10f + mLinearPaint.getStrokeWidth() / 2, viewWidth - 10f, viewHeight - 10f, mLinearPaint);
-        }
-
-        private int interpColor(int[] colors, float unit) {
-            if (unit <= 0) return colors[0];
-            if (unit >= 1) return colors[colors.length - 1];
-            float p = unit * (colors.length - 1);
-            int i = (int) p;
-            p -= i;
-            int c0 = colors[i];
-            int c1 = colors[i + 1];
-            int a = ave(Color.alpha(c0), Color.alpha(c1), p);
-            int r = ave(Color.red(c0), Color.red(c1), p);
-            int g = ave(Color.green(c0), Color.green(c1), p);
-            int b = ave(Color.blue(c0), Color.blue(c1), p);
-            return Color.argb(a, r, g, b);
-        }
-
-        private int ave(int s, int d, float p) {
-            return s + Math.round((p * (d - s)));
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            float x = event.getX() - centerX;
-            float y = event.getY() - centerY;
-            boolean inCenter = Math.sqrt(x * x + y * y) <= CENTER_RADIUS;
-            boolean outOfRadialGradient = y > centerY;
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN: {
-                    mTrackingCenter = inCenter;
-                    mTrackingLinGradient = outOfRadialGradient;
-                    if (inCenter) {
-                        mHighlightCenter = true;
-                        invalidate();
-                    }
-                    break;
-                }
-                case MotionEvent.ACTION_MOVE: {
-                    if (mTrackingCenter) {
-                        if (mHighlightCenter != inCenter) {
-                            mHighlightCenter = inCenter;
-                            invalidate();
-                        }
-                    } else if (mTrackingLinGradient) {
-                        float unit = (Math.max(
-                                0f, Math.min((centerX * 2), x + centerX)
-                        ) / (centerX * 2));
-                        mCenterPaint.setColor(interpColor(mLinearColors, unit));
-                        invalidate();
-                    } else {
-                        float angle = (float) Math.atan2(y, x);
-                        float unit = angle / (2 * PI);
-                        if (unit < 0) unit += 1;
-                        int color = interpColor(mRadialColors, unit);
-                        mCenterPaint.setColor(color);
-                        mRadialPaint.setColor(color);
-                        invalidate();
-                    }
-                    break;
-                }
-                case MotionEvent.ACTION_UP: {
-                    if (mTrackingCenter) {
-                        if (inCenter) {
-                            mListener.colorChanged(mCenterPaint.getColor());
-                        }
-                        mTrackingCenter = false;
-                        invalidate();
-                    }
-                    break;
-                }
-            }
-            return true;
+    private int format2Int(String color) {
+        try {
+            return Integer.parseInt(color);
+        } catch (Exception e) {
+            return 0;
         }
     }
+
+    public static class RangeInputFilter implements InputFilter {
+        private final int mMinimum;//限制最小值
+        private final int mMaximum;//限制最大值
+
+        public RangeInputFilter(int minimum, int maximum) {
+            mMinimum = minimum;
+            mMaximum = maximum;
+        }
+
+        /**
+         * @param source 新输入的字符序列
+         * @param start  新输入的字符序列的起始位置
+         * @param end    新输入的字符序列的结束位置
+         * @param dest   当前已存在的字符序列，即EditText中已有的内容
+         * @param dstart 当前字符序列中将被替换或插入的起始位置
+         * @param dend   当前字符序列中将被替换或插入的结束位置
+         * @return <ul>
+         * <li>如果返回 null，表示不对输入进行过滤，使用原始输入。</li>
+         * <li>返回空字符串 "" 表示阻止输入。</li>
+         * <li>返回的其他字符序列将替代原始输入。</li>
+         * </ul>
+         */
+        @Override
+        public CharSequence filter(CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
+            try {
+                // 构建新输入后的字符串
+                String newVal = dest.toString().substring(0, dstart) + source.toString() + dest.toString().substring(dend);
+                int input = Integer.parseInt(newVal);
+                if (isInRange(mMinimum, mMaximum, input)) {
+                    return null;
+                }
+            } catch (NumberFormatException nfe) {
+            }
+            return "";
+        }
+
+
+        private boolean isInRange(int mMinimum, int mMaximum, int input) {
+            return input >= mMinimum && input <= mMaximum;
+        }
+    }
+
 }

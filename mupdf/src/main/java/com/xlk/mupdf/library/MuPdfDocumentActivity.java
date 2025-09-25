@@ -49,7 +49,7 @@ import com.artifex.mupdf.fitz.PDFAnnotation;
 import com.artifex.mupdf.fitz.Point;
 import com.artifex.mupdf.fitz.SeekableInputStream;
 import com.artifex.mupdf.util.ActUtil;
-import com.artifex.mupdf.util.LogUtils;
+import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.util.ScreenUtils;
 import com.artifex.mupdf.util.Util;
 import com.artifex.mupdf.viewer.ContentInputStream;
@@ -66,6 +66,7 @@ import com.xlk.mupdf.library.bus.MupdfEventMessage;
 import com.xlk.mupdf.library.bus.MupdfInkBean;
 import com.xlk.mupdf.library.view.ArtBoardDialog;
 import com.xlk.mupdf.library.view.ColorPickerDialog;
+import com.xlk.mupdf.library.view.ColorPickerView;
 import com.xlk.mupdf.library.view.ScalableView;
 import com.xlk.mupdf.library.view.SignatureBoard;
 
@@ -195,7 +196,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
         intent.putExtra(MupdfMacro.mupdf_bundle_key, bundle);
-        LogUtils.e(TAG, "打开MuPdfDocumentActivity");
+        Debugger.e(TAG, "打开MuPdfDocumentActivity");
         context.startActivity(intent);
     }
 
@@ -243,16 +244,16 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                         uri = Uri.parse(srcUri);
                     }
                     if (uri == null) {
-                        LogUtils.e("srcFilePath can not parse uri");
+                        Debugger.e("srcFilePath can not parse uri");
                         uri = Uri.parse(srcUri);
                     }
 
                     boolean watermark = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
                     if (watermark) {
                         mWatermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
-                        mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, Color.parseColor("#66000000"));
+                        mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, Color.parseColor("#66FF6D00"));
                     }
-                    LogUtils.i(TAG, "c bundle："
+                    Debugger.i(TAG, "c bundle："
                             + "\nsrcFilePath=" + srcFilePath
                             + "\nsrcUri=" + srcUri
                             + "\nuri=" + uri
@@ -271,9 +272,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
 
                     mDocKey = uri.toString();
 
-                    LogUtils.i(TAG, "OPEN filePath " + srcFilePath);
-                    LogUtils.i(TAG, "OPEN URI " + uri);
-                    LogUtils.i(TAG, "OPEN mimetype " + mimetype);
+                    Debugger.i(TAG, "OPEN filePath " + srcFilePath);
+                    Debugger.i(TAG, "OPEN URI " + uri);
+                    Debugger.i(TAG, "OPEN mimetype " + mimetype);
 
                     mDocTitle = null;
                     long size = -1;
@@ -302,20 +303,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                         if (cursor != null)
                             cursor.close();
                     }
-                    LogUtils.i(TAG, "  NAME " + mDocTitle);
-                    LogUtils.i(TAG, "  SIZE " + size);
+                    Debugger.i(TAG, "  NAME " + mDocTitle);
+                    Debugger.i(TAG, "  SIZE " + size);
 
                     if (mimetype == null || mimetype.equals("application/octet-stream")) {
                         mimetype = getContentResolver().getType(uri);
-                        LogUtils.i(TAG, "  MAGIC (Resolved) " + mimetype);
+                        Debugger.i(TAG, "  MAGIC (Resolved) " + mimetype);
                     }
                     if (mimetype == null || mimetype.equals("application/octet-stream")) {
                         mimetype = mDocTitle;
-                        LogUtils.i(TAG, "  MAGIC (Filename) " + mimetype);
+                        Debugger.i(TAG, "  MAGIC (Filename) " + mimetype);
                     }
                     if (srcFilePath != null && !srcFilePath.isEmpty()) {
                         mDocTitle = Util.getFileName(srcFilePath);
-                        LogUtils.i(TAG, "  NAME " + mDocTitle);
+                        Debugger.i(TAG, "  NAME " + mDocTitle);
                         try {
                             core = openFile(srcFilePath);
                             SearchTaskResult.set(null);
@@ -329,7 +330,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                             core = openCore(uri, size, "application/pdf");
                             SearchTaskResult.set(null);
                         } catch (Exception x) {
-                            LogUtils.e(x.toString());
+                            Debugger.e(x.toString());
                             showCannotOpenDialog();
                             return;
                         }
@@ -341,7 +342,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 return;
             }
             if (core != null && core.countPages() == 0) {
-                LogUtils.e("countPages为0");
+                Debugger.e("countPages为0");
                 core = null;
             }
         }
@@ -364,7 +365,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         float mSourceScale = Math.min(screenWidth / size.x, screenHeight / size.y);
         android.graphics.Point newSize = new android.graphics.Point((int) (size.x * mSourceScale), (int) (size.y * mSourceScale));
         float fullWidthScale = screenWidth * 1.0f / (newSize.x * 1.0f);
-        LogUtils.i(TAG, "MuPdfDocumentActivity.createUI: size=" + size + ",newSize=" + newSize + ",fullWidthScale=" + fullWidthScale);
+        Debugger.i(TAG, "MuPdfDocumentActivity.createUI: size=" + size + ",newSize=" + newSize + ",fullWidthScale=" + fullWidthScale);
         mDocView = new ReaderView(this, fullWidthScale) {
             @Override
             protected void onMoveToChild(int i) {
@@ -372,13 +373,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     return;
                 currentPageIndex = i;
                 mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", i + 1, core.countPages()));
-                LogUtils.i(TAG, "MuPdfDocumentActivity.onMoveToChild: ");
+                Debugger.i(TAG, "MuPdfDocumentActivity.onMoveToChild: ");
                 super.onMoveToChild(i);
             }
 
             @Override
             protected void onTapMainDocArea() {
-                LogUtils.i(TAG, "MuPdfDocumentActivity.onTapMainDocArea: ");
+                Debugger.i(TAG, "MuPdfDocumentActivity.onTapMainDocArea: ");
                 if (!mButtonsVisible) {
                     showButtons();
                 } else {
@@ -389,13 +390,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
 
             @Override
             protected void onDocMotion() {
-                //LogUtils.i(TAG, "MuPdfDocumentActivity.onDocMotion: ");
+                //Debugger.i(TAG, "MuPdfDocumentActivity.onDocMotion: ");
                 hideButtons();
             }
 
             @Override
             public void onSizeChanged(int w, int h, int oldw, int oldh) {
-                LogUtils.i(TAG, "onSizeChanged: size:" + w + "," + h + ", old size:" + oldw + "," + oldh + ",core.isReflowable()=" + core.isReflowable());
+                Debugger.i(TAG, "onSizeChanged: size:" + w + "," + h + ", old size:" + oldw + "," + oldh + ",core.isReflowable()=" + core.isReflowable());
                 if (core.isReflowable()) {
                     mLayoutW = w * 72 / mDisplayDPI;
                     mLayoutH = h * 72 / mDisplayDPI;
@@ -445,7 +446,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     int width = mCurPageView.getWidth();
                     int height = mCurPageView.getHeight();
                     int top = mCurPageView.getTop();
-                    LogUtils.i(TAG, "onSuccess 开启批注:(" + width + "," + height + ")" + top);
+                    Debugger.i(TAG, "onSuccess 开启批注:(" + width + "," + height + ")" + top);
 
                     List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
                     RectF regionSize = (RectF) object[1];
@@ -574,7 +575,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         });
         //上一页
         mPrePageView.setOnClickListener(v -> {
-            LogUtils.i(TAG, "页码跳转 上一页:" + currentPageIndex);
+            Debugger.i(TAG, "页码跳转 上一页:" + currentPageIndex);
             if (currentPageIndex > 0) {
                 mDocView.setDisplayedViewIndex(currentPageIndex - 1);
             }
@@ -582,7 +583,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //下一页
         mNextPageView.setOnClickListener(v -> {
             int countPages = core.countPages();
-            LogUtils.i(TAG, "页码跳转 下一页:" + currentPageIndex + ",countPages=" + countPages);
+            Debugger.i(TAG, "页码跳转 下一页:" + currentPageIndex + ",countPages=" + countPages);
             if (currentPageIndex <= countPages) {
                 mDocView.setDisplayedViewIndex(currentPageIndex + 1);
             }
@@ -646,12 +647,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             PageView pageView = (PageView) mDocView.getDisplayedView();
             int width = pageView.getWidth();
             int height = pageView.getHeight();
-            LogUtils.i(TAG, "开启批注:(" + width + "," + height + ")");
+            Debugger.i(TAG, "开启批注:(" + width + "," + height + ")");
             chooseType(1);
             artBoard = new AnnotationArtBoard(this, core, mDocView, width, height, new AnnotationArtBoard.DrawExitListener() {
                 @Override
                 public void onDrawAnnotations(List<AnnotationBean> inkAnnotations) {
-                    LogUtils.i(TAG, "onDrawAnnotations 将要绘制的批注数量： " + inkAnnotations.size() + ",MupdfMacro.isSharing=" + MupdfMacro.isSharing);
+                    Debugger.i(TAG, "onDrawAnnotations 将要绘制的批注数量： " + inkAnnotations.size() + ",MupdfMacro.isSharing=" + MupdfMacro.isSharing);
                     if (!inkAnnotations.isEmpty()) {
                         List<MupdfAnnotationBean> annotationBeans = new ArrayList<>();
                         for (AnnotationBean inkAnnotation : inkAnnotations) {
@@ -668,13 +669,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                             }
                         }
                         if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {
-                            LogUtils.i(TAG, "onDrawAnnotations 将要共享绘制的批注数量： " + annotationBeans.size());
+                            Debugger.i(TAG, "onDrawAnnotations 将要共享绘制的批注数量： " + annotationBeans.size());
                             EventBus.getDefault().post(new MupdfEventMessage.Builder()
                                     .type(MupdfBusType.inform_share_annotation)
                                     .objects(annotationBeans)
                                     .build());
                         }
-                        LogUtils.i(TAG, "onDrawAnnotations 批注完刷新页面");
+                        Debugger.i(TAG, "onDrawAnnotations 批注完刷新页面");
                         //批注后进行实时显示出来
                         //方式一：无效
 //                        PageView displayedView = (PageView) mDocView.getDisplayedView();
@@ -728,9 +729,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         });
         //颜色
         colorButton.setOnClickListener(v -> {
-            new ColorPickerDialog(this, new ColorPickerDialog.OnColorChangedListener() {
+            new ColorPickerDialog(this, new ColorPickerView.OnColorSubmitListener() {
                 @Override
-                public void colorChanged(int color) {
+                public void submitColor(int color) {
                     artBoard.setPaintColor(color);
                 }
             }, Color.RED).show();
@@ -801,7 +802,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         });
         //邀请多人批注
         inviteButton.setOnClickListener(v -> {
-            LogUtils.e("邀请多人批注");
+            Debugger.e("邀请多人批注");
             EventBus.getDefault().post(new MupdfEventMessage.Builder()
                     .type(MupdfBusType.inform_invite_annotation)
                     .objects(mDocTitle, mediaId, currentPageIndex + 1)
@@ -880,19 +881,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             mDocView.requestLayout();
             mDocView.run();
         }, 500L);
-        LogUtils.i(TAG, "MuPdfDocumentActivity.createUI: end");
+        Debugger.i(TAG, "MuPdfDocumentActivity.createUI: end");
     }
 
     private void registerEventBus() {
         if (!EventBus.getDefault().isRegistered(this)) {
-            LogUtils.e("registerEventBus");
+            Debugger.e("registerEventBus");
             EventBus.getDefault().register(this);
         }
     }
 
     private void unregisterEventBus() {
         if (EventBus.getDefault().isRegistered(this)) {
-            LogUtils.e("unregisterEventBus");
+            Debugger.e("unregisterEventBus");
             EventBus.getDefault().unregister(this);
         }
     }
@@ -901,20 +902,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     public void eventBus(MupdfEventMessage msg) {
         switch (msg.getType()) {
             case MupdfBusType.receive_invite_annotation: {
-                LogUtils.e("接收到其他人加入的通知");
+                Debugger.e("接收到其他人加入的通知");
                 break;
             }
             case MupdfBusType.receive_reject_annotation: {
-                LogUtils.e("接收到其他人拒绝的通知");
+                Debugger.e("接收到其他人拒绝的通知");
                 break;
             }
             case MupdfBusType.receive_exit_annotation: {
-                LogUtils.e("接收到其他人退出的通知");
+                Debugger.e("接收到其他人退出的通知");
                 break;
             }
             case MupdfBusType.receive_annotation_info: {
                 Object[] objects = msg.getObjects();
-                LogUtils.e("收到其他人的绘制信息 objects数量：" + objects.length);
+                Debugger.e("收到其他人的绘制信息 objects数量：" + objects.length);
                 boolean onThisPage = false;
                 List<MupdfInkBean> inkList = (List<MupdfInkBean>) objects[0];
                 for (MupdfInkBean bean : inkList) {
@@ -926,9 +927,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     core.addShareInk(pageNumber, linesize, argb, array);
                 }
                 if (onThisPage) {
-                    LogUtils.e("收到其他人的绘制信息 当前页有更新，则进行刷新");
+                    Debugger.e("收到其他人的绘制信息 当前页有更新，则进行刷新");
                     if (mAnnotationVisible) {
-                        LogUtils.e("收到其他人的绘制信息 当前页正在批注，退出批注后再自动刷新");
+                        Debugger.e("收到其他人的绘制信息 当前页正在批注，退出批注后再自动刷新");
                         afterAnnotationRefresh = true;
                     } else {
                         mDocView.afterAnnotation();
@@ -950,7 +951,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         try {
             core = new MuPDFCore(buffer, magic);
         } catch (Exception e) {
-            LogUtils.e(TAG, "Error opening document buffer: " + e);
+            Debugger.e(TAG, "Error opening document buffer: " + e);
             return null;
         }
         return core;
@@ -959,14 +960,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private MuPDFCore openFile(String filePath) {
         File file = new File(filePath);
         if (!file.exists()) {
-            LogUtils.e(TAG, "文件不存在");
+            Debugger.e(TAG, "文件不存在");
             return null;
         }
-        LogUtils.i(TAG, "Opening File " + filePath);
+        Debugger.i(TAG, "Opening File " + filePath);
         try {
             core = new MuPDFCore(filePath);
         } catch (Exception e) {
-            LogUtils.e(TAG, "Error opening document file: " + e);
+            Debugger.e(TAG, "Error opening document file: " + e);
             return null;
         }
         return core;
@@ -976,7 +977,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         try {
             core = new MuPDFCore(stm, magic);
         } catch (Exception e) {
-            LogUtils.e(TAG, "Error opening document stream: " + e);
+            Debugger.e(TAG, "Error opening document stream: " + e);
             return null;
         }
         return core;
@@ -985,7 +986,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private MuPDFCore openCore(Uri uri, long size, String mimetype) throws IOException {
         ContentResolver cr = getContentResolver();
 
-        LogUtils.i(TAG, "Opening document " + uri + ",mimetype=" + mimetype);
+        Debugger.i(TAG, "Opening document " + uri + ",mimetype=" + mimetype);
 
         InputStream is = cr.openInputStream(uri);
         byte[] buf = null;
@@ -1016,10 +1017,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         }
 
         if (buf != null) {
-            LogUtils.i(TAG, "  Opening document from memory buffer of size " + buf.length);
+            Debugger.i(TAG, "  Opening document from memory buffer of size " + buf.length);
             return openBuffer(buf, mimetype);
         } else {
-            LogUtils.i(TAG, "  Opening document from stream");
+            Debugger.i(TAG, "  Opening document from stream");
             return openStream(new ContentInputStream(cr, uri, size), mimetype);
         }
     }
@@ -1167,7 +1168,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        LogUtils.i("inkAnnotations:" + inkAnnotations.size());
+        Debugger.i("inkAnnotations:" + inkAnnotations.size());
         //退出批注画板时，如果批注过则inkAnnotations就不为空
         if (!inkAnnotations.isEmpty()) {
             PageView pageView = (PageView) mDocView.getDisplayedView();
@@ -1191,18 +1192,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         try {
             mainHandler.post(() -> {
                 Context applicationContext = getApplicationContext();
-                LogUtils.e("当前正在签名中 applicationContext=" + applicationContext);
+                Debugger.e("当前正在签名中 applicationContext=" + applicationContext);
                 Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show();
             });
         } catch (Exception e) {
-            LogUtils.e(TAG, e);
+            Debugger.e(TAG, e);
             e.printStackTrace();
         }
     }
 
     private void showButtons() {
         if (isSigning) {
-            LogUtils.e("当前正在签名中");
+            Debugger.e("当前正在签名中");
             return;
         }
         if (core == null)
@@ -1299,7 +1300,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
 
                 public void onAnimationEnd(Animation animation) {
                     if (afterAnnotationRefresh) {
-                        LogUtils.e("批注期间有收到别人的共享批注，现在进行刷新");
+                        Debugger.e("批注期间有收到别人的共享批注，现在进行刷新");
                         afterAnnotationRefresh = false;
                         mDocView.afterAnnotation();
                         //mDocView.setDisplayedViewIndex(mDocView.mCurrent);
@@ -1364,7 +1365,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     }
 
     private void makeButtonsView() {
-        int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hengxun : R.layout.mupdf_document_activitybackup;
+        int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hengxun : R.layout.mupdf_document_activity_default;
         mButtonsView = getLayoutInflater().inflate(layoutResId, null);
         rootView = (RelativeLayout) mButtonsView.findViewById(R.id.rootView);
         mTvMark = (TextView) mButtonsView.findViewById(R.id.tv_mark);
@@ -1483,7 +1484,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     }
 
     private void exit() {
-        LogUtils.i(TAG, "---exit---");
+        Debugger.i(TAG, "---exit---");
         if (saveWhenExit && hadAnnotation) {
             ProgressDialog progressDialog = new ProgressDialog(this);
             progressDialog.setMessage("请稍后...");
@@ -1493,15 +1494,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 try {
                     long l = System.currentTimeMillis();
                     String savePath = core.save(srcFilePath, getExternalFilesDir("PDF文件批注").getAbsolutePath());
-                    LogUtils.i(TAG, "保存用时：" + (System.currentTimeMillis() - l) + ",savePath=" + savePath);
+                    Debugger.i(TAG, "保存用时：" + (System.currentTimeMillis() - l) + ",savePath=" + savePath);
                     EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_upload).objects(savePath, uploadDirId).build());
                     mainHandler.postDelayed(() -> {
-                        LogUtils.i(TAG, "hideLoading ---progressDialog---");
+                        Debugger.i(TAG, "hideLoading ---progressDialog---");
                         progressDialog.dismiss();
                         MuPdfDocumentActivity.this.finish();
                     }, 2000);
                 } catch (Exception e) {
-                    LogUtils.e(TAG, e.toString());
+                    Debugger.e(TAG, e.toString());
                     e.printStackTrace();
                 }
             }).start();
@@ -1511,7 +1512,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     }
 
     public void onDestroy() {
-        LogUtils.i(TAG, "---onDestroy---start");
+        Debugger.i(TAG, "---onDestroy---start");
         if (MupdfMacro.isSharing) {
             EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_exit_annotation).objects(mediaId).build());
         }
@@ -1527,13 +1528,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             mDocView.applyToChildren(new ReaderView.ViewMapper() {
                 @Override
                 public void applyToView(View view) {
-                    LogUtils.i(TAG, "---onDestroy---PageView");
+                    Debugger.i(TAG, "---onDestroy---PageView");
                     ((PageView) view).releaseBitmaps();
                 }
             });
         }
         if (core != null) {
-            LogUtils.i(TAG, "---onDestroy---MuPDFCore");
+            Debugger.i(TAG, "---onDestroy---MuPDFCore");
             core.onDestroy();
         }
         core = null;
@@ -1542,11 +1543,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 File file = new File(srcFilePath);
                 if (file.exists()) {
                     boolean delete = file.delete();
-                    LogUtils.i("退出pdf预览时删除源文件：" + delete);
+                    Debugger.i("退出pdf预览时删除源文件：" + delete);
                 }
             }
         }
-        LogUtils.i(TAG, "---onDestroy---end");
+        Debugger.i(TAG, "---onDestroy---end");
         super.onDestroy();
     }
 
