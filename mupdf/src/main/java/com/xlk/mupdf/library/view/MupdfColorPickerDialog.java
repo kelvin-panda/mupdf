@@ -21,12 +21,12 @@ import com.xlk.mupdf.library.R;
  * date : 2022/7/4 10:40
  * description :
  */
-public class ColorPickerDialog extends Dialog {
-    private static final String TAG = "ColorPickerDialog";
-    private ColorPickerView.OnColorSubmitListener mListener;
+public class MupdfColorPickerDialog extends Dialog {
+    private static final String TAG = "MupdfColorPickerDialog";
+    private MupdfColorPickerView.OnColorSubmitListener mListener;
     private final int defaultColor;
 
-    public ColorPickerDialog(@NonNull Context context, ColorPickerView.OnColorSubmitListener listener, int color) {
+    public MupdfColorPickerDialog(@NonNull Context context, MupdfColorPickerView.OnColorSubmitListener listener, int color) {
         super(context);
         mListener = listener;
         defaultColor = color;
@@ -36,8 +36,8 @@ public class ColorPickerDialog extends Dialog {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "onCreate: ");
-        setContentView(R.layout.color_picker_layout);
-        ColorPickerView colorPickerView = findViewById(R.id.colorPickerView);
+        setContentView(R.layout.mupdf_color_picker_layout);
+        MupdfColorPickerView colorPickerView = findViewById(R.id.colorPickerView);
         EditText edtR = findViewById(R.id.edtR);
         EditText edtG = findViewById(R.id.edtG);
         EditText edtB = findViewById(R.id.edtB);
@@ -46,7 +46,7 @@ public class ColorPickerDialog extends Dialog {
 
         edtHex.setKeyListener(null);
 
-        colorPickerView.setColorChangedListener(new ColorPickerView.OnColorChangedListener() {
+        colorPickerView.setColorChangedListener(new MupdfColorPickerView.OnColorChangedListener() {
             @Override
             public void colorChanged(int color) {
                 int red = Color.red(color);

@@ -8,7 +8,7 @@
     android:orientation="horizontal"
     android:padding="5dp">
 
-    <com.xlk.mupdf.library.view.ColorPickerView
+    <com.xlk.mupdf.library.view.MupdfColorPickerView
         android:id="@+id/colorPickerView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content" />

@@ -1,7 +1,6 @@
 package com.xlk.mupdf.library.view;
 
 import android.content.Context;
-import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -22,8 +21,8 @@ import androidx.annotation.Nullable;
  * @author : Administrator
  * created on 2025/7/16 16:11
  */
-public class ColorPickerView extends View {
-    private static final String TAG = "ColorPickerView";
+public class MupdfColorPickerView extends View {
+    private static final String TAG = "MupdfColorPickerView";
     private Paint defaultPaint;
     private Paint mGradientPaint;
     private Paint mLinearPaint;
@@ -57,16 +56,16 @@ public class ColorPickerView extends View {
     private float CENTER_RADIUS = 32f * magnification;
     private int defaultColor = Color.BLACK;
 
-    public ColorPickerView(Context context) {
+    public MupdfColorPickerView(Context context) {
         this(context, null);
     }
 
-    public ColorPickerView(Context context, @Nullable AttributeSet attrs) {
+    public MupdfColorPickerView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
         initial(defaultColor);
     }
 
-    public ColorPickerView(Context context, OnColorSubmitListener listener, int color) {
+    public MupdfColorPickerView(Context context, OnColorSubmitListener listener, int color) {
         super(context);
         mSubmitListener = listener;
         initial(color);

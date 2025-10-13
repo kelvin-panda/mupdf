@@ -65,8 +65,8 @@ import com.xlk.mupdf.library.bus.MupdfBusType;
 import com.xlk.mupdf.library.bus.MupdfEventMessage;
 import com.xlk.mupdf.library.bus.MupdfInkBean;
 import com.xlk.mupdf.library.view.ArtBoardDialog;
-import com.xlk.mupdf.library.view.ColorPickerDialog;
-import com.xlk.mupdf.library.view.ColorPickerView;
+import com.xlk.mupdf.library.view.MupdfColorPickerDialog;
+import com.xlk.mupdf.library.view.MupdfColorPickerView;
 import com.xlk.mupdf.library.view.ScalableView;
 import com.xlk.mupdf.library.view.SignatureBoard;
 
@@ -729,7 +729,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         });
         //颜色
         colorButton.setOnClickListener(v -> {
-            new ColorPickerDialog(this, new ColorPickerView.OnColorSubmitListener() {
+            new MupdfColorPickerDialog(this, new MupdfColorPickerView.OnColorSubmitListener() {
                 @Override
                 public void submitColor(int color) {
                     artBoard.setPaintColor(color);
