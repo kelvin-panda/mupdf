@@ -2,7 +2,8 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
-
+- 6.0.5
+  - 添加参数`MupdfConfig.annotationSaveDirPath`，定义批注后保存的目录路径
 - 6.0.4
   - 颜色选择器进行修改，保证独立，避免引用方布局文件与库中布局文件同名
 - 6.0.3

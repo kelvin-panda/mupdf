@@ -10,6 +10,7 @@ import android.graphics.Color;
  */
 public class MupdfConfig {
     private final String filePath;
+    private final String annotationSaveDirPath;
     private final String fileUri;
     private final int mediaId;
     private final boolean watermarkEnable;
@@ -23,6 +24,7 @@ public class MupdfConfig {
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
+        this.annotationSaveDirPath = builder.annotationSaveDirPath;
         this.fileUri = builder.fileUri;
         this.mediaId = builder.mediaId;
         this.watermarkEnable = builder.watermarkEnable;
@@ -37,6 +39,10 @@ public class MupdfConfig {
 
     public String getFilePath() {
         return filePath;
+    }
+
+    public String getAnnotationSaveDirPath() {
+        return annotationSaveDirPath;
     }
 
     public String getFileUri() {
@@ -97,6 +103,7 @@ public class MupdfConfig {
 
     public static class Builder {
         private String filePath = "";
+        private String annotationSaveDirPath = "";
         private String fileUri = "";
         private int mediaId = 0;
         private boolean watermarkEnable = false;
@@ -110,6 +117,11 @@ public class MupdfConfig {
 
         public Builder filePath(String filePath) {
             this.filePath = filePath;
+            return this;
+        }
+
+        public Builder annotationSaveDirPath(String annotationSaveDirPath) {
+            this.annotationSaveDirPath = annotationSaveDirPath;
             return this;
         }
 

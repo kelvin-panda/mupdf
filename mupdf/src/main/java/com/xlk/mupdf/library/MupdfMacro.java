@@ -31,6 +31,7 @@ public class MupdfMacro {
      * 文件路径
      */
     public static final String bundle_key_file_path = "filePath";
+    public static final String bundle_key_annotation_save_path = "savePath";
     public static final String bundle_key_file_uri = "uri";
     public static final String bundle_key_file_mediaId = "mediaId";
     /**

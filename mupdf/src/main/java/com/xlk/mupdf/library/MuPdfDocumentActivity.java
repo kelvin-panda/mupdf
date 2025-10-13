@@ -94,7 +94,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private ImageButton outlineButton, annotationButton, refreshButton,
             revokeButton, deleteButton, colorButton, penButton, inkSizeButton, deleteLineButton,
             lineButton, inviteButton, highlightButton, outOpen, uploadButton, exitMupdfButton, screenshotButton, signatureButton, doneButton, exitButton;
-    private String srcFilePath, srcUri, mWatermark;
+    private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
     private boolean uploadEnable, mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
@@ -174,6 +174,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     public static void jump(Context context, MupdfConfig config) {
         Bundle bundle = new Bundle();
         bundle.putString(MupdfMacro.bundle_key_file_path, config.getFilePath());
+        bundle.putString(MupdfMacro.bundle_key_annotation_save_path, config.getAnnotationSaveDirPath());
         bundle.putString(MupdfMacro.bundle_key_file_uri, config.getFileUri());
         bundle.putInt(MupdfMacro.bundle_key_file_mediaId, config.getMediaId());
         bundle.putBoolean(MupdfMacro.bundle_key_watermark_enable, config.isWatermarkEnable());
@@ -230,6 +231,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 if (bundle != null) {
                     String mimetype = getIntent().getType();
                     srcFilePath = bundle.getString(MupdfMacro.bundle_key_file_path, "");
+                    annotationSavePath = bundle.getString(MupdfMacro.bundle_key_annotation_save_path, "");
                     srcUri = bundle.getString(MupdfMacro.bundle_key_file_uri, "");
                     mediaId = bundle.getInt(MupdfMacro.bundle_key_file_mediaId, 0);
                     uploadEnable = bundle.getBoolean(MupdfMacro.bundle_key_upload_enable, true);
@@ -1493,7 +1495,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             new Thread(() -> {
                 try {
                     long l = System.currentTimeMillis();
-                    String savePath = core.save(srcFilePath, getExternalFilesDir("PDF文件批注").getAbsolutePath());
+                    String savePath = core.save(srcFilePath, (annotationSavePath.isEmpty())
+                            ? getExternalFilesDir("annotation").getAbsolutePath()
+                            : annotationSavePath);
                     Debugger.i(TAG, "保存用时：" + (System.currentTimeMillis() - l) + ",savePath=" + savePath);
                     EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_upload).objects(savePath, uploadDirId).build());
                     mainHandler.postDelayed(() -> {
