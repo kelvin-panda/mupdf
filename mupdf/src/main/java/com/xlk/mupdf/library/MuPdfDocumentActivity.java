@@ -97,7 +97,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
-    private boolean uploadEnable, mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
+    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable,
+            mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
     private AnnotationArtBoard artBoard;
     private SeekBar inkSizeSeekBar;
     private RelativeLayout mRootLayout;
@@ -181,6 +182,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         bundle.putString(MupdfMacro.bundle_key_watermark_content, config.getWatermarkContent());
         bundle.putInt(MupdfMacro.bundle_key_watermark_color, config.getWatermarkColor());
         bundle.putBoolean(MupdfMacro.bundle_key_upload_enable, config.isUploadEnable());
+        bundle.putBoolean(MupdfMacro.bundle_key_annotation_enable, config.isAnnotationEnable());
+        bundle.putBoolean(MupdfMacro.bundle_key_signature_enable, config.isSignatureEnable());
+        bundle.putBoolean(MupdfMacro.bundle_key_capture_enable, config.isCaptureEnable());
         bundle.putInt(MupdfMacro.bundle_key_upload_dirId, config.getUploadDirId());
         bundle.putBoolean(MupdfMacro.bundle_key_delete_file, config.isDeleteSourceFile());
         bundle.putBoolean(MupdfMacro.bundle_key_only_preview, config.isOnlyPreview());
@@ -235,6 +239,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     srcUri = bundle.getString(MupdfMacro.bundle_key_file_uri, "");
                     mediaId = bundle.getInt(MupdfMacro.bundle_key_file_mediaId, 0);
                     uploadEnable = bundle.getBoolean(MupdfMacro.bundle_key_upload_enable, true);
+                    annotationEnable = bundle.getBoolean(MupdfMacro.bundle_key_annotation_enable, true);
+                    signatureEnable = bundle.getBoolean(MupdfMacro.bundle_key_signature_enable, true);
+                    captureEnable = bundle.getBoolean(MupdfMacro.bundle_key_capture_enable, true);
                     deleteFileWhenExit = bundle.getBoolean(MupdfMacro.bundle_key_delete_file, true);
                     isOnlyPreview = bundle.getBoolean(MupdfMacro.bundle_key_only_preview, false);
                     uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, 2);
@@ -476,6 +483,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 }
             }).show();
         });
+        signatureButton.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
         //提交签名
         tv_submit_signature.setOnClickListener(v -> {
             List<SignatureBoard.DrawPath> drawPaths = mScalableView.getDrawPaths();
@@ -538,6 +546,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             alert.setOnCancelListener(dialog -> dialog.dismiss());
             alert.show();
         });
+        outOpen.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
         //截图批注
         screenshotButton.setOnClickListener(v -> {
             hideButtons();
@@ -545,6 +554,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_screenshot).objects(mDocTitle, 0).build());
             }, 250);
         });
+        screenshotButton.setVisibility(captureEnable ? View.VISIBLE : View.GONE);
         //界面跳转
         mPageNumberView.setOnClickListener(v -> {
             AlertDialog alert = mAlertBuilder.create();
@@ -698,6 +708,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             pageView.addView(artBoard);
             artBoard.layout(0, 0, width, height);
         });
+        annotationButton.setVisibility(annotationEnable ? View.VISIBLE : View.GONE);
+
         ibs.add(deleteButton);//删除
         ibs.add(penButton);//墨迹
         ibs.add(lineButton);//直线
@@ -883,6 +895,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             mDocView.requestLayout();
             mDocView.run();
         }, 500L);
+
+
         Debugger.i(TAG, "MuPdfDocumentActivity.createUI: end");
     }
 

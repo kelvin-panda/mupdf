@@ -2,6 +2,8 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.6
+  - `MupdfConfig`添加功能开关相关参数:`annotationEnable`,`signatureEnable`,`captureEnable`
 - 6.0.5
   - 添加参数`MupdfConfig.annotationSaveDirPath`，定义批注后保存的目录路径
 - 6.0.4

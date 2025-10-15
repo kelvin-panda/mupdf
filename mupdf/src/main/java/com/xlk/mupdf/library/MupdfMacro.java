@@ -51,6 +51,18 @@ public class MupdfMacro {
      */
     public static final String bundle_key_upload_enable = "upload_enable";
     /**
+     * 批注功能开关
+     */
+    public static final String bundle_key_annotation_enable = "annotation_enable";
+    /**
+     * 签名功能开关
+     */
+    public static final String bundle_key_signature_enable = "signature_enable";
+    /**
+     * 截图功能开关
+     */
+    public static final String bundle_key_capture_enable = "capture_enable";
+    /**
      * 批注后上传的目录id
      */
     public static final String bundle_key_upload_dirId = "upload_dirId";

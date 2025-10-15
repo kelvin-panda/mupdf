@@ -18,6 +18,9 @@ public class MupdfConfig {
     private final int watermarkColor;
     private final boolean deleteSourceFile;
     private final boolean uploadEnable;
+    private final boolean annotationEnable;
+    private final boolean signatureEnable;
+    private final boolean captureEnable;
     private final int uploadDirId;
     private final boolean onlyPreview;
     private final int pageIndex;
@@ -32,6 +35,9 @@ public class MupdfConfig {
         this.watermarkColor = builder.watermarkColor;
         this.deleteSourceFile = builder.deleteSourceFile;
         this.uploadEnable = builder.uploadEnable;
+        this.annotationEnable = builder.annotationEnable;
+        this.signatureEnable = builder.signatureEnable;
+        this.captureEnable = builder.captureEnable;
         this.uploadDirId = builder.uploadDirId;
         this.onlyPreview = builder.onlyPreview;
         this.pageIndex = builder.pageIndex;
@@ -73,6 +79,18 @@ public class MupdfConfig {
         return uploadEnable;
     }
 
+    public boolean isAnnotationEnable() {
+        return annotationEnable;
+    }
+
+    public boolean isSignatureEnable() {
+        return signatureEnable;
+    }
+
+    public boolean isCaptureEnable() {
+        return captureEnable;
+    }
+
     public int getUploadDirId() {
         return uploadDirId;
     }
@@ -95,6 +113,9 @@ public class MupdfConfig {
                 ", watermarkContent='" + watermarkContent + '\'' +
                 ", deleteSourceFile=" + deleteSourceFile +
                 ", uploadEnable=" + uploadEnable +
+                ", annotationEnable=" + annotationEnable +
+                ", signatureEnable=" + signatureEnable +
+                ", captureEnable=" + captureEnable +
                 ", uploadDirId=" + uploadDirId +
                 ", onlyPreview=" + onlyPreview +
                 ", pageIndex=" + pageIndex +
@@ -111,6 +132,9 @@ public class MupdfConfig {
         private int watermarkColor = Color.parseColor("#66000000");
         private boolean deleteSourceFile = false;
         private boolean uploadEnable = true;
+        private boolean annotationEnable = true;
+        private boolean signatureEnable = true;
+        private boolean captureEnable = true;
         private int uploadDirId = 2;
         private boolean onlyPreview = false;
         private int pageIndex = 0;
@@ -157,6 +181,21 @@ public class MupdfConfig {
 
         public Builder uploadEnable(boolean uploadEnable) {
             this.uploadEnable = uploadEnable;
+            return this;
+        }
+
+        public Builder annotationEnable(boolean annotationEnable) {
+            this.annotationEnable = annotationEnable;
+            return this;
+        }
+
+        public Builder signatureEnable(boolean signatureEnable) {
+            this.signatureEnable = signatureEnable;
+            return this;
+        }
+
+        public Builder captureEnable(boolean captureEnable) {
+            this.captureEnable = captureEnable;
             return this;
         }
 
