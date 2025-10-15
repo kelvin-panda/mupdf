@@ -44,6 +44,10 @@ public class MainActivity extends AppCompatActivity {
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
                 .fileUri(uri.toString())
                 .watermarkEnable(true)
+                .uploadEnable(false)
+                .signatureEnable(false)
+                .wpsOpenEnable(false)
+                .captureEnable(false)
                 .watermarkContent("保密文件限制外露")
                 .watermarkColor(Color.parseColor("#66FFAB00"))
                 .build();

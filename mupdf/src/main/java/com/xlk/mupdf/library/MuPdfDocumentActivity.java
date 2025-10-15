@@ -97,7 +97,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
-    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable,
+    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,
             mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
     private AnnotationArtBoard artBoard;
     private SeekBar inkSizeSeekBar;
@@ -185,6 +185,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         bundle.putBoolean(MupdfMacro.bundle_key_annotation_enable, config.isAnnotationEnable());
         bundle.putBoolean(MupdfMacro.bundle_key_signature_enable, config.isSignatureEnable());
         bundle.putBoolean(MupdfMacro.bundle_key_capture_enable, config.isCaptureEnable());
+        bundle.putBoolean(MupdfMacro.bundle_key_wps_open_enable, config.isWpsOpenEnable());
         bundle.putInt(MupdfMacro.bundle_key_upload_dirId, config.getUploadDirId());
         bundle.putBoolean(MupdfMacro.bundle_key_delete_file, config.isDeleteSourceFile());
         bundle.putBoolean(MupdfMacro.bundle_key_only_preview, config.isOnlyPreview());
@@ -242,6 +243,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     annotationEnable = bundle.getBoolean(MupdfMacro.bundle_key_annotation_enable, true);
                     signatureEnable = bundle.getBoolean(MupdfMacro.bundle_key_signature_enable, true);
                     captureEnable = bundle.getBoolean(MupdfMacro.bundle_key_capture_enable, true);
+                    wpsOpenEnable = bundle.getBoolean(MupdfMacro.bundle_key_wps_open_enable, true);
                     deleteFileWhenExit = bundle.getBoolean(MupdfMacro.bundle_key_delete_file, true);
                     isOnlyPreview = bundle.getBoolean(MupdfMacro.bundle_key_only_preview, false);
                     uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, 2);
@@ -440,6 +442,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             saveWhenExit = !saveWhenExit;
             toast(saveWhenExit ? "将在退出时上传到批注目录" : "已取消退出时上传到批注目录");
         });
+        uploadButton.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
 
         //<editor-fold desc="签名操作">
         //签名
@@ -546,7 +549,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             alert.setOnCancelListener(dialog -> dialog.dismiss());
             alert.show();
         });
-        outOpen.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
+        outOpen.setVisibility(wpsOpenEnable ? View.VISIBLE : View.GONE);
         //截图批注
         screenshotButton.setOnClickListener(v -> {
             hideButtons();

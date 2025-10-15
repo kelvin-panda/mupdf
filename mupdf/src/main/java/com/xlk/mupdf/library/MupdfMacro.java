@@ -62,6 +62,7 @@ public class MupdfMacro {
      * 截图功能开关
      */
     public static final String bundle_key_capture_enable = "capture_enable";
+    public static final String bundle_key_wps_open_enable = "wps_open_enable";
     /**
      * 批注后上传的目录id
      */

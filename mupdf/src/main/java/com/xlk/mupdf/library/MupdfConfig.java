@@ -21,6 +21,7 @@ public class MupdfConfig {
     private final boolean annotationEnable;
     private final boolean signatureEnable;
     private final boolean captureEnable;
+    private final boolean wpsOpenEnable;
     private final int uploadDirId;
     private final boolean onlyPreview;
     private final int pageIndex;
@@ -38,6 +39,7 @@ public class MupdfConfig {
         this.annotationEnable = builder.annotationEnable;
         this.signatureEnable = builder.signatureEnable;
         this.captureEnable = builder.captureEnable;
+        this.wpsOpenEnable = builder.wpsOpenEnable;
         this.uploadDirId = builder.uploadDirId;
         this.onlyPreview = builder.onlyPreview;
         this.pageIndex = builder.pageIndex;
@@ -91,6 +93,11 @@ public class MupdfConfig {
         return captureEnable;
     }
 
+
+    public boolean isWpsOpenEnable() {
+        return wpsOpenEnable;
+    }
+
     public int getUploadDirId() {
         return uploadDirId;
     }
@@ -116,6 +123,7 @@ public class MupdfConfig {
                 ", annotationEnable=" + annotationEnable +
                 ", signatureEnable=" + signatureEnable +
                 ", captureEnable=" + captureEnable +
+                ", wpsOpenEnable=" + wpsOpenEnable +
                 ", uploadDirId=" + uploadDirId +
                 ", onlyPreview=" + onlyPreview +
                 ", pageIndex=" + pageIndex +
@@ -135,6 +143,7 @@ public class MupdfConfig {
         private boolean annotationEnable = true;
         private boolean signatureEnable = true;
         private boolean captureEnable = true;
+        private boolean wpsOpenEnable = true;
         private int uploadDirId = 2;
         private boolean onlyPreview = false;
         private int pageIndex = 0;
@@ -196,6 +205,11 @@ public class MupdfConfig {
 
         public Builder captureEnable(boolean captureEnable) {
             this.captureEnable = captureEnable;
+            return this;
+        }
+
+        public Builder wpsOpenEnable(boolean wpsOpenEnable) {
+            this.wpsOpenEnable = wpsOpenEnable;
             return this;
         }
 
