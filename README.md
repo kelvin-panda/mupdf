@@ -2,6 +2,9 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.8
+  - 批注后的文件名只添加年月日的标识，去掉后面的时分秒
+  - 添加文件名递增相关方法
 - 6.0.7
   - `MupdfConfig`添加功能开关相关参数:`wpsOpenEnable`
 - 6.0.6

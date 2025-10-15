@@ -43,9 +43,9 @@ public class MainActivity extends AppCompatActivity {
     private void openMupdf(Uri uri) {
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
                 .fileUri(uri.toString())
-                .watermarkEnable(true)
+                .watermarkEnable(false)
                 .uploadEnable(false)
-                .signatureEnable(false)
+                .signatureEnable(true)
                 .wpsOpenEnable(false)
                 .captureEnable(false)
                 .watermarkContent("保密文件限制外露")

@@ -596,16 +596,11 @@ public class MuPDFCore {
         }
     }
 
-    private String nowDate() {
-        Date date = new Date(System.currentTimeMillis());
-        SimpleDateFormat format = new SimpleDateFormat("yyyy年MM月dd日HH时mm分ss秒");
-        return format.format(date);
-    }
-
     public String save(String srcPath, String saveDirPath) throws Exception {
 //        PDFDocument pdfDocument = new PDFDocument(doc.pointer);
         String fileNameNoExtension = Util.getFileNameNoExtension(srcPath);
-        String destPath = saveDirPath + File.separator + fileNameNoExtension + "-" + nowDate() + "-批注.pdf";
+        String destPath = saveDirPath + File.separator + fileNameNoExtension + "-" + Util.nowDate() + "-批注.pdf";
+        destPath = Util.getUniqueFilePath(destPath);
         boolean copy = Util.copyFile(new File(srcPath), new File(destPath), new Util.OnReplaceListener() {
             @Override
             public boolean onReplace(File srcFile, File destFile) {

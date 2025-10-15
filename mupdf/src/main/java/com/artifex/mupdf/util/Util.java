@@ -33,6 +33,47 @@ import java.util.Date;
  */
 public class Util {
 
+    public static String nowDate() {
+        Date date = new Date(System.currentTimeMillis());
+        SimpleDateFormat format = new SimpleDateFormat("yyyy年MM月dd日");
+        return format.format(date);
+    }
+
+    /**
+     * 根据传入的完整路径，若存在同名文件，则自动在文件名后添加 (1)、(2)... 避免重名。
+     *
+     * @param filePath 文件完整路径（例如 /storage/emulated/0/Download/test.txt）
+     * @return 不重复的文件路径
+     */
+    public static String getUniqueFilePath(String filePath) {
+        File file = new File(filePath);
+        if (!file.exists()) {
+            return filePath;
+        }
+        String parent = file.getParent();
+        String fileName = file.getName();
+        // 分离文件名和扩展名
+        int dotIndex = fileName.lastIndexOf(".");
+        String nameWithoutExt;//纯名称
+        String ext;//后缀
+        if (dotIndex != -1) {
+            nameWithoutExt = fileName.substring(0, dotIndex);
+            ext = fileName.substring(dotIndex); // 含“.”
+        } else {
+            nameWithoutExt = fileName;
+            ext = "";
+        }
+        File newFile = file;
+        int index = 1;
+        // 若文件存在，则递增数字直到不存在
+        while (newFile.exists()) {
+            String newName = String.format("%s(%d)%s", nameWithoutExt, index, ext);
+            newFile = new File(parent, newName);
+            index++;
+        }
+        return newFile.getAbsolutePath();
+    }
+
     public static Bitmap view2Bitmap(final View view) {
         if (view == null) return null;
         boolean drawingCacheEnabled = view.isDrawingCacheEnabled();
@@ -74,9 +115,10 @@ public class Util {
         return Uri.fromFile(new File(filePath));
     }
 
-    public static String uri2path(Context context,Uri uri){
+    public static String uri2path(Context context, Uri uri) {
         return null;
     }
+
     public static String getFilePathFromUri(Context context, Uri uri) {
         String filePath = "";
         // 判断Content URI是否为文件类型
@@ -320,12 +362,6 @@ public class Util {
             Debugger.e(e);
 //            ToastUtils.showShort(R.string.no_application_can_open);
         }
-    }
-
-    public static String nowDate() {
-        Date date = new Date(System.currentTimeMillis());
-        SimpleDateFormat format = new SimpleDateFormat("yyyy年MM月dd日HH时mm分ss秒");
-        return format.format(date);
     }
 
     public interface OnReplaceListener {
