@@ -30,14 +30,16 @@ android {
     //解决API 28只创建arm64目录，导致找不到库的问题
     splits {
         abi {
-            enable true
-            reset()
-            include 'armeabi-v7a'
-            universalApk false
+            enable true // 启用ABI拆分
+            reset() // 重置ABI列表
+            include 'armeabi-v7a', 'arm64-v8a' // 指定要拆分的架构
+            universalApk false // 是否生成通用APK（包含所有架构）
         }
     }
+
     packagingOptions {
         resources.pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
+        resources.pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
     }
 }
 

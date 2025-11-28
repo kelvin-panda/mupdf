@@ -12,11 +12,19 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
-        ndk {
-            // 设置支持的SO库
-            abiFilters.add("armeabi-v7a")
-        }
+//        ndk {
+//            // 设置支持的SO库
+//            abiFilters 'armeabi-v7a','arm64-v8a'
+//        }
     }
+
+//    sourceSets {
+//        main {
+//            // mac 电脑上：nativeLibs  windows电脑上：jniLibs
+//            jniLibs.srcDirs = ['src/main/jniLibs']     //设置目标的so存放路径
+//            jni.srcDirs = [] //禁用自动调用ndk-build
+//        }
+//    }
 
     buildTypes {
         release {
@@ -48,7 +56,7 @@ publishing {
         release(MavenPublication) {
             groupId = 'com.gitee.xlk_gitee'
             artifactId = 'mupdf-library'
-            version = '6.0.8'
+            version = '6.0.9'
 
             afterEvaluate {
                 from components.release

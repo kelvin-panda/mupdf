@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -237,6 +238,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     String mimetype = getIntent().getType();
                     srcFilePath = bundle.getString(MupdfMacro.bundle_key_file_path, "");
                     annotationSavePath = bundle.getString(MupdfMacro.bundle_key_annotation_save_path, "");
+                    if (annotationSavePath.isEmpty()) {
+                        annotationSavePath = getExternalFilesDir("annotation").getAbsolutePath();
+                    }
                     srcUri = bundle.getString(MupdfMacro.bundle_key_file_uri, "");
                     mediaId = bundle.getInt(MupdfMacro.bundle_key_file_mediaId, 0);
                     uploadEnable = bundle.getBoolean(MupdfMacro.bundle_key_upload_enable, true);
@@ -440,7 +444,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //退出文档批注上传开关
         uploadButton.setOnClickListener(v -> {
             saveWhenExit = !saveWhenExit;
-            toast(saveWhenExit ? "将在退出时上传到批注目录" : "已取消退出时上传到批注目录");
+            toast(saveWhenExit ? "将在退出时保存到批注目录" : "已取消退出时保存到批注目录");
         });
         uploadButton.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
 
@@ -1477,21 +1481,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onStart() {
-        super.onStart();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-    }
-
-    @Override
     public void onBackPressed() {
-        if (saveWhenExit && hadAnnotation) {
-            exit();
+        if (hadAnnotation) {
+            tipSavePop();
         } else {
-            super.onBackPressed();
+            finish();
         }
 //        if (mDocView == null || (mDocView != null && !mDocView.popHistory())) {
 //            super.onBackPressed();
@@ -1505,31 +1499,54 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private void exit() {
         Debugger.i(TAG, "---exit---");
         if (saveWhenExit && hadAnnotation) {
-            ProgressDialog progressDialog = new ProgressDialog(this);
-            progressDialog.setMessage("请稍后...");
-            progressDialog.setCancelable(false);
-            progressDialog.show();
-            new Thread(() -> {
-                try {
-                    long l = System.currentTimeMillis();
-                    String savePath = core.save(srcFilePath, (annotationSavePath.isEmpty())
-                            ? getExternalFilesDir("annotation").getAbsolutePath()
-                            : annotationSavePath);
-                    Debugger.i(TAG, "保存用时：" + (System.currentTimeMillis() - l) + ",savePath=" + savePath);
-                    EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_upload).objects(savePath, uploadDirId).build());
-                    mainHandler.postDelayed(() -> {
-                        Debugger.i(TAG, "hideLoading ---progressDialog---");
-                        progressDialog.dismiss();
-                        MuPdfDocumentActivity.this.finish();
-                    }, 2000);
-                } catch (Exception e) {
-                    Debugger.e(TAG, e.toString());
-                    e.printStackTrace();
-                }
-            }).start();
+            saveAndExit();
         } else {
             finish();
         }
+    }
+
+    private void tipSavePop() {
+        new AlertDialog.Builder(this)
+                .setTitle("文件已修改，是否保存到批注目录？")
+                .setPositiveButton("保存并退出", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.dismiss();
+                        saveAndExit();
+                    }
+                })
+                .setNegativeButton("直接退出", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.dismiss();
+                        finish();
+                    }
+                })
+                .create()
+                .show();
+    }
+
+    private void saveAndExit() {
+        ProgressDialog progressDialog = new ProgressDialog(MuPdfDocumentActivity.this);
+        progressDialog.setMessage("请稍后...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        new Thread(() -> {
+            try {
+                long l = System.currentTimeMillis();
+                String savePath = core.save(srcFilePath, annotationSavePath);
+                Debugger.i(TAG, "保存用时：" + (System.currentTimeMillis() - l) + ",savePath=" + savePath);
+                EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_upload).objects(savePath, uploadDirId).build());
+                mainHandler.postDelayed(() -> {
+                    Debugger.i(TAG, "hideLoading ---progressDialog---");
+                    progressDialog.dismiss();
+                    MuPdfDocumentActivity.this.finish();
+                }, 2000);
+            } catch (Exception e) {
+                Debugger.e(TAG, e.toString());
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     public void onDestroy() {

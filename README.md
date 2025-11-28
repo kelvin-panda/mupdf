@@ -2,6 +2,8 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.9
+  - 添加了`arm64-v8a`架构的so库
 - 6.0.8
   - 批注后的文件名只添加年月日的标识，去掉后面的时分秒
   - 添加文件名递增相关方法
@@ -47,12 +49,13 @@ android{
         abi {
             enable true
             reset()
-            include 'armeabi-v7a'
+            include 'armeabi-v7a','arm64-v8a'
             universalApk false
         }
     }
     packagingOptions {
         resources.pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
+        resources.pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
     }
 }
 ```
