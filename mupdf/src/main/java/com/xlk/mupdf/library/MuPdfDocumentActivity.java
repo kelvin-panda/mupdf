@@ -126,6 +126,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
      */
     private int uploadDirId = 2;
     private int srcPageIndex = 0;
+    private boolean isFullScreen = true;
 
     /* The core rendering instance */
     enum TopBarMode {Main, More}
@@ -191,6 +192,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         bundle.putBoolean(MupdfMacro.bundle_key_delete_file, config.isDeleteSourceFile());
         bundle.putBoolean(MupdfMacro.bundle_key_only_preview, config.isOnlyPreview());
         bundle.putInt(MupdfMacro.bundle_key_page_index, config.getPageIndex());
+        bundle.putInt(MupdfMacro.bundle_key_clarityLimitMode, config.getClarityLimitMode());
+        bundle.putBoolean(MupdfMacro.bundle_key_full_screen, config.isFullScreenEnable());
         jump(context, bundle);
     }
 
@@ -252,6 +255,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     isOnlyPreview = bundle.getBoolean(MupdfMacro.bundle_key_only_preview, false);
                     uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, 2);
                     srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
+                    MupdfMacro.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, -1);
+                    isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
                     Uri uri;
                     if (!srcFilePath.isEmpty()) {
                         uri = Uri.parse(new File(srcFilePath).toURI().toString());
@@ -278,6 +283,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                             + "\nuploadDirId=" + uploadDirId
                             + "\nwatermark=" + watermark
                             + "\nmWatermark=" + mWatermark
+                            + "\nMupdfMacro.clarityLimitMode=" + MupdfMacro.clarityLimitMode
+                            + "\nisFullScreen=" + isFullScreen
                     );
 
                     if (uri == null) {
@@ -373,14 +380,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     public void createUI(Bundle savedInstanceState) {
         if (core == null)
             return;
-        // 计算宽度占满时的缩放比例
-        PointF size = core.getPageSize(0);
-        int screenWidth = ScreenUtils.getScreenWidth(this);
-        int screenHeight = ScreenUtils.getScreenHeight(this);
-        float mSourceScale = Math.min(screenWidth / size.x, screenHeight / size.y);
-        android.graphics.Point newSize = new android.graphics.Point((int) (size.x * mSourceScale), (int) (size.y * mSourceScale));
-        float fullWidthScale = screenWidth * 1.0f / (newSize.x * 1.0f);
-        Debugger.i(TAG, "MuPdfDocumentActivity.createUI: size=" + size + ",newSize=" + newSize + ",fullWidthScale=" + fullWidthScale);
+        float fullWidthScale = 1.0f;
+        if (isFullScreen) {
+            // 计算宽度占满时的缩放比例
+            PointF size = core.getPageSize(0);
+            int screenWidth = ScreenUtils.getScreenWidth(this);
+            int screenHeight = ScreenUtils.getScreenHeight(this);
+            float mSourceScale = Math.min(screenWidth / size.x, screenHeight / size.y);
+            android.graphics.Point newSize = new android.graphics.Point((int) (size.x * mSourceScale), (int) (size.y * mSourceScale));
+            fullWidthScale = screenWidth * 1.0f / (newSize.x * 1.0f);
+            Debugger.i(TAG, "createUI: size=" + size + ",newSize=" + newSize + ",fullWidthScale=" + fullWidthScale);
+        }
         mDocView = new ReaderView(this, fullWidthScale) {
             @Override
             protected void onMoveToChild(int i) {
@@ -388,13 +398,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     return;
                 currentPageIndex = i;
                 mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", i + 1, core.countPages()));
-                Debugger.i(TAG, "MuPdfDocumentActivity.onMoveToChild: ");
+                Debugger.i(TAG, "onMoveToChild: currentPageIndex=" + currentPageIndex);
                 super.onMoveToChild(i);
             }
 
             @Override
             protected void onTapMainDocArea() {
-                Debugger.i(TAG, "MuPdfDocumentActivity.onTapMainDocArea: ");
+                Debugger.i(TAG, "onTapMainDocArea: ");
                 if (!mButtonsVisible) {
                     showButtons();
                 } else {
@@ -405,7 +415,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
 
             @Override
             protected void onDocMotion() {
-                //Debugger.i(TAG, "MuPdfDocumentActivity.onDocMotion: ");
+                Debugger.i(TAG, "onDocMotion: ");
                 hideButtons();
             }
 
@@ -424,6 +434,37 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         PageAdapter pageAdapter = new PageAdapter(this, core, fullWidthScale, "");
         mDocView.setAdapter(pageAdapter);
 
+        extracted(savedInstanceState);
+
+        // Stick the document view and the buttons overlay into a parent view
+        mRootLayout = new RelativeLayout(this);
+        mRootLayout.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        mRootLayout.setBackgroundColor(Color.DKGRAY);
+        mRootLayout.addView(mDocView);
+        mRootLayout.addView(mButtonsView);
+        if (mWatermark != null && !mWatermark.isEmpty()) {
+            mTvMark.setVisibility(View.VISIBLE);
+            mTvMark.setText(mWatermark);
+            mTvMark.setTextColor(mWatermarkColor);
+            mTvMark.invalidate();
+        } else {
+            mTvMark.setVisibility(View.GONE);
+        }
+        setContentView(mRootLayout);
+
+//        mainHandler.postDelayed(() -> {
+//            if (srcPageIndex != 0) {
+//                mDocView.setDisplayedViewIndex(srcPageIndex);
+//            }
+//            mDocView.defaultScale(fullWidthScale);
+//            mDocView.requestLayout();
+//            mDocView.run();
+//        }, 500L);
+
+        Debugger.i(TAG, "createUI: end");
+    }
+
+    private void extracted(Bundle savedInstanceState) {
         makeButtonsView();
         if (MupdfMacro.shareAnnotationEnable) {
             //有文件id才显示
@@ -546,7 +587,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 dialog.dismiss();
                 deleteFileWhenExit = false;
                 finish();
-                EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.out_open_inform).objects(srcFilePath).build());
+                EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.out_open_inform).objects(srcFilePath, srcUri).build());
             });
             alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
                     (dialog, which) -> dialog.dismiss());
@@ -878,33 +919,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         if (savedInstanceState == null || !savedInstanceState.getBoolean("ButtonsHidden", false)) {
             showButtons();
         }
-
-        // Stick the document view and the buttons overlay into a parent view
-        mRootLayout = new RelativeLayout(this);
-        mRootLayout.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mRootLayout.setBackgroundColor(Color.DKGRAY);
-        mRootLayout.addView(mDocView);
-        mRootLayout.addView(mButtonsView);
-        if (mWatermark != null && !mWatermark.isEmpty()) {
-            mTvMark.setVisibility(View.VISIBLE);
-            mTvMark.setText(mWatermark);
-            mTvMark.setTextColor(mWatermarkColor);
-            mTvMark.invalidate();
-        } else {
-            mTvMark.setVisibility(View.GONE);
-        }
-        setContentView(mRootLayout);
-        mainHandler.postDelayed(() -> {
-            if (srcPageIndex != 0) {
-                mDocView.setDisplayedViewIndex(srcPageIndex);
-            }
-            mDocView.defaultScale(fullWidthScale);
-            mDocView.requestLayout();
-            mDocView.run();
-        }, 500L);
-
-
-        Debugger.i(TAG, "MuPdfDocumentActivity.createUI: end");
     }
 
     private void registerEventBus() {
@@ -1055,7 +1069,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             deleteFileWhenExit = false;
             dialog.dismiss();
             finish();
-            EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.out_open_inform).objects(srcFilePath).build());
+            EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.out_open_inform).objects(srcFilePath, srcUri).build());
         });
         alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.exit_review), (dialog, which) -> {
             deleteFileWhenExit = true;
@@ -1191,7 +1205,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        Debugger.i("inkAnnotations:" + inkAnnotations.size());
+        Debugger.i("onResume inkAnnotations:" + inkAnnotations.size());
         //退出批注画板时，如果批注过则inkAnnotations就不为空
         if (!inkAnnotations.isEmpty()) {
             PageView pageView = (PageView) mDocView.getDisplayedView();
@@ -1384,7 +1398,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         if (core == null)
             return;
         currentPageIndex = index;
-        mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", index + 1, core.countPages()));
+        if (mPageNumberView != null)
+            mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", index + 1, core.countPages()));
     }
 
     private void makeButtonsView() {

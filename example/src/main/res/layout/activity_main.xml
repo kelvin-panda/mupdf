@@ -7,7 +7,72 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="限制清晰度（提升加载速度）"
+        app:layout_constraintBottom_toTopOf="@+id/radioGroup"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <RadioGroup
+        android:id="@+id/radioGroup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toTopOf="@+id/button"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <RadioButton
+            android:id="@+id/rb1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="不限制" />
+
+        <RadioButton
+            android:id="@+id/rb8k"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="8k" />
+
+        <RadioButton
+            android:id="@+id/rb4k"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="4k" />
+
+        <RadioButton
+            android:id="@+id/rb2k"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2k" />
+
+        <RadioButton
+            android:id="@+id/rb1080p"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1080P" />
+
+        <RadioButton
+            android:id="@+id/rb720p"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="720P" />
+    </RadioGroup>
+
+    <CheckBox
+        android:id="@+id/cb_full"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="全屏缩放"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
     <Button
+        android:id="@+id/button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:onClick="openPdfFile"

@@ -131,7 +131,7 @@ public class Document {
         int nc = countChapters();
         for (int i = 0; i < nc; ++i) {
             int np = countPages(i);
-            Debugger.i("loadPage i:" + i + ",np:" + np + ",start:" + start + ",number:" + number);
+            Debugger.i("loadPage i:" + i + ",pageCount:" + np + ",start:" + start + ",number:" + number);
             if (number < start + np) {
                 return loadPage(i, number - start);
             }

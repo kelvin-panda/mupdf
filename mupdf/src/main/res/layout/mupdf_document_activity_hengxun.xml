@@ -188,15 +188,15 @@
                 android:layout_height="@dimen/hengxun_vector_image_view_size"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
-                android:src="@drawable/vector_del_bom_line" />
-
+                android:src="@drawable/icon_mupdf_art_underline" />
+            <!--            vector_del_bom_line-->
             <ImageButton
                 android:id="@+id/highlightButton"
                 android:layout_width="@dimen/hengxun_vector_image_view_size"
                 android:layout_height="@dimen/hengxun_vector_image_view_size"
                 android:background="@drawable/button"
                 android:scaleType="fitXY"
-                android:src="@drawable/vector_highlight" />
+                android:src="@drawable/icon_mupdf_art_highlight" />
 
             <ImageButton
                 android:id="@+id/revokeButton"
@@ -310,9 +310,9 @@
         android:focusableInTouchMode="false"
         android:gravity="center"
         android:letterSpacing="1"
-        tools:text="保密文件限制外露"
         android:textColor="#66FFAB00"
         android:visibility="gone"
+        tools:text="保密文件限制外露"
         tools:visibility="visible" />
 
     <LinearLayout

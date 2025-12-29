@@ -1,7 +1,5 @@
 package com.artifex.mupdf.viewer;
 
-import static com.xlk.mupdf.library.MupdfMacro.TAG;
-
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Point;
@@ -13,8 +11,10 @@ import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 
 import com.artifex.mupdf.util.Debugger;
+import com.xlk.mupdf.library.MupdfMacro;
 
 public class PageAdapter extends BaseAdapter {
+    private static final String TAG = "PageAdapter";
     private final Context mContext;
     private String mWaterMark = "";
     private float mScale = 1.0f;
@@ -65,11 +65,9 @@ public class PageAdapter extends BaseAdapter {
     public View getView(final int position, View convertView, ViewGroup parent) {
         final PageView pageView;
         if (convertView == null) {
-            int parentWidth = parent.getWidth();
-            int parentHeight = parent.getHeight();
-            if (mSharedHqBm != null) {
-                Debugger.i(TAG, "getView: mSharedHqBm Size=" + mSharedHqBm.getWidth() + "," + mSharedHqBm.getHeight());
-            }
+            Point point = new Point(parent.getWidth(), parent.getHeight());
+            int parentWidth = point.x;
+            int parentHeight = point.y;
             if (mSharedHqBm == null || mSharedHqBm.getWidth() != parentWidth || mSharedHqBm.getHeight() != parentHeight) {
                 if (parentWidth > 0 && parentHeight > 0)
                     mSharedHqBm = Bitmap.createBitmap(parentWidth, parentHeight, Bitmap.Config.ARGB_8888);
@@ -97,7 +95,7 @@ public class PageAdapter extends BaseAdapter {
                 @Override
                 protected PointF doInBackground(Void... arg0) {
                     try {
-                        Debugger.i(TAG, "PageAdapter.doInBackground: ");
+                        Debugger.i(TAG, "getView doInBackground: ");
                         return mCore.getPageSize(position);
                     } catch (RuntimeException e) {
                         return null;
@@ -107,7 +105,7 @@ public class PageAdapter extends BaseAdapter {
                 @Override
                 protected void onPostExecute(PointF result) {
                     int page = pageView.getPage();
-                    Debugger.i(TAG, "PageAdapter.onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
+                    Debugger.i(TAG, "getView onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
                     result = new PointF(result.x * mScale, result.y * mScale);
                     super.onPostExecute(result);
                     // We now know the page size

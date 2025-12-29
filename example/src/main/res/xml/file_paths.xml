@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--    &lt;!&ndash;物理路径相当于Context.getFilesDir() + /path/&ndash;&gt;-->
+    <!--    <files-path name="name" path="path" />-->
+
+    <!--    &lt;!&ndash;物理路径相当于Context.getCacheDir() + /path/&ndash;&gt;-->
+    <!--    <cache-path name="name" path="path" />-->
+    <!--    &lt;!&ndash; 物理路径相当于Environment.getExternalStorageDirectory() + /path/&ndash;&gt;-->
+    <!--    <external-path name="name" path="path" />-->
+    <!--    &lt;!&ndash; 物理路径相当于Context.getExternalFilesDir(String) + /path/&ndash;&gt;-->
+    <!--    <external-files-path name="name" path="path" />-->
+    <!--    &lt;!&ndash; 物理路径相当于Context.getExternalCacheDir() + /path/&ndash;&gt;-->
+    <!--    <external-cache-path name="name" path="path" />-->
+
+    <root-path
+        name="root_path"
+        path="." />
+    <files-path
+        name="files_path"
+        path="." />
+    <cache-path
+        name="cache_path"
+        path="." />
+    <external-path
+        name="external_storage_path"
+        path="." />
+    <external-path
+        name="external"
+        path="." />
+    <external-files-path
+        name="external_files_path"
+        path="." />
+    <external-cache-path
+        name="external_cache_path"
+        path="." />
+    <external-media-path
+        name="external_media_path"
+        path="." />
+    <!--
+    FileProvider
+    Uri uriForFile = FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".fileProvider", file);
+    intent.setDataAndType(uriForFile, "application/vnd.android.package-archive");
+
+    root-path：表示设备的根目录，对应File DEVICE_ROOT = new File("/")目录路径："/"；
+    files-path：表示内部存储空间应用私有目录下的 files/ 目录，对应Context.getFilesDir()所获取的目录路径：/data/data/<包名>/files；
+    cache-path：表示内部存储空间应用私有目录下的 cache/ 目录，对应Context.getCacheDir()所获取的目录路径：/data/data/<包名>/cache；
+    external-path：表示外部存储空间根目录，对应Environment.getExternalStorageDirectory()所获取的目录路径：/storage/emulate/0；
+    external-files-path：表示外部存储空间应用私有目录下的 files/ 目录，对应Context.getExternalFilesDir()所获取的目录路径：/storage/emulate/0/Android/data/<包名>/files；
+    external-cache-path：表示外部存储空间应用私有目录下的 cache/ 目录，对应Context.getExternalCacheDir()所获取的目录路径：/storage/emulate/0/Android/data/<包名>/cache；
+    external-media-path：表示外部媒体区域根目录中的文件，对应Context.getExternalMediaDirs()所获取的目录路径：/storage/emulated/0/Android/media/<包名>
+    -->
+</paths>

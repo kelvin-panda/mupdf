@@ -1,7 +1,5 @@
 package com.artifex.mupdf.annotation;
 
-import static com.xlk.mupdf.library.MupdfMacro.TAG;
-
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -13,12 +11,12 @@ import android.graphics.PointF;
 import android.graphics.RectF;
 import android.os.Build;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
 import com.artifex.mupdf.fitz.PDFAnnotation;
 import com.artifex.mupdf.fitz.Point;
+import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.viewer.MuPDFCore;
 import com.artifex.mupdf.viewer.ReaderView;
 import com.xlk.mupdf.library.MupdfMacro;
@@ -32,6 +30,7 @@ import java.util.List;
  * @author Created by xlk on 2021/10/6.
  */
 public class AnnotationArtBoard extends View {
+    private static final String TAG = "AnnotationArtBoard";
     /**
      * 显示区域的宽高，是不变的
      */
@@ -704,7 +703,7 @@ public class AnnotationArtBoard extends View {
     }
 
     public void release() {
-        Log.i(TAG, "AnnotationArtBoard.release: mDrawExitListener是否为null：" + (mDrawExitListener == null));
+        Debugger.i(TAG, "release: mDrawExitListener是否为null：" + (mDrawExitListener == null));
         if (mDrawExitListener != null && !isCancelAnnotation) {
             //去掉删除状态的
             Iterator<AnnotationBean> iterator = annotationBeans.iterator();
@@ -719,7 +718,7 @@ public class AnnotationArtBoard extends View {
         if (mBitmap != null) {
             if (!mBitmap.isRecycled()) {
                 mBitmap.recycle();
-                Log.i(TAG, "AnnotationArtBoard.release:回收bitmap");
+                Debugger.i(TAG, "release:回收bitmap");
             }
         }
         if (mCanvas != null) {

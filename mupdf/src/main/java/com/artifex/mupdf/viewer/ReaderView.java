@@ -1,15 +1,5 @@
 package com.artifex.mupdf.viewer;
 
-import static com.xlk.mupdf.library.MupdfMacro.TAG;
-
-import com.artifex.mupdf.fitz.Link;
-import com.artifex.mupdf.util.Debugger;
-import com.xlk.mupdf.library.R;
-
-import java.util.LinkedList;
-import java.util.NoSuchElementException;
-import java.util.Stack;
-
 import android.content.Context;
 import android.graphics.Point;
 import android.graphics.Rect;
@@ -25,9 +15,18 @@ import android.widget.Adapter;
 import android.widget.AdapterView;
 import android.widget.Scroller;
 
+import com.artifex.mupdf.fitz.Link;
+import com.artifex.mupdf.util.Debugger;
+import com.xlk.mupdf.library.R;
+
+import java.util.LinkedList;
+import java.util.NoSuchElementException;
+import java.util.Stack;
+
 public class ReaderView
         extends AdapterView<Adapter>
         implements GestureDetector.OnGestureListener, ScaleGestureDetector.OnScaleGestureListener, Runnable {
+    private static final String TAG = "ReaderView";
     private Context mContext;
     private boolean mLinksEnabled = false;
     private boolean tapDisabled = false;
@@ -389,7 +388,7 @@ public class ReaderView
     }
 
     public void refresh() {
-        Debugger.i("---refresh---");
+        Debugger.i("ReaderView refresh");
         mResetLayout = true;
 
         mScale = mDefaultScale;
@@ -675,6 +674,7 @@ public class ReaderView
                     // If still there is no inertial scroll in operation
                     // then the layout is stable
                     // 如果仍然没有惯性滚动在运行，那么布局是稳定的。
+                    Debugger.d(TAG, "onTouchEvent 通知调用ReaderView中的run方法");
                     postSettle(v);
                 }
             }
@@ -703,27 +703,28 @@ public class ReaderView
 
         try {
             onLayout2(changed, left, top, right, bottom);
-        } catch (java.lang.OutOfMemoryError e) {
-            System.out.println("Out of memory during layout");
+        } catch (Exception e) {//java.lang.OutOfMemoryError
+            Debugger.e(TAG, e);
         }
     }
 
     private void onLayout2(boolean changed, int left, int top, int right,
                            int bottom) {
-        Debugger.i(TAG, "ReaderView.onLayout2: start");
+        Debugger.i(TAG, "onLayout2: start");
         // "Edit mode" means when the View is being displayed in the Android GUI editor. (this class is instantiated in the IDE, so we need to be a bit careful what we do).
         if (isInEditMode())
             return;
         View cv = mChildViews.get(mCurrent);
         Point cvOffset;
-        Debugger.d(TAG, "ReaderView.onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent);
-        Debugger.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
+        Debugger.d(TAG, "onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent);
+        Debugger.i(TAG, "onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         if (!mResetLayout) {
             // 如果当前充分偏离中心，则移动到下一个或上一个。
             if (cv != null) {
                 boolean move;
                 cvOffset = subScreenSizeOffset(cv);
                 // cv.getRight() may be out of date with the current scale so add left to the measured width for the correct position
+                // cv.getRight（）可能与当前比例不符，因此在正确位置的测量宽度上向左添加
                 if (HORIZONTAL_SCROLLING)
                     move = cv.getLeft() + cv.getMeasuredWidth() + cvOffset.x + GAP / 2 + mXScroll < getWidth() / 2;
                 else
@@ -733,6 +734,7 @@ public class ReaderView
                 if (move && mCurrent + 1 < mAdapter.getCount()) {
                     postUnsettle(cv);
                     // post to invoke test for end of animation where we must set hq area for the new current view
+                    // post调用动画结束测试，我们必须为新的当前视图设置hq区域
                     mStepper.prod();
 
                     onMoveOffChild(mCurrent);
@@ -791,7 +793,7 @@ public class ReaderView
             // post to ensure generation of hq area
             mStepper.prod();
         }
-        Debugger.i(TAG, "ReaderView.onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
+        Debugger.i(TAG, "onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         // Ensure current view is present
         int cvLeft, cvRight, cvTop, cvBottom;
         boolean notPresent = (mChildViews.get(mCurrent) == null);
@@ -834,7 +836,7 @@ public class ReaderView
             cvLeft += corr.x;
         }
 
-        Debugger.i(TAG, "ReaderView.onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
+        Debugger.i(TAG, "onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
         cv.layout(cvLeft, cvTop, cvRight, cvBottom);
 
         if (mCurrent > 0) {
@@ -872,8 +874,9 @@ public class ReaderView
                         cvBottom + gap + rv.getMeasuredHeight());
             }
         }
+        Debugger.i(TAG, "onLayout2: invalidate");
         invalidate();
-        Debugger.i(TAG, "ReaderView.onLayout2: end");
+        Debugger.i(TAG, "onLayout2: end");
     }
 
     @Override
@@ -969,6 +972,11 @@ public class ReaderView
     }
 
     private void postSettle(final View v) {
+        try {
+            throw new Exception("调用栈");
+        } catch (Exception e) {
+            Debugger.e(TAG, e);
+        }
         // onSettle and onUnsettle are posted so that the calls won't be executed until after the system has performed layout.
         post(new Runnable() {
             public void run() {

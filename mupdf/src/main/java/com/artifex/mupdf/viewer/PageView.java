@@ -1,7 +1,5 @@
 package com.artifex.mupdf.viewer;
 
-import static com.xlk.mupdf.library.MupdfMacro.TAG;
-
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
@@ -20,7 +18,6 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.text.TextPaint;
-import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -30,6 +27,7 @@ import com.artifex.mupdf.fitz.Cookie;
 import com.artifex.mupdf.fitz.Link;
 import com.artifex.mupdf.fitz.Quad;
 import com.artifex.mupdf.util.Debugger;
+import com.xlk.mupdf.library.MupdfMacro;
 import com.xlk.mupdf.library.R;
 
 /**
@@ -77,7 +75,7 @@ class OpaqueImageView extends ImageView {
 }
 
 public class PageView extends ViewGroup {
-    private final String APP = "MuPDF";
+    private static final String TAG = "PageView";
     private final MuPDFCore mCore;
 
     private static final int HIGHLIGHT_COLOR = 0x80cc6600;
@@ -90,8 +88,17 @@ public class PageView extends ViewGroup {
     private final String mWaterMark;
 
     protected int mPageNumber;
+    /**
+     * 设备宽高
+     */
     private Point mParentSize;
-    protected Point mSize;   // 最小缩放时的页面大小
+    /**
+     * 最小缩放时的页面大小
+     */
+    protected Point mSize;
+    /**
+     * 计算适合屏幕限制的缩放尺寸这是最小缩放时的尺寸
+     */
     protected float mSourceScale;
 
     private ImageView mEntire; // 以最小缩放比例渲染的图像
@@ -101,7 +108,7 @@ public class PageView extends ViewGroup {
     private CancellableAsyncTask<Void, Boolean> mDrawEntire;
 
     private Point mPatchViewSize; // View size on the basis of which the patch was created
-    private Rect mPatchArea;
+    private Rect mPatchArea;//pdf内容展示区域，比如：放大时的拖动
     private ImageView mPatch;
     private Bitmap mPatchBm;
     private CancellableAsyncTask<Void, Boolean> mDrawPatch;
@@ -221,7 +228,7 @@ public class PageView extends ViewGroup {
     }
 
     protected void setRenderError(String why) {
-//        Log.i(TAG, "PageView.setRenderError: " + why);
+        Debugger.i(TAG, "setRenderError: " + why);
         int page = mPageNumber;
         reinit();
         mPageNumber = page;
@@ -249,6 +256,31 @@ public class PageView extends ViewGroup {
         mErrorIndicator.invalidate();
     }
 
+    /**
+     * 根据{@link MupdfMacro#clarityLimitMode}限制宽高与清晰度
+     */
+    public float maxSourceScale(PointF size) {
+        Debugger.d(TAG, "maxSourceScale MupdfMacro.clarityLimitMode:" + MupdfMacro.clarityLimitMode);
+        if (MupdfMacro.clarityLimitMode >= 0) {
+            // 不同级别的分辨率限制
+            final int[] RESOLUTION_LIMITS = {
+                    7680, 4320, // 8K
+                    3840, 2160, // 4K
+                    2560, 1440, // 2K
+                    1920, 1080, // 1080p
+                    1280, 720   // 720p
+            };
+            // 选择要限制的分辨率级别（例如4K级别，索引2-3）
+            int limitIndex = MupdfMacro.clarityLimitMode * 2; // 0:8K, 2:4K, 4:2K, 6:1080p, 8:720p
+
+            int maxWidth = RESOLUTION_LIMITS[limitIndex];
+            int maxHeight = RESOLUTION_LIMITS[limitIndex + 1];
+
+            return Math.min(maxWidth / size.x, maxHeight / size.y);
+        }
+        return Math.min(mParentSize.x / size.x, mParentSize.y / size.y);
+    }
+
     public void setPage(int page, PointF size) {
         // Cancel pending render task
         if (mDrawEntire != null) {
@@ -267,12 +299,18 @@ public class PageView extends ViewGroup {
             setRenderError("Error loading page");
             size = new PointF(612, 792);
         }
-        // 计算适合屏幕限制的缩放尺寸
-        // 这是最小缩放时的尺寸
-        mSourceScale = Math.min(mParentSize.x / size.x, mParentSize.y / size.y);
+        //计算缩放因子
+        mSourceScale = maxSourceScale(size);
+//        float maxSourceScale = Math.min(1280 / size.x, 720 / size.y);
+//        // 计算适合屏幕限制的缩放尺寸这是最小缩放时的尺寸
+//        mSourceScale = Math.min(mParentSize.x / size.x, mParentSize.y / size.y);
+//        if (mSourceScale > maxSourceScale) {
+//            Debugger.d(TAG, "setPage: 缩放因子超出了 mSourceScale：" + mSourceScale + ",maxSourceScale=" + maxSourceScale);
+//            mSourceScale = maxSourceScale;
+//        }
         Point newSize = new Point((int) (size.x * mSourceScale), (int) (size.y * mSourceScale));
         mSize = newSize;
-        Log.i(TAG, "PageView.setPage: page=" + page + ",size=" + size + ",mParentSize=" + mParentSize + ",mSourceScale=" + mSourceScale);
+        Debugger.i(TAG, "setPage: page=" + page + ",size=" + size + ",mParentSize=" + mParentSize + ",mSourceScale=" + mSourceScale + ",mSize=" + mSize);
 
         if (mErrorIndicator != null)
             return;
@@ -301,11 +339,13 @@ public class PageView extends ViewGroup {
 
         mGetLinkInfo.execute();*/
 
+        Debugger.d(TAG, "调用 getDrawPageTask setPage page=" + page);
         // 在后台渲染页面
         mDrawEntire = new CancellableAsyncTask<Void, Boolean>(getDrawPageTask(mEntireBm, mSize.x, mSize.y, 0, 0, mSize.x, mSize.y)) {
 
             @Override
             public void onPreExecute() {
+                Debugger.i(TAG, "后台渲染页面 setPage onPreExecute page=" + page);
                 setBackgroundColor(BACKGROUND_COLOR);
                 mEntire.setImageBitmap(null);
                 mEntire.invalidate();
@@ -326,11 +366,11 @@ public class PageView extends ViewGroup {
 
             @Override
             public void onPostExecute(Boolean result) {
+                Debugger.i(TAG, "后台渲染页面 setPage onPostExecute: " + result + ",page=" + page);
                 removeView(mBusyIndicator);
                 mBusyIndicator = null;
                 if (result.booleanValue()) {
                     clearRenderError();
-//                    Log.i(TAG, "PageView.onPostExecute:setPage mDrawEntire");
                     mEntire.setImageBitmap(mEntireBm);
                     mEntire.invalidate();
                 } else {
@@ -379,6 +419,8 @@ public class PageView extends ViewGroup {
 
             addView(mSearchView);
         }*/
+
+        Debugger.d(TAG, "setPage 调用 requestLayout page=" + page);
         requestLayout();
     }
 
@@ -428,9 +470,9 @@ public class PageView extends ViewGroup {
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         int w = right - left;
         int h = bottom - top;
-//        Log.i(TAG, "PageView.onLayout: changed:" + changed + ",left:" + left + ",top:" + top + ",right:" + right + ",bottom:" + bottom);
+        Debugger.i(TAG, "onLayout: changed:" + changed + ",left:" + left + ",top:" + top + ",right:" + right + ",bottom:" + bottom + ",w:" + w + ",h:" + h);
         if (mEntire != null) {
-//            Log.i(TAG, "PageView.onLayout: mEntire:" + mEntire.getWidth() + ",mEntire:" + mEntire.getHeight());
+            Debugger.i(TAG, "onLayout: mEntire:" + mEntire.getWidth() + " x " + mEntire.getHeight() + ",mSize:" + mSize);
             if (mEntire.getWidth() != w || mEntire.getHeight() != h) {
                 mEntireMat.setScale(w / (float) mSize.x, h / (float) mSize.y);
                 mEntire.setImageMatrix(mEntireMat);
@@ -446,6 +488,7 @@ public class PageView extends ViewGroup {
         if (mPatchViewSize != null) {
             if (mPatchViewSize.x != w || mPatchViewSize.y != h) {
                 // Zoomed since patch was created
+                Debugger.d(TAG, "onLayout Zoomed since patch was created mPatchViewSize:" + mPatchViewSize + ",mPatch!=null:" + (mPatch != null));
                 mPatchViewSize = null;
                 mPatchArea = null;
                 if (mPatch != null) {
@@ -453,6 +496,7 @@ public class PageView extends ViewGroup {
                     mPatch.invalidate();
                 }
             } else {
+                Debugger.d(TAG, "onLayout mPatch.layout mPatchArea:" + mPatchArea);
                 mPatch.layout(mPatchArea.left, mPatchArea.top, mPatchArea.right, mPatchArea.bottom);
             }
         }
@@ -486,16 +530,17 @@ public class PageView extends ViewGroup {
         }
 
         Rect viewArea = new Rect(getLeft(), getTop(), getRight(), getBottom());
-        Log.i(TAG, "PageView.updateHq: viewArea:" + viewArea + ",mSize:" + mSize);
+        Debugger.i(TAG, "updateHq: viewArea:" + viewArea + ",mSize:" + mSize);
         final Point patchViewSize = new Point(viewArea.width(), viewArea.height());
         final Rect patchArea = new Rect(0, 0, (int) mParentSize.x, (int) mParentSize.y);
-        Log.i(TAG, "PageView.updateHq: patchViewSize:" + patchViewSize + ",patchArea:" + patchArea);
+        Debugger.i(TAG, "updateHq: patchViewSize:" + patchViewSize + ",patchArea:" + patchArea);
         // 相交并测试是否有交叉点
         if (!patchArea.intersect(viewArea))
             return;
 
         // 相对于视图左上方的偏移贴片区域
         patchArea.offset(-viewArea.left, -viewArea.top);
+        Debugger.i(TAG, "updateHq: mPatchArea:" + mPatchArea + ",mPatchViewSize:" + mPatchViewSize);
 
         boolean area_unchanged = patchArea.equals(mPatchArea) && patchViewSize.equals(mPatchViewSize);
 
@@ -507,12 +552,14 @@ public class PageView extends ViewGroup {
 
         // 如果仍在进行，则停止绘制之前的补丁
         if (mDrawPatch != null) {
+            Debugger.d(TAG, "updateHq mDrawPatch.cancel() 如果仍在进行，则停止绘制之前的补丁");
             mDrawPatch.cancel();
             mDrawPatch = null;
         }
 
         // 创建并添加图像视图（如果尚未完成）。
         if (mPatch == null) {
+            Debugger.d(TAG, "updateHq new OpaqueImageView 创建并添加图像视图（如果尚未完成）。");
             mPatch = new OpaqueImageView(mContext, mWaterMark);
             mPatch.setScaleType(ImageView.ScaleType.MATRIX);
             addView(mPatch);
@@ -521,16 +568,17 @@ public class PageView extends ViewGroup {
         }
 
         CancellableTaskDefinition<Void, Boolean> task;
-        Log.i(TAG, "PageView.updateHq: completeRedraw:" + completeRedraw + ",update:" + update);
-        if (completeRedraw)
+        Debugger.i(TAG, "updateHq: completeRedraw:" + completeRedraw + ",update:" + update);
+        if (completeRedraw) {
+            Debugger.d(TAG, "updateHq 调用 getDrawPageTask updateHq");
             task = getDrawPageTask(mPatchBm, patchViewSize.x, patchViewSize.y,
                     patchArea.left, patchArea.top,
                     patchArea.width(), patchArea.height());
-        else
+        } else {
             task = getUpdatePageTask(mPatchBm, patchViewSize.x, patchViewSize.y,
                     patchArea.left, patchArea.top,
                     patchArea.width(), patchArea.height());
-
+        }
         mDrawPatch = new CancellableAsyncTask<Void, Boolean>(task) {
 
             public void onPostExecute(Boolean result) {
@@ -540,7 +588,7 @@ public class PageView extends ViewGroup {
                     clearRenderError();
                     mPatch.setImageBitmap(mPatchBm);
                     mPatch.invalidate();
-                    Log.i(TAG, "PageView.onPostExecute: updateHq mDrawPatch");
+                    Debugger.i(TAG, "onPostExecute: updateHq mDrawPatch");
                     //requestLayout();
                     // 在这里调用requestLayout并不会导致后来对layout的调用。
                     // 不知道为什么，但显然其他人遇到了这个问题。
@@ -552,10 +600,11 @@ public class PageView extends ViewGroup {
         };
 
         mDrawPatch.execute();
+        Debugger.i(TAG, "updateHq: end");
     }
 
     public void update() {
-        Debugger.d(TAG, "PageView.update: ");
+        Debugger.d(TAG, "update: ");
         // 取消待定的渲染任务
         if (mDrawEntire != null) {
             mDrawEntire.cancel();
@@ -572,7 +621,7 @@ public class PageView extends ViewGroup {
 
             public void onPostExecute(Boolean result) {
                 if (result.booleanValue()) {
-                    Log.i(TAG, "PageView.onPostExecute: update mDrawEntire");
+                    Debugger.i(TAG, "onPostExecute: update mDrawEntire");
                     clearRenderError();
                     mEntire.setImageBitmap(mEntireBm);
                     mEntire.invalidate();
@@ -583,12 +632,12 @@ public class PageView extends ViewGroup {
         };
 
         mDrawEntire.execute();
-
+        Debugger.d(TAG, "update 调用updateHq方法");
         updateHq(true);
     }
 
     public void removeHq() {
-        Debugger.d(TAG, "PageView.removeHq");
+        Debugger.d(TAG, "removeHq");
         // 如果仍在进行，则停止绘制补丁
         if (mDrawPatch != null) {
             mDrawPatch.cancel();
@@ -620,10 +669,10 @@ public class PageView extends ViewGroup {
             try {
                 mContext.startActivity(intent);
             } catch (Exception x) {
-                Log.e(APP, x.toString());
+                Debugger.e(TAG, x.toString());
 //                Toast.makeText(getContext(), "Android does not allow following file:// link: " + link.getURI(), Toast.LENGTH_LONG).show();
             } catch (Throwable x) {
-                Log.e(APP, x.toString());
+                Debugger.e(TAG, x.toString());
 //                Toast.makeText(getContext(), x.getMessage(), Toast.LENGTH_LONG).show();
             }
             return 0;
@@ -661,8 +710,9 @@ public class PageView extends ViewGroup {
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH)
                     bm.eraseColor(0);
                 try {
-//                    Log.i(TAG, "PageView.doInBackground: getDrawPageTask");
+                    Debugger.i(TAG, "getDrawPageTask doInBackground start mCore.drawPage mPageNumber:" + mPageNumber);
                     mCore.drawPage(bm, mPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
+                    Debugger.i(TAG, "getDrawPageTask doInBackground end mCore.drawPage mPageNumber:" + mPageNumber);
                     return new Boolean(true);
                 } catch (RuntimeException e) {
                     return new Boolean(false);
@@ -685,8 +735,9 @@ public class PageView extends ViewGroup {
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH)
                     bm.eraseColor(0);
                 try {
-//                    Log.i(TAG, "PageView.getUpdatePageTask: ");
+                    Debugger.i(TAG, "getUpdatePageTask doInBackground updatePage start");
                     mCore.updatePage(bm, mPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
+                    Debugger.i(TAG, "getUpdatePageTask doInBackground updatePage end");
                     return new Boolean(true);
                 } catch (RuntimeException e) {
                     return new Boolean(false);

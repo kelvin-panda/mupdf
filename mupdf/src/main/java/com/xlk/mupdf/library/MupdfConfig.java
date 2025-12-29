@@ -25,6 +25,8 @@ public class MupdfConfig {
     private final int uploadDirId;
     private final boolean onlyPreview;
     private final int pageIndex;
+    private final int clarityLimitMode;
+    private final boolean fullScreenEnable;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -43,6 +45,8 @@ public class MupdfConfig {
         this.uploadDirId = builder.uploadDirId;
         this.onlyPreview = builder.onlyPreview;
         this.pageIndex = builder.pageIndex;
+        this.clarityLimitMode = builder.clarityLimitMode;
+        this.fullScreenEnable = builder.fullScreenEnable;
     }
 
     public String getFilePath() {
@@ -93,7 +97,6 @@ public class MupdfConfig {
         return captureEnable;
     }
 
-
     public boolean isWpsOpenEnable() {
         return wpsOpenEnable;
     }
@@ -108,6 +111,14 @@ public class MupdfConfig {
 
     public int getPageIndex() {
         return pageIndex;
+    }
+
+    public int getClarityLimitMode() {
+        return clarityLimitMode;
+    }
+
+    public boolean isFullScreenEnable() {
+        return fullScreenEnable;
     }
 
     @Override
@@ -127,6 +138,8 @@ public class MupdfConfig {
                 ", uploadDirId=" + uploadDirId +
                 ", onlyPreview=" + onlyPreview +
                 ", pageIndex=" + pageIndex +
+                ", clarityLimitMode=" + clarityLimitMode +
+                ", fullScreenEnable=" + fullScreenEnable +
                 '}';
     }
 
@@ -147,6 +160,8 @@ public class MupdfConfig {
         private int uploadDirId = 2;
         private boolean onlyPreview = false;
         private int pageIndex = 0;
+        private int clarityLimitMode = MupdfClarityMode.UNRESTRICTED;
+        private boolean fullScreenEnable = true;
 
         public Builder filePath(String filePath) {
             this.filePath = filePath;
@@ -225,6 +240,16 @@ public class MupdfConfig {
 
         public Builder pageIndex(int pageIndex) {
             this.pageIndex = pageIndex;
+            return this;
+        }
+
+        public Builder clarityLimitMode(@MupdfClarityMode int clarityLimitMode) {
+            this.clarityLimitMode = clarityLimitMode;
+            return this;
+        }
+
+        public Builder fullScreenEnable(boolean fullScreenEnable) {
+            this.fullScreenEnable = fullScreenEnable;
             return this;
         }
 

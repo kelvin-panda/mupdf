@@ -53,4 +53,5 @@ dependencies {
 //    implementation 'com.gitee.xlk_gitee:mupdf-library:3.0.0'
     implementation(project(":mupdf"))
 
+    implementation 'com.blankj:utilcodex:1.31.1'
 }
