@@ -12,9 +12,12 @@
 - `PageAdapter`中的`Item`布局为自定义的`PageView`
   - 1.先获取页面的大小
   - 2.获取成功后通过`pageView.setPage`方法进行渲染
-- `PageView`通过父控件和`MupdfMacro.clarityLimitMode`确定宽高
+- `PageView`通过父控件和`MupdfMacro.clarityLimitMode`确定缩放因子
+  - 不进行设置时加载页面耗时且清晰
+  - 限制成720P时，加载页面较快且相对模糊，但是重新加载时（例如手指拖动进行重构）会恢复清晰
 - `PageView`的关键方法`setPage`中，通过`getDrawPageTask`渲染`mEntire`展示当前页的内容
-- 通过`MuPDFCore`中的`drawPage`方法传递`BitMap`进行`native`内部加载
+- 通过`MuPDFCore`中的`drawPage`方法传递`BitMap`进行`native`内部渲染
+  - 在`new AndroidDrawDevice`时进行了jni层调用渲染
 
 加载优化
 > 7张图片内部打印就加载了7秒

@@ -30,6 +30,7 @@ public class SignatureBoard extends View {
     private final int WRAP_HEIGHT = 300;
     private int artBoardWidth, artBoardHeight;
     private Paint mPaint;
+    private int mPaintColor = Color.BLACK;
     private Paint mBitmapPaint;
     private Bitmap mBitmap;
     private Canvas mCanvas;
@@ -47,10 +48,12 @@ public class SignatureBoard extends View {
     public static class DrawPath {
         public final PointF[] points;
         public final Path path;
+        public final int color;
 
-        public DrawPath(PointF[] points, Path path) {
+        public DrawPath(PointF[] points, Path path, int color) {
             this.points = points;
             this.path = path;
+            this.color = color;
         }
     }
 
@@ -74,7 +77,7 @@ public class SignatureBoard extends View {
         mPaint.setStrokeJoin(Paint.Join.ROUND);// 设置线段连接处的样式为圆弧连接
         mPaint.setStrokeCap(Paint.Cap.ROUND);// 设置两端的线帽为圆的
         mPaint.setStrokeWidth(mPaintSize);// 画笔宽度
-        mPaint.setColor(Color.BLACK);// 颜色
+        mPaint.setColor(mPaintColor);// 颜色
     }
 
     private void initCanvas() {
@@ -147,7 +150,7 @@ public class SignatureBoard extends View {
                 break;
             case MotionEvent.ACTION_UP:
                 PointF[] array = list2array(points);
-                drawPaths.add(new DrawPath(array, mPath));
+                drawPaths.add(new DrawPath(array, mPath, mPaint.getColor()));
                 mCanvas.drawPath(mPath, mPaint);
                 mPath = null;
                 invalidate();
@@ -215,5 +218,10 @@ public class SignatureBoard extends View {
         initCanvas();
         drawPaths.clear();
         invalidate();
+    }
+
+    public void setPaintColor(int color) {
+        mPaintColor = color;
+        mPaint.setColor(color);
     }
 }

@@ -84,6 +84,13 @@
             android:text="清除" />
 
         <Button
+            android:id="@+id/btn_color"
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_marginStart="20dp"
+            android:text="颜色" />
+
+        <Button
             android:id="@+id/btn_ensure"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"

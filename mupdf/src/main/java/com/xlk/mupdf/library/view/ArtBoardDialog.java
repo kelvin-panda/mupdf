@@ -2,6 +2,7 @@ package com.xlk.mupdf.library.view;
 
 import android.app.Dialog;
 import android.content.Context;
+import android.graphics.Color;
 import android.os.Build;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -75,6 +76,16 @@ public class ArtBoardDialog extends Dialog {
         inflate.findViewById(R.id.btn_clear).setOnClickListener(v -> {
             if (draw_board != null) {
                 draw_board.clear();
+            }
+        });
+        inflate.findViewById(R.id.btn_color).setOnClickListener(v -> {
+            if (draw_board != null) {
+                new MupdfColorPickerDialog(getContext(), new MupdfColorPickerView.OnColorSubmitListener() {
+                    @Override
+                    public void submitColor(int color) {
+                        draw_board.setPaintColor(color);
+                    }
+                }, Color.RED).show();
             }
         });
         inflate.findViewById(R.id.btn_ensure).setOnClickListener(v -> {

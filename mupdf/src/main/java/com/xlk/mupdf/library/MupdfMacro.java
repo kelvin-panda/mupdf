@@ -1,16 +1,7 @@
 package com.xlk.mupdf.library;
 
-import static java.lang.annotation.ElementType.FIELD;
-import static java.lang.annotation.ElementType.LOCAL_VARIABLE;
-import static java.lang.annotation.ElementType.METHOD;
-import static java.lang.annotation.ElementType.PARAMETER;
-import static java.lang.annotation.RetentionPolicy.CLASS;
-
 import android.graphics.PointF;
-import android.view.ViewGroup;
 
-import java.lang.annotation.Retention;
-import java.lang.annotation.Target;
 import java.util.ArrayList;
 import java.util.List;
 

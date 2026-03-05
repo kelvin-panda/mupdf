@@ -377,10 +377,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         ActUtil.addActivity(this);
     }
 
+    float fullWidthScale = 1.0f;
+
     public void createUI(Bundle savedInstanceState) {
         if (core == null)
             return;
-        float fullWidthScale = 1.0f;
         if (isFullScreen) {
             // 计算宽度占满时的缩放比例
             PointF size = core.getPageSize(0);
@@ -452,14 +453,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         }
         setContentView(mRootLayout);
 
-//        mainHandler.postDelayed(() -> {
-//            if (srcPageIndex != 0) {
-//                mDocView.setDisplayedViewIndex(srcPageIndex);
-//            }
-//            mDocView.defaultScale(fullWidthScale);
-//            mDocView.requestLayout();
-//            mDocView.run();
-//        }, 500L);
+        mainHandler.postDelayed(() -> {
+            if (srcPageIndex != 0) {
+                mDocView.setDisplayedViewIndex(srcPageIndex);
+            }
+            mDocView.defaultScale(fullWidthScale);
+            mDocView.requestLayout();
+            mDocView.run();
+        }, 500L);
 
         Debugger.i(TAG, "createUI: end");
     }
@@ -548,9 +549,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     float y = points[i].y;
                     array[i] = new Point(x, y);
                 }
-                Point[] percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, Color.BLACK, array);
+                Point[] percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array);
                 //points是经过core.addAnnotation方法计算后的实际坐标
-                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent + 1, PDFAnnotation.TYPE_INK, 5 / 3.0f, Color.BLACK, percentPoints));
+                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent + 1, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, percentPoints));
                 hadAnnotation = true;
             }
             if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {

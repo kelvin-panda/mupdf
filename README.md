@@ -2,6 +2,9 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.11
+  - 签名添加画笔颜色自选功能
+  - 打开后延迟加载一次界面，预防首次加载时模糊的情况
 - 6.0.10
   - 添加功能参数`MupdfConfig.clarityLimitMode`用于限制清晰度以提高加载速度，默认不限制
   - 添加功能参数`MupdfConfig.fullScreenEnable`用于决定是否全屏缩放，默认全屏

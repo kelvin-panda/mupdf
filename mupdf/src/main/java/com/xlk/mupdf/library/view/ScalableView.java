@@ -38,7 +38,6 @@ public class ScalableView extends View implements View.OnTouchListener {
     private float lastTouchX, lastTouchY;
     private final Path mPath = new Path();
     private final Path mAreaPath = new Path();
-    private float tempX, tempY;
     /**
      * x和y轴的缩放比例
      */
@@ -104,7 +103,7 @@ public class ScalableView extends View implements View.OnTouchListener {
         mPaint.setStrokeJoin(Paint.Join.ROUND);// 设置线段连接处的样式为圆弧连接
         mPaint.setStrokeCap(Paint.Cap.ROUND);// 设置两端的线帽为圆的
         mPaint.setStrokeWidth(5);// 画笔宽度
-        mPaint.setColor(Color.BLACK);// 颜色
+        mPaint.setColor(Color.RED);// 颜色
 
         dottedLinePaint = new Paint();
         dottedLinePaint.setStyle(Paint.Style.STROKE);
@@ -161,28 +160,28 @@ public class ScalableView extends View implements View.OnTouchListener {
     }
 
     private void drawPath(Canvas canvas) {
-        //重置路径
-        mPath.reset();
         canvas.save();
         for (SignatureBoard.DrawPath drawPath : drawPaths) {
+            //重置路径
+            mPath.reset();
+            float tempX = 0;
+            float tempY = 0;
+            mPaint.setColor(drawPath.color);
             for (int i = 0; i < drawPath.points.length; i++) {
                 float x = drawPath.points[i].x * scaleFactorX;
                 float y = drawPath.points[i].y * scaleFactorY;
                 if (i == 0) {
-                    //Log.i(TAG, "moveTo:" + x + "," + y + ",scaleFactor:" + scaleFactor);
                     mPath.moveTo(x, y);
                 } else {
-                    //Log.d(TAG, "quadTo:" + tempX + "," + tempY);
                     mPath.quadTo(tempX, tempY, (tempX + x) / 2, (tempY + y) / 2);
                 }
                 tempX = x;
                 tempY = y;
-                if (i == drawPath.points.length - 1) {
-                    //Log.e(TAG, "---drawPath--- scaleFactor:" + scaleFactor);
-                    canvas.drawPath(mPath, mPaint);
-                }
             }
+            // 绘制当前路径
+            canvas.drawPath(mPath, mPaint);
         }
+        canvas.restore(); // 记得恢复
     }
 
     private void drawScaleArea(Canvas canvas) {

@@ -301,7 +301,6 @@ public class PageView extends ViewGroup {
         }
         //计算缩放因子
         mSourceScale = maxSourceScale(size);
-//        float maxSourceScale = Math.min(1280 / size.x, 720 / size.y);
 //        // 计算适合屏幕限制的缩放尺寸这是最小缩放时的尺寸
 //        mSourceScale = Math.min(mParentSize.x / size.x, mParentSize.y / size.y);
 //        if (mSourceScale > maxSourceScale) {
