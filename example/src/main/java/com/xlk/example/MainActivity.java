@@ -10,6 +10,7 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.RadioGroup;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -20,7 +21,6 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.blankj.utilcode.util.FileUtils;
-import com.blankj.utilcode.util.UriUtils;
 import com.xlk.mupdf.library.MuPdfDocumentActivity;
 import com.xlk.mupdf.library.MupdfClarityMode;
 import com.xlk.mupdf.library.MupdfConfig;
@@ -44,7 +44,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         MupdfMacro.isHengXunVersion = true;
-        MupdfMacro.delete_history_annotation = true;
         EventBus.getDefault().register(this);
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -53,6 +52,13 @@ public class MainActivity extends AppCompatActivity {
         });
         android11Permission();
         cb_full = findViewById(R.id.cb_full);
+        CheckBox cb_delete = findViewById(R.id.cb_delete);
+        cb_delete.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                MupdfMacro.delete_history_annotation = b;
+            }
+        });
         RadioGroup radioGroup = findViewById(R.id.radioGroup);
         radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override

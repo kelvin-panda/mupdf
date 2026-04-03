@@ -3,6 +3,9 @@ package com.artifex.mupdf.viewer;
 import android.content.Context;
 import android.graphics.Point;
 import android.graphics.Rect;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.SparseArray;
@@ -83,8 +86,60 @@ public class ReaderView
      */
     private boolean isSigning;
 
+    private int savedLeft, savedTop, savedRight, savedBottom;
+
     public void setSigning(boolean isSigning) {
         this.isSigning = isSigning;
+    }
+
+    public void savePosition() {
+        View cv = mChildViews.get(mCurrent);
+        savedLeft = cv.getLeft();
+        savedTop = cv.getTop();
+        savedRight = cv.getRight();
+        savedBottom = cv.getBottom();
+        Debugger.i("批注前保存：mCurrent=" + mCurrent + "," + savedLeft + "," + savedTop + "," + savedRight + "," + savedBottom);
+    }
+
+    public void restorePosition() {
+        Debugger.i("批注后通过模拟手指拖动恢复：mCurrent=" + mCurrent + "," + savedLeft + "," + savedTop + "," + savedRight + "," + savedBottom);
+        simulateSwipeAsync(this, 0, 0, 0, savedTop, 100);
+    }
+
+    /**
+     * 通过模拟手指滑动实现恢复批注前的位置
+     */
+    private void simulateSwipeAsync(View view, float startX, float startY, float endX, float endY, long duration) {
+        Handler handler = new Handler(Looper.getMainLooper());
+        long downTime = SystemClock.uptimeMillis();
+
+        // 发送 DOWN
+        MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, startX, startY, 0);
+        view.dispatchTouchEvent(downEvent);
+        downEvent.recycle();
+
+        int steps = (int) (duration / 16);
+        float stepX = (endX - startX) / steps;
+        float stepY = (endY - startY) / steps;
+
+        for (int i = 1; i <= steps; i++) {
+            final int index = i;
+            handler.postDelayed(() -> {
+                long eventTime = SystemClock.uptimeMillis();
+                float currentX = startX + stepX * index;
+                float currentY = startY + stepY * index;
+                MotionEvent moveEvent = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_MOVE, currentX, currentY, 0);
+                view.dispatchTouchEvent(moveEvent);
+                moveEvent.recycle();
+            }, i * 16);
+        }
+
+        handler.postDelayed(() -> {
+            long upTime = SystemClock.uptimeMillis();
+            MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, endX, endY, 0);
+            view.dispatchTouchEvent(upEvent);
+            upEvent.recycle();
+        }, duration);
     }
 
     public static abstract class ViewMapper {
@@ -437,12 +492,14 @@ public class ReaderView
     }
 
     public boolean onDown(MotionEvent arg0) {
+        Debugger.i(TAG, "GestureDetector onDown ");
         mScroller.forceFinished(true);
         return true;
     }
 
     public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX,
                            float velocityY) {
+        Debugger.i(TAG, "GestureDetector onFling velocityX:" + velocityX + ",velocityY:" + velocityY);
         if (mScaling)
             return true;
 
@@ -463,7 +520,7 @@ public class ReaderView
                     break;
                 case MOVING_UP:
                     if (!HORIZONTAL_SCROLLING && bounds.top >= 0) {
-                        // Fling off to the top bring next view onto screen
+                        // Fling off to the top bring next view onto screen 飞到顶部，将下一视图带到屏幕上
                         View vl = mChildViews.get(mCurrent + 1);
 
                         if (vl != null) {
@@ -474,7 +531,7 @@ public class ReaderView
                     break;
                 case MOVING_RIGHT:
                     if (HORIZONTAL_SCROLLING && bounds.right <= 0) {
-                        // Fling off to the right bring previous view onto screen
+                        // Fling off to the right bring previous view onto screen 向右弹跳，将之前的视图带到屏幕上
                         View vr = mChildViews.get(mCurrent - 1);
 
                         if (vr != null) {
@@ -485,7 +542,7 @@ public class ReaderView
                     break;
                 case MOVING_DOWN:
                     if (!HORIZONTAL_SCROLLING && bounds.bottom <= 0) {
-                        // Fling off to the bottom bring previous view onto screen
+                        // Fling off to the bottom bring previous view onto screen 弹跳到底部，将之前的视图带到屏幕上
                         View vr = mChildViews.get(mCurrent - 1);
 
                         if (vr != null) {
@@ -520,10 +577,12 @@ public class ReaderView
     }
 
     public void onLongPress(MotionEvent e) {
+        Debugger.i(TAG, "GestureDetector onLongPress ");
     }
 
     public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX,
                             float distanceY) {
+        Debugger.i(TAG, "GestureDetector onScroll distanceX:" + distanceX + ",distanceY:" + distanceY);
         PageView pageView = (PageView) getDisplayedView();
         if (!tapDisabled)
             onDocMotion();
@@ -536,6 +595,7 @@ public class ReaderView
     }
 
     public void onShowPress(MotionEvent e) {
+        Debugger.i(TAG, "GestureDetector onShowPress ");
     }
 
     public void defaultScale(float scale) {
@@ -710,14 +770,13 @@ public class ReaderView
 
     private void onLayout2(boolean changed, int left, int top, int right,
                            int bottom) {
-        Debugger.i(TAG, "onLayout2: start");
+        Debugger.i(TAG, "onLayout2: start changed:" + changed + "," + left + "," + top + "," + right + "," + bottom);
         // "Edit mode" means when the View is being displayed in the Android GUI editor. (this class is instantiated in the IDE, so we need to be a bit careful what we do).
         if (isInEditMode())
             return;
         View cv = mChildViews.get(mCurrent);
         Point cvOffset;
-        Debugger.d(TAG, "onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent);
-        Debugger.i(TAG, "onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
+        Debugger.d(TAG, "onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent + ",mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         if (!mResetLayout) {
             // 如果当前充分偏离中心，则移动到下一个或上一个。
             if (cv != null) {
@@ -793,7 +852,6 @@ public class ReaderView
             // post to ensure generation of hq area
             mStepper.prod();
         }
-        Debugger.i(TAG, "onLayout2: mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
         // Ensure current view is present
         int cvLeft, cvRight, cvTop, cvBottom;
         boolean notPresent = (mChildViews.get(mCurrent) == null);
@@ -815,7 +873,7 @@ public class ReaderView
         mXScroll = mYScroll = 0;
         cvRight = cvLeft + cv.getMeasuredWidth();
         cvBottom = cvTop + cv.getMeasuredHeight();
-
+        Debugger.i(TAG, "onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
         if (!mUserInteracting && mScroller.isFinished()) {
             Point corr = getCorrection(getScrollBounds(cvLeft, cvTop, cvRight, cvBottom));
             cvRight += corr.x;
@@ -972,11 +1030,11 @@ public class ReaderView
     }
 
     private void postSettle(final View v) {
-        try {
-            throw new Exception("调用栈");
-        } catch (Exception e) {
-            Debugger.e(TAG, e);
-        }
+//        try {
+//            throw new Exception("调用栈");
+//        } catch (Exception e) {
+//            Debugger.e(TAG, e);
+//        }
         // onSettle and onUnsettle are posted so that the calls won't be executed until after the system has performed layout.
         post(new Runnable() {
             public void run() {

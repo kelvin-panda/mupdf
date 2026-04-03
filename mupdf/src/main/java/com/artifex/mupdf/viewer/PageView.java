@@ -515,11 +515,11 @@ public class PageView extends ViewGroup {
     }
 
     public void updateHq(boolean update) {
-        try {
-            throw new Exception("哪里调用");
-        } catch (Exception e) {
-            Debugger.e(e);
-        }
+//        try {
+//            throw new Exception("哪里调用");
+//        } catch (Exception e) {
+//            Debugger.e(e);
+//        }
         if (mErrorIndicator != null) {
             if (mPatch != null) {
                 mPatch.setImageBitmap(null);

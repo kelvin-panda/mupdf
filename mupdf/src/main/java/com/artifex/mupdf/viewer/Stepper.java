@@ -20,11 +20,11 @@ public class Stepper {
 
     @SuppressLint("NewApi")
     public void prod() {
-        try {
-            throw new Exception("prod 通知调用ReaderView中的run方法 mPending=" + mPending);
-        } catch (Exception e) {
-            Debugger.e(e);
-        }
+//        try {
+//            throw new Exception("prod 通知调用ReaderView中的run方法 mPending=" + mPending);
+//        } catch (Exception e) {
+//            Debugger.e(e);
+//        }
         if (!mPending) {
             mPending = true;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {

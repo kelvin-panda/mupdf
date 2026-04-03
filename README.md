@@ -2,6 +2,8 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.12
+  - 批注和签名后恢复原位置
 - 6.0.11
   - 签名添加画笔颜色自选功能
   - 打开后延迟加载一次界面，预防首次加载时模糊的情况

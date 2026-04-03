@@ -481,7 +481,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //刷新，重新加载当前页
         refreshButton.setOnClickListener(v -> {
             mDocView.setDisplayedViewIndex(mDocView.mCurrent);
-            core.logAnnotations(0);
+            core.logAnnotations(mDocView.mCurrent);
         });
         //退出文档批注上传开关
         uploadButton.setOnClickListener(v -> {
@@ -493,6 +493,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //<editor-fold desc="签名操作">
         //签名
         signatureButton.setOnClickListener(v -> {
+            mDocView.savePosition();
             hideButtons();
             new ArtBoardDialog(this, false, new ArtBoardDialog.SignatureListener() {
                 @Override
@@ -568,6 +569,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             isSigning = false;
             mDocView.setSigning(false);
             mDocView.afterAnnotation();
+            mDocView.restorePosition();
         });
         //取消签名
         tv_cancel_signature.setOnClickListener(v -> {
@@ -703,6 +705,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //<editor-fold desc="批注">
         //开启批注
         annotationButton.setOnClickListener(v -> {
+            mDocView.savePosition();
             hideButtons();
             showAnnotationViews();
             PageView pageView = (PageView) mDocView.getDisplayedView();
@@ -750,6 +753,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                         //方式三：
                         mDocView.afterAnnotation();
                         hadAnnotation = true;
+
+                        mDocView.restorePosition();
+
+//                        core.logAnnotations(mDocView.mCurrent);
                     }
                 }
             });

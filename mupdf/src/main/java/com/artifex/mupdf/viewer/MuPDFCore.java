@@ -194,11 +194,11 @@ public class MuPDFCore {
                     + "\nctm:" + ctm
                     + "\nxscale:" + xscale + ",yscale:" + yscale
                     + "\nbm:" + bm.getWidth() + "," + bm.getHeight());
-            try {
-                throw new Exception("哪里调用 pageNum=" + pageNum);
-            } catch (Exception e) {
-                Debugger.e(e);
-            }
+//            try {
+//                throw new Exception("哪里调用 pageNum=" + pageNum);
+//            } catch (Exception e) {
+//                Debugger.e(e);
+//            }
             Debugger.i(TAG, "drawPage AndroidDrawDevice start pageNum:" + pageNum);
             AndroidDrawDevice dev = new AndroidDrawDevice(bm, patchX, patchY, true);
             Debugger.i(TAG, "drawPage AndroidDrawDevice end--- pageNum:" + pageNum);
@@ -338,6 +338,14 @@ public class MuPDFCore {
         Debugger.i(TAG, "addShareInk 添加共享批注 update=" + update + ",update1=" + update1);
     }
 
+    /**
+     *
+     * @param pageNum
+     * @param width
+     * @param height
+     * @param type {@link PDFAnnotation#TYPE_LINE}
+     * @return
+     */
     public Point[] addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
         try {
             Point[] percentPoints = new Point[inkList.length];
@@ -432,18 +440,16 @@ public class MuPDFCore {
                 Point[][] inkList = annotation.getInkList();
                 for (Point[] points : inkList) {
                     Debugger.d(TAG, "logAnnotations: 墨迹坐标数量：" + points.length);
-                    System.out.println("换行");
                     for (Point point : points) {
-                        System.out.print("  " + point.toString());
+                        Debugger.d(point.toString());
                     }
                 }
             }
             if (hasLine) {
                 Point[] line = annotation.getLine();
                 Debugger.d(TAG, "logAnnotations: 直线坐标数量：" + line.length);
-                System.out.println("换行");
                 for (Point point : line) {
-                    System.out.print("  " + point.toString());
+                    Debugger.d(point.toString());
                 }
             }
         }
