@@ -85,6 +85,10 @@ public class ReaderView
      * <li>签名期间禁止通过滑动翻页</li>
      */
     private boolean isSigning;
+    /**
+     * 模拟滑动中
+     */
+    private boolean isSimulating;
 
     private int savedLeft, savedTop, savedRight, savedBottom;
 
@@ -98,18 +102,22 @@ public class ReaderView
         savedTop = cv.getTop();
         savedRight = cv.getRight();
         savedBottom = cv.getBottom();
-        Debugger.i("批注前保存：mCurrent=" + mCurrent + "," + savedLeft + "," + savedTop + "," + savedRight + "," + savedBottom);
+        Debugger.d("模拟手指拖动 保存：mCurrent=" + mCurrent + ",方位：" + savedLeft + "," + savedTop + "," + savedRight + "," + savedBottom);
     }
 
     public void restorePosition() {
-        Debugger.i("批注后通过模拟手指拖动恢复：mCurrent=" + mCurrent + "," + savedLeft + "," + savedTop + "," + savedRight + "," + savedBottom);
-        simulateSwipeAsync(this, 0, 0, 0, savedTop, 100);
+        View cv = mChildViews.get(mCurrent);
+        Debugger.d("模拟手指拖动 恢复：mCurrent=" + mCurrent + ",方位：" + cv.getLeft() + "," + cv.getTop() + "," + cv.getRight() + "," + cv.getBottom());
+        if (savedTop != 0) {
+            simulateSwipeAsync(this, 0, 0, 0, savedTop, 200);
+        }
     }
 
     /**
      * 通过模拟手指滑动实现恢复批注前的位置
      */
     private void simulateSwipeAsync(View view, float startX, float startY, float endX, float endY, long duration) {
+        isSimulating = true;
         Handler handler = new Handler(Looper.getMainLooper());
         long downTime = SystemClock.uptimeMillis();
 
@@ -117,6 +125,7 @@ public class ReaderView
         MotionEvent downEvent = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, startX, startY, 0);
         view.dispatchTouchEvent(downEvent);
         downEvent.recycle();
+        Debugger.d("模拟滑动 按下");
 
         int steps = (int) (duration / 16);
         float stepX = (endX - startX) / steps;
@@ -139,6 +148,8 @@ public class ReaderView
             MotionEvent upEvent = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, endX, endY, 0);
             view.dispatchTouchEvent(upEvent);
             upEvent.recycle();
+            Debugger.d("模拟滑动 抬起");
+            isSimulating = false;
         }, duration);
     }
 
@@ -499,8 +510,11 @@ public class ReaderView
 
     public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX,
                            float velocityY) {
-        Debugger.i(TAG, "GestureDetector onFling velocityX:" + velocityX + ",velocityY:" + velocityY);
+        Debugger.i(TAG, "GestureDetector onFling velocityX:" + velocityX + ",velocityY:" + velocityY + ",mScaling:" + mScaling + ",isSimulating:" + isSimulating);
         if (mScaling)
+            return true;
+
+        if (isSimulating)
             return true;
 
         View v = mChildViews.get(mCurrent);
