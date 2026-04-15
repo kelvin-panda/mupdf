@@ -43,6 +43,7 @@
 	<string name="mupdf_save">save</string>
 	<string name="mupdf_bookmark">bookmark</string>
 	<string name="tip_please_signature">please signature</string>
+	<string name="mupdf_exit">exit</string>
 
 
 </resources>

@@ -43,6 +43,7 @@
 	<string name="mupdf_save">保存</string>
 	<string name="mupdf_bookmark">书签</string>
 	<string name="tip_please_signature">请进行签名</string>
+	<string name="mupdf_exit">退出</string>
 
 
 </resources>

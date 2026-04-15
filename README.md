@@ -2,6 +2,8 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.15
+  - 调整画笔工具关闭的图标位置到最后
 - 6.0.14
   - 美化和修改图标，添加英文环境
 - 6.0.13
