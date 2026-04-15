@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<string name="cancel">Cancel</string>
-	<string name="cannot_open_document">Cannot open document</string>
-	<string name="cannot_open_document_Reason">Cannot open document: %1$s</string>
+	<string name="cancel">取消</string>
+	<string name="cannot_open_document">无法打开文档</string>
+	<string name="cannot_open_document_Reason">无法打开文档: %1$s</string>
 	<string name="dismiss">Dismiss</string>
-	<string name="enter_password">Enter password</string>
-	<string name="no_further_occurrences_found">No further occurrences found</string>
-	<string name="not_supported">Not supported</string>
-	<string name="okay">Okay</string>
-	<string name="search">Search&#x2026;</string>
-	<string name="searching_">Searching&#x2026;</string>
-	<string name="text_not_found">Text not found</string>
-	<string name="your_screenshot">Your screenshot</string>
+	<string name="enter_password">输入密码</string>
+	<string name="no_further_occurrences_found">未发现其他事件</string>
+	<string name="not_supported">不支持</string>
+	<string name="okay">确认</string>
+	<string name="search">搜索&#x2026;</string>
+	<string name="searching_">搜索中&#x2026;</string>
+	<string name="text_not_found">未找到</string>
+	<string name="your_screenshot">你的截图</string>
 	<string name="open_document_fail">文档打开失败，是否尝试使用外部程序打开？</string>
 	<string name="determine">外部打开</string>
 	<string name="exit_review">退出预览</string>
@@ -20,6 +20,29 @@
 	<string name="mupdf_ensure">打开</string>
 	<string name="mupdf_cancel">取消</string>
 	<string name="mupdf_confirm">确认</string>
+	<string name="mupdf_close">关闭</string>
+	<string name="mupdf_size">粗细</string>
+	<string name="mupdf_brush">画笔</string>
+	<string name="mupdf_art_highlight">高亮</string>
+	<string name="mupdf_art_brush">画笔</string>
+	<string name="mupdf_art_line">直线</string>
+	<string name="mupdf_art_delete">擦除</string>
+	<string name="mupdf_art_color">颜色</string>
+	<string name="mupdf_art_invite">邀请</string>
+	<string name="mupdf_art_revoke">撤销</string>
+	<string name="mupdf_art_done">确定</string>
+	<string name="mupdf_previous_page">上一页</string>
+	<string name="mupdf_next_page">下一页</string>
+	<string name="mupdf_signature_submission">提交签名</string>
+	<string name="mupdf_cancel_signature">取消签名</string>
+	<string name="mupdf_annotation">批注</string>
+	<string name="mupdf_signature">签名</string>
+	<string name="mupdf_screenshot">截图</string>
+	<string name="mupdf_refresh">刷新</string>
+	<string name="mupdf_jump">跳转</string>
+	<string name="mupdf_save">保存</string>
+	<string name="mupdf_bookmark">书签</string>
+	<string name="tip_please_signature">请进行签名</string>
 
 
 </resources>

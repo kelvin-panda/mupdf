@@ -27,7 +27,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
-import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.view.animation.TranslateAnimation;
 import android.view.inputmethod.EditorInfo;
@@ -90,18 +89,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private static final String TAG = "MuPdfDocumentActivity";
 
     //<editor-fold desc="成员变量">
-    private TextView inkSizeTextView;
-    private LinearLayout inkSizeLayout;
-    private ImageButton outlineButton, annotationButton, refreshButton,
-            revokeButton, deleteButton, colorButton, penButton, inkSizeButton, deleteLineButton,
-            lineButton, inviteButton, highlightButton, outOpen, uploadButton, exitMupdfButton, screenshotButton, signatureButton, doneButton, exitButton;
+
+    private View viewTopAnnotation, viewTopSignature, viewTopScreenshot, viewTopRefresh, viewTopJump, viewTopSave, viewTopBookmark, viewTopClose,//顶部控件
+            viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
+            viewArtInvite;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
     private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,
             mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
     private AnnotationArtBoard artBoard;
-    private SeekBar inkSizeSeekBar;
+    private TextView viewArtSizeTv;
+    private SeekBar viewArtSeekBar;
     private RelativeLayout mRootLayout;
     private final int default_ink_size = 3;
     /**
@@ -469,30 +468,30 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         makeButtonsView();
         if (MupdfMacro.shareAnnotationEnable) {
             //有文件id才显示
-            inviteButton.setVisibility(mediaId != 0 ? View.VISIBLE : View.GONE);
+            viewArtInvite.setVisibility(mediaId != 0 ? View.VISIBLE : View.GONE);
         }
         //文件名称
         mDocNameView.setText(mDocTitle);
 
         //退出pdf预览
-        exitMupdfButton.setOnClickListener(v -> {
+        viewTopClose.setOnClickListener(v -> {
             exit();
         });
         //刷新，重新加载当前页
-        refreshButton.setOnClickListener(v -> {
+        viewTopRefresh.setOnClickListener(v -> {
             mDocView.setDisplayedViewIndex(mDocView.mCurrent);
             core.logAnnotations(mDocView.mCurrent);
         });
         //退出文档批注上传开关
-        uploadButton.setOnClickListener(v -> {
+        viewTopSave.setOnClickListener(v -> {
             saveWhenExit = !saveWhenExit;
             toast(saveWhenExit ? "将在退出时保存到批注目录" : "已取消退出时保存到批注目录");
         });
-        uploadButton.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
+        viewTopSave.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
 
         //<editor-fold desc="签名操作">
         //签名
-        signatureButton.setOnClickListener(v -> {
+        viewTopSignature.setOnClickListener(v -> {
             mDocView.savePosition();
             hideButtons();
             new ArtBoardDialog(this, false, new ArtBoardDialog.SignatureListener() {
@@ -533,7 +532,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 }
             }).show();
         });
-        signatureButton.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
+        viewTopSignature.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
         //提交签名
         tv_submit_signature.setOnClickListener(v -> {
             List<SignatureBoard.DrawPath> drawPaths = mScalableView.getDrawPaths();
@@ -583,7 +582,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //</editor-fold>
 
         //外部打开
-        outOpen.setOnClickListener(v -> {
+        viewTopJump.setOnClickListener(v -> {
             AlertDialog alert = mAlertBuilder.create();
             alert.setTitle(R.string.open_document_tip);
             alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_ensure), (dialog, which) -> {
@@ -597,15 +596,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             alert.setOnCancelListener(dialog -> dialog.dismiss());
             alert.show();
         });
-        outOpen.setVisibility(wpsOpenEnable ? View.VISIBLE : View.GONE);
+        viewTopJump.setVisibility(wpsOpenEnable ? View.VISIBLE : View.GONE);
         //截图批注
-        screenshotButton.setOnClickListener(v -> {
+        viewTopScreenshot.setOnClickListener(v -> {
             hideButtons();
             mainHandler.postDelayed(() -> {
                 EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_screenshot).objects(mDocTitle, 0).build());
             }, 250);
         });
-        screenshotButton.setVisibility(captureEnable ? View.VISIBLE : View.GONE);
+        viewTopScreenshot.setVisibility(captureEnable ? View.VISIBLE : View.GONE);
         //界面跳转
         mPageNumberView.setOnClickListener(v -> {
             AlertDialog alert = mAlertBuilder.create();
@@ -684,7 +683,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         }
 
         if (core.hasOutline()) {
-            outlineButton.setOnClickListener(new View.OnClickListener() {
+            viewTopBookmark.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
                     if (mFlatOutline == null)
                         mFlatOutline = core.getOutline();
@@ -699,12 +698,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 }
             });
         } else {
-            outlineButton.setVisibility(View.GONE);
+            viewTopBookmark.setVisibility(View.GONE);
         }
 
         //<editor-fold desc="批注">
         //开启批注
-        annotationButton.setOnClickListener(v -> {
+        viewTopAnnotation.setOnClickListener(v -> {
             mDocView.savePosition();
             hideButtons();
             showAnnotationViews();
@@ -764,23 +763,22 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             pageView.addView(artBoard);
             artBoard.layout(0, 0, width, height);
         });
-        annotationButton.setVisibility(annotationEnable ? View.VISIBLE : View.GONE);
+        viewTopAnnotation.setVisibility(annotationEnable ? View.VISIBLE : View.GONE);
 
-        ibs.add(deleteButton);//删除
-        ibs.add(penButton);//墨迹
-        ibs.add(lineButton);//直线
-        ibs.add(deleteLineButton);//删除线
-        ibs.add(highlightButton);//高亮，矩形
+        ibs.add(viewArtBrush);//删除
+        ibs.add(viewArtPen);//墨迹
+        ibs.add(viewArtLine);//直线
+        ibs.add(viewArtHighlight);//高亮，矩形
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            inkSizeSeekBar.setMin(1);
+            viewArtSeekBar.setMin(1);
         }
-        inkSizeSeekBar.setMax(100);
-        inkSizeTextView.setText(String.valueOf(default_ink_size));
-        inkSizeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        viewArtSeekBar.setMax(100);
+        viewArtSizeTv.setText(String.valueOf(default_ink_size));
+        viewArtSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 progress = Math.max(progress, 1);
-                inkSizeTextView.setText(String.valueOf(progress));
+                viewArtSizeTv.setText(String.valueOf(progress));
             }
 
             @Override
@@ -792,13 +790,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             public void onStopTrackingTouch(SeekBar seekBar) {
                 int progress = seekBar.getProgress();
                 progress = Math.max(progress, 1);
-                inkSizeSeekBar.setProgress(progress);
+                viewArtSeekBar.setProgress(progress);
                 artBoard.setPaintWidth(progress);
-                inkSizeTextView.setText(String.valueOf(progress));
+                viewArtSizeTv.setText(String.valueOf(progress));
             }
         });
         //颜色
-        colorButton.setOnClickListener(v -> {
+        viewArtColor.setOnClickListener(v -> {
             new MupdfColorPickerDialog(this, new MupdfColorPickerView.OnColorSubmitListener() {
                 @Override
                 public void submitColor(int color) {
@@ -807,13 +805,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             }, Color.RED).show();
         });
         //撤销
-        revokeButton.setOnClickListener(v -> {
+        viewArtRevoke.setOnClickListener(v -> {
             if (artBoard != null) {
                 artBoard.revoke();
             }
         });
         //删除
-        deleteButton.setOnClickListener(v -> {
+        viewArtBrush.setOnClickListener(v -> {
             if (artBoard != null) {
                 int drawType = artBoard.getDrawType();
                 if (drawType != AnnotationArtBoard.DRAW_ERASER) {
@@ -823,7 +821,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             }
         });
         //画笔
-        penButton.setOnClickListener(v -> {
+        viewArtPen.setOnClickListener(v -> {
             if (artBoard != null) {
                 int drawType = artBoard.getDrawType();
                 if (drawType != AnnotationArtBoard.DRAW_SLINE) {
@@ -832,16 +830,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 }
             }
         });
-        //画笔大小
-        inkSizeButton.setOnClickListener(v -> {
-            if (mInkSizeViewVisible) {
-                hideInkSizeViews();
-            } else {
-                showInkSizeViews();
-            }
-        });
         //直线
-        lineButton.setOnClickListener(v -> {
+        viewArtLine.setOnClickListener(v -> {
             if (artBoard != null) {
                 int drawType = artBoard.getDrawType();
                 if (drawType != AnnotationArtBoard.DRAW_LINE) {
@@ -850,28 +840,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                 }
             }
         });
-        //删除线、下划线
-        deleteLineButton.setOnClickListener(v -> {
-            if (artBoard != null) {
-                int drawType = artBoard.getDrawType();
-                if (drawType != AnnotationArtBoard.DRAW_DELLINE) {
-                    artBoard.setDrawType(AnnotationArtBoard.DRAW_DELLINE);
-                    chooseType(3);
-                }
-            }
-        });
         //高亮
-        highlightButton.setOnClickListener(v -> {
+        viewArtHighlight.setOnClickListener(v -> {
             if (artBoard != null) {
                 int drawType = artBoard.getDrawType();
                 if (drawType != AnnotationArtBoard.DRAW_RECT) {
                     artBoard.setDrawType(AnnotationArtBoard.DRAW_RECT);
-                    chooseType(4);
+                    chooseType(3);
                 }
             }
         });
         //邀请多人批注
-        inviteButton.setOnClickListener(v -> {
+        viewArtInvite.setOnClickListener(v -> {
             Debugger.e("邀请多人批注");
             EventBus.getDefault().post(new MupdfEventMessage.Builder()
                     .type(MupdfBusType.inform_invite_annotation)
@@ -879,11 +859,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
                     .build());
         });
         //提交批注
-        doneButton.setOnClickListener(v -> {
+        viewArtDone.setOnClickListener(v -> {
             hideAnnotationViews();
         });
         //取消批注
-        exitButton.setOnClickListener(v -> {
+        viewArtClose.setOnClickListener(v -> {
             artBoard.setCancelAnnotation();
             hideAnnotationViews();
         });
@@ -1149,16 +1129,24 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         mDocView.setDisplayedViewIndex(loc);
     }
 
-    private final List<ImageButton> ibs = new ArrayList<>();
+    private final List<View> ibs = new ArrayList<>();
 
     private void chooseType(int index) {
         for (int i = 0; i < ibs.size(); i++) {
             boolean selected = index == i;
-            ImageButton imageButton = ibs.get(i);
+            View imageButton = ibs.get(i);
             if (selected) {
-                imageButton.getDrawable().setTint(Color.argb(255, 33, 150, 243));
+                if (imageButton instanceof ImageButton) {
+                    ((ImageButton) imageButton).getDrawable().setTint(Color.argb(255, 33, 150, 243));
+                } else {
+                    imageButton.setSelected(true);
+                }
             } else {
-                imageButton.getDrawable().setTint(Color.argb(255, 255, 255, 255));
+                if (imageButton instanceof ImageButton) {
+                    ((ImageButton) imageButton).getDrawable().setTint(Color.argb(255, 255, 255, 255));
+                } else {
+                    imageButton.setSelected(false);
+                }
             }
         }
     }
@@ -1302,7 +1290,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private void showAnnotationViews() {
         if (!mAnnotationVisible) {
             mAnnotationVisible = true;
-            Animation anim = new TranslateAnimation(inkOperationSwitcher.getWidth(), 0, 0, 0);
+            Animation anim = new TranslateAnimation(0, 0, -inkOperationSwitcher.getHeight(), 0);
             anim.setDuration(200);
             anim.setAnimationListener(new Animation.AnimationListener() {
                 public void onAnimationStart(Animation animation) {
@@ -1324,14 +1312,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     private void hideAnnotationViews() {
         if (mAnnotationVisible) {
             mAnnotationVisible = false;
-            Animation anim = new TranslateAnimation(0, inkOperationSwitcher.getWidth(), 0, 0);
+            Animation anim = new TranslateAnimation(0, 0, 0, -inkOperationSwitcher.getHeight());
             anim.setDuration(200);
             anim.setAnimationListener(new Animation.AnimationListener() {
                 public void onAnimationStart(Animation animation) {
                     mDocView.setAnnotation(false);
                     inkOperationSwitcher.setVisibility(View.INVISIBLE);
-                    hideInkSizeViews();
-                    inkSizeSeekBar.setProgress(default_ink_size);
+                    viewArtSeekBar.setProgress(default_ink_size);
                     if (artBoard != null) {
                         ((PageView) mDocView.getDisplayedView()).removeView(artBoard);
                         artBoard.clear();
@@ -1356,52 +1343,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         }
     }
 
-    private void showInkSizeViews() {
-        if (!mInkSizeViewVisible) {
-//            mInkSizeViewVisible = true;
-//            inkSizeLayout.setVisibility(View.VISIBLE);
-            Animation anim = new AlphaAnimation(0, 1f);
-//            Animation anim = new TranslateAnimation(inkSizeLayout.getWidth(), 0, 0, 0);
-            anim.setDuration(200);
-            anim.setAnimationListener(new Animation.AnimationListener() {
-                public void onAnimationStart(Animation animation) {
-                    inkSizeLayout.setVisibility(View.VISIBLE);
-                }
-
-                public void onAnimationRepeat(Animation animation) {
-                }
-
-                public void onAnimationEnd(Animation animation) {
-                    mInkSizeViewVisible = true;
-                }
-            });
-            inkSizeLayout.startAnimation(anim);
-        }
-    }
-
-    private void hideInkSizeViews() {
-        if (mInkSizeViewVisible) {
-//            mInkSizeViewVisible = false;
-//            inkSizeLayout.setVisibility(View.GONE);
-            Animation anim = new AlphaAnimation(1f, 0f);
-//            Animation anim = new TranslateAnimation(0, inkSizeLayout.getWidth(), 0, 0);
-            anim.setDuration(200);
-            anim.setAnimationListener(new Animation.AnimationListener() {
-                public void onAnimationStart(Animation animation) {
-                }
-
-                public void onAnimationRepeat(Animation animation) {
-                }
-
-                public void onAnimationEnd(Animation animation) {
-                    mInkSizeViewVisible = false;
-                    inkSizeLayout.setVisibility(View.GONE);
-                }
-            });
-            inkSizeLayout.startAnimation(anim);
-        }
-    }
-
     private void updatePageNumView(int index) {
         if (core == null)
             return;
@@ -1411,7 +1352,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
     }
 
     private void makeButtonsView() {
-        int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hengxun : R.layout.mupdf_document_activity_default;
+        int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hx : R.layout.mupdf_document_activity;
         mButtonsView = getLayoutInflater().inflate(layoutResId, null);
         rootView = (RelativeLayout) mButtonsView.findViewById(R.id.rootView);
         mTvMark = (TextView) mButtonsView.findViewById(R.id.tv_mark);
@@ -1420,64 +1361,58 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         mPageNumberView = (TextView) mButtonsView.findViewById(R.id.pageNumber);//页码
         mPrePageView = (TextView) mButtonsView.findViewById(R.id.prePage);//上一页
         mNextPageView = (TextView) mButtonsView.findViewById(R.id.nextPage);//下一页
-        mTopBarSwitcher = (ViewAnimator) mButtonsView.findViewById(R.id.switcher);
         mLayoutButton = mButtonsView.findViewById(R.id.layoutButton);
         //提交签名、取消签名
         ll_signature_layout = mButtonsView.findViewById(R.id.ll_signature_layout);
         tv_submit_signature = mButtonsView.findViewById(R.id.tv_submit_signature);
         tv_cancel_signature = mButtonsView.findViewById(R.id.tv_cancel_signature);
 
-        mTopBarSwitcher.setVisibility(View.INVISIBLE);
-        mLlPageView.setVisibility(View.INVISIBLE);
 
-        // 自定义组件
-        uploadButton = mButtonsView.findViewById(R.id.uploadButton);
-        refreshButton = mButtonsView.findViewById(R.id.refreshButton);
-        outOpen = mButtonsView.findViewById(R.id.outOpen);
-        screenshotButton = mButtonsView.findViewById(R.id.screenshotButton);
-        signatureButton = mButtonsView.findViewById(R.id.signatureButton);
-        annotationButton = mButtonsView.findViewById(R.id.annotationButton);
-        outlineButton = mButtonsView.findViewById(R.id.outlineButton);
-        exitMupdfButton = mButtonsView.findViewById(R.id.exitMupdfButton);
+        //<editor-fold desc="顶部默认组件">
+        mTopBarSwitcher = mButtonsView.findViewById(R.id.switcher);
+        viewTopSave = mButtonsView.findViewById(R.id.viewTopSave);
+        viewTopRefresh = mButtonsView.findViewById(R.id.viewTopRefresh);
+        viewTopJump = mButtonsView.findViewById(R.id.viewTopJump);
+        viewTopScreenshot = mButtonsView.findViewById(R.id.viewTopScreenshot);
+        viewTopSignature = mButtonsView.findViewById(R.id.viewTopSignature);
+        viewTopAnnotation = mButtonsView.findViewById(R.id.viewTopAnnotation);
+        viewTopBookmark = mButtonsView.findViewById(R.id.viewTopBookmark);
+        viewTopClose = mButtonsView.findViewById(R.id.viewTopClose);
+        //</editor-fold>
 
         //<editor-fold desc="批注控件">
         inkOperationSwitcher = mButtonsView.findViewById(R.id.inkOperationSwitcher);
         //关闭
-        exitButton = mButtonsView.findViewById(R.id.exitButton);
+        viewArtClose = mButtonsView.findViewById(R.id.viewArtClose);
+        //画笔粗细
+        viewArtSizeTv = mButtonsView.findViewById(R.id.viewArtSizeTv);
+        viewArtSeekBar = mButtonsView.findViewById(R.id.viewArtSeekBar);
         //画笔
-        penButton = mButtonsView.findViewById(R.id.penButton);
-        //粗细
-        inkSizeButton = mButtonsView.findViewById(R.id.inkSizeButton);
+        viewArtPen = mButtonsView.findViewById(R.id.viewArtPen);
         //直线
-        lineButton = mButtonsView.findViewById(R.id.lineButton);
+        viewArtLine = mButtonsView.findViewById(R.id.viewArtLine);
         //删除
-        deleteButton = mButtonsView.findViewById(R.id.deleteButton);
+        viewArtBrush = mButtonsView.findViewById(R.id.viewArtBrush);
         //颜色
-        colorButton = mButtonsView.findViewById(R.id.colorButton);
+        viewArtColor = mButtonsView.findViewById(R.id.viewArtColor);
         //共享
-        inviteButton = mButtonsView.findViewById(R.id.inviteButton);
-        //下划线，删除线
-        deleteLineButton = mButtonsView.findViewById(R.id.deleteLineButton);
+        viewArtInvite = mButtonsView.findViewById(R.id.viewArtInvite);
         //高亮
-        highlightButton = mButtonsView.findViewById(R.id.highlightButton);
+        viewArtHighlight = mButtonsView.findViewById(R.id.viewArtHighlight);
         //撤销
-        revokeButton = mButtonsView.findViewById(R.id.revokeButton);
+        viewArtRevoke = mButtonsView.findViewById(R.id.viewArtRevoke);
         //确定
-        doneButton = mButtonsView.findViewById(R.id.doneButton);
-
-        //画笔大小
-        inkSizeLayout = mButtonsView.findViewById(R.id.inkSizeLayout);
-        inkSizeSeekBar = mButtonsView.findViewById(R.id.inkSizeSeekBar);
-        inkSizeTextView = mButtonsView.findViewById(R.id.inkSizeTextView);
+        viewArtDone = mButtonsView.findViewById(R.id.viewArtDone);
         //</editor-fold>
 
-//        inkOperationSwitcher.setVisibility(View.INVISIBLE);
+        mTopBarSwitcher.setVisibility(View.INVISIBLE);
+        mLlPageView.setVisibility(View.INVISIBLE);
 
         if (isOnlyPreview) {
-            screenshotButton.setVisibility(View.GONE);
-            uploadButton.setVisibility(View.GONE);
-            signatureButton.setVisibility(View.GONE);
-            annotationButton.setVisibility(View.GONE);
+            viewTopScreenshot.setVisibility(View.GONE);
+            viewTopSave.setVisibility(View.GONE);
+            viewTopSignature.setVisibility(View.GONE);
+            viewTopAnnotation.setVisibility(View.GONE);
         }
     }
 

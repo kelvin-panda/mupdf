@@ -12,6 +12,7 @@
         android:id="@+id/switcher"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:visibility="gone"
         android:layout_alignParentTop="true"
         android:layout_centerHorizontal="true">
 
@@ -39,56 +40,56 @@
                 tools:text="文件名称文件名称文件名称文件.pdf" />
 
             <ImageButton
-                android:id="@+id/annotationButton"
+                android:id="@+id/viewTopAnnotation"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_brush_white" />
 
             <ImageButton
-                android:id="@+id/signatureButton"
+                android:id="@+id/viewTopSignature"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_signature_white" />
 
             <ImageButton
-                android:id="@+id/screenshotButton"
+                android:id="@+id/viewTopScreenshot"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_screenshot" />
 
             <ImageButton
-                android:id="@+id/refreshButton"
+                android:id="@+id/viewTopRefresh"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_refresh" />
 
             <ImageButton
-                android:id="@+id/outOpen"
+                android:id="@+id/viewTopJump"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_out" />
 
             <ImageButton
-                android:id="@+id/uploadButton"
+                android:id="@+id/viewTopSave"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_upload" />
 
             <ImageButton
-                android:id="@+id/outlineButton"
+                android:id="@+id/viewTopBookmark"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_toc_white_24dp" />
 
             <ImageButton
-                android:id="@+id/exitMupdfButton"
+                android:id="@+id/viewTopClose"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
@@ -115,14 +116,14 @@
             android:orientation="vertical">
 
             <ImageButton
-                android:id="@+id/exitButton"
+                android:id="@+id/viewArtClose"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"
                 android:src="@drawable/ic_mupdf_close_white" />
 
             <ImageButton
-                android:id="@+id/penButton"
+                android:id="@+id/viewArtPen"
                 android:layout_width="@dimen/vector_image_view_size"
                 android:layout_height="@dimen/vector_image_view_size"
                 android:background="@drawable/button"

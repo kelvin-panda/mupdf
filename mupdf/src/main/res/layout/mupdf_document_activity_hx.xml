@@ -14,7 +14,7 @@
         android:layout_height="wrap_content"
         android:layout_alignParentTop="true"
         android:layout_centerHorizontal="true"
-        tools:visibility="visible">
+        tools:visibility="gone">
 
         <LinearLayout
             android:id="@+id/mainBar"
@@ -53,7 +53,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_brush_white" />
+                    android:src="@drawable/ic_mupdf_top_annotation" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -80,7 +80,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_signature_white" />
+                    android:src="@drawable/ic_mupdf_top_signature" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -107,7 +107,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_screenshot" />
+                    android:src="@drawable/ic_mupdf_top_screenshot" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -133,7 +133,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_refresh" />
+                    android:src="@drawable/ic_mupdf_top_refresh" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -160,7 +160,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_out" />
+                    android:src="@drawable/ic_mupdf_top_jump" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -187,7 +187,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_upload" />
+                    android:src="@drawable/ic_mupdf_top_save" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -214,7 +214,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_toc_white_24dp" />
+                    android:src="@drawable/ic_mupdf_top_bookmark" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -239,7 +239,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_close_white" />
+                    android:src="@drawable/ic_mupdf_top_close" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -261,7 +261,7 @@
         android:layout_height="wrap_content"
         android:background="@color/toolbar"
         android:visibility="invisible"
-        tools:visibility="gone">
+        tools:visibility="visible">
 
         <LinearLayout
             android:id="@+id/inkOperationLayout"
@@ -284,7 +284,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_close_white" />
+                    android:src="@drawable/ic_mupdf_art_close" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -307,7 +307,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_line_weight_white" />
+                    android:src="@drawable/ic_mupdf_art_size" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -347,7 +347,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_pen_white" />
+                    android:src="@drawable/ic_mupdf_art_pen" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -370,7 +370,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_line_white" />
+                    android:src="@drawable/ic_mupdf_art_line" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -393,7 +393,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_delete_white" />
+                    android:src="@drawable/ic_mupdf_art_brush" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -416,7 +416,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_color_white" />
+                    android:src="@drawable/ic_mupdf_art_color" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -439,7 +439,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/vector_highlight" />
+                    android:src="@drawable/ic_mupdf_art_highlight" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -449,6 +449,7 @@
                     android:textSize="10sp" />
             </LinearLayout>
 
+
             <LinearLayout
                 android:id="@+id/viewArtInvite"
                 android:layout_width="wrap_content"
@@ -457,7 +458,9 @@
                 android:layout_marginEnd="5dp"
                 android:background="@drawable/view_click_bg"
                 android:gravity="center"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
 
                 <ImageView
                     android:layout_width="30dp"
@@ -485,7 +488,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_revoke_white" />
+                    android:src="@drawable/ic_mupdf_art_revoke" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -508,7 +511,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_done_white" />
+                    android:src="@drawable/ic_mupdf_art_done" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -620,4 +623,5 @@
             android:textColor="@color/white"
             android:textSize="18sp" />
     </LinearLayout>
+
 </RelativeLayout>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="cancel">Cancel</string>
+	<string name="cannot_open_document">Cannot open document</string>
+	<string name="cannot_open_document_Reason">Cannot open document: %1$s</string>
+	<string name="dismiss">Dismiss</string>
+	<string name="enter_password">Enter password</string>
+	<string name="no_further_occurrences_found">No further occurrences found</string>
+	<string name="not_supported">Not supported</string>
+	<string name="okay">Okay</string>
+	<string name="search">Search&#x2026;</string>
+	<string name="searching_">Searching&#x2026;</string>
+	<string name="text_not_found">Text not found</string>
+	<string name="your_screenshot">Your screenshot</string>
+	<string name="open_document_fail">Document opening failed, should you try opening it using an external program?</string>
+	<string name="determine">Open externally</string>
+	<string name="exit_review">Exit</string>
+
+	<string name="open_document_tip">Are you sure you want to try opening it using an external program?</string>
+	<string name="mupdf_ensure">Open</string>
+	<string name="mupdf_cancel">Cancel</string>
+	<string name="mupdf_confirm">Confirm</string>
+	<string name="mupdf_close">Close</string>
+	<string name="mupdf_size">Size</string>
+	<string name="mupdf_brush">brush</string>
+	<string name="mupdf_art_highlight">highlight</string>
+	<string name="mupdf_art_brush">brush</string>
+	<string name="mupdf_art_line">line</string>
+	<string name="mupdf_art_delete">erase</string>
+	<string name="mupdf_art_color">color</string>
+	<string name="mupdf_art_invite">invite</string>
+	<string name="mupdf_art_revoke">revoke</string>
+	<string name="mupdf_art_done">done</string>
+	<string name="mupdf_previous_page">previous</string>
+	<string name="mupdf_next_page">next</string>
+	<string name="mupdf_signature_submission">Submit</string>
+	<string name="mupdf_cancel_signature">Cancel</string>
+	<string name="mupdf_annotation">annotation</string>
+	<string name="mupdf_signature">signature</string>
+	<string name="mupdf_screenshot">screenshot</string>
+	<string name="mupdf_refresh">refresh</string>
+	<string name="mupdf_jump">jump</string>
+	<string name="mupdf_save">save</string>
+	<string name="mupdf_bookmark">bookmark</string>
+	<string name="tip_please_signature">please signature</string>
+
+
+</resources>

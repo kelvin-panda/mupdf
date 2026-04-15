@@ -52,6 +52,13 @@ public class MainActivity extends AppCompatActivity {
         });
         android11Permission();
         cb_full = findViewById(R.id.cb_full);
+        CheckBox cb_hengxun = findViewById(R.id.cb_hengxun);
+        cb_hengxun.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                MupdfMacro.isHengXunVersion = b;
+            }
+        });
         CheckBox cb_delete = findViewById(R.id.cb_delete);
         cb_delete.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
@@ -143,10 +150,10 @@ public class MainActivity extends AppCompatActivity {
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
                 .fileUri(uri.toString())
                 .watermarkEnable(false)
-                .uploadEnable(false)
+                .uploadEnable(true)
                 .signatureEnable(true)
                 .wpsOpenEnable(true)
-                .captureEnable(false)
+                .captureEnable(true)
                 .clarityLimitMode(mode)
                 .fullScreenEnable(cb_full.isChecked())
                 .watermarkContent("保密文件限制外露")

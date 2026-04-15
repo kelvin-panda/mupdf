@@ -21,7 +21,7 @@
             android:layout_gravity="center"
             android:layout_marginStart="10dp"
             android:gravity="center"
-            android:text="请进行签名"
+            android:text="@string/mupdf_signature"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -74,34 +74,34 @@
             android:id="@+id/btn_revoke"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
-            android:text="撤销" />
+            android:text="@string/mupdf_art_revoke" />
 
         <Button
             android:id="@+id/btn_clear"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
             android:layout_marginStart="20dp"
-            android:text="清除" />
+            android:text="@string/mupdf_art_delete" />
 
         <Button
             android:id="@+id/btn_color"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
             android:layout_marginStart="20dp"
-            android:text="颜色" />
+            android:text="@string/mupdf_art_color" />
 
         <Button
             android:id="@+id/btn_ensure"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
             android:layout_marginStart="20dp"
-            android:text="确定" />
+            android:text="@string/mupdf_confirm" />
 
         <Button
             android:id="@+id/btn_cancel"
             android:layout_height="wrap_content"
             android:layout_width="wrap_content"
             android:layout_marginStart="20dp"
-            android:text="取消" />
+            android:text="@string/cancel" />
     </LinearLayout>
 </LinearLayout>

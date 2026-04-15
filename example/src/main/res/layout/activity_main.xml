@@ -7,11 +7,41 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <CheckBox
+        android:id="@+id/cb_full"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="全屏缩放"
+        android:checked="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <CheckBox
+        android:id="@+id/cb_delete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="清理批注"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/cb_full" />
+
+    <CheckBox
+        android:id="@+id/cb_hengxun"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="恒迅版本"
+        android:checked="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/cb_delete" />
+
     <TextView
+        android:id="@+id/tv_tip"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="限制清晰度（提升加载速度）"
-        app:layout_constraintBottom_toTopOf="@+id/radioGroup"
+        app:layout_constraintTop_toBottomOf="@+id/cb_hengxun"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
@@ -20,10 +50,9 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        app:layout_constraintBottom_toTopOf="@+id/button"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@+id/tv_tip">
 
         <RadioButton
             android:id="@+id/rb1"
@@ -63,24 +92,6 @@
             android:text="720P" />
     </RadioGroup>
 
-    <CheckBox
-        android:id="@+id/cb_full"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="全屏缩放"
-        android:checked="true"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <CheckBox
-        android:id="@+id/cb_delete"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="清理批注"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/cb_full" />
 
     <Button
         android:id="@+id/button"

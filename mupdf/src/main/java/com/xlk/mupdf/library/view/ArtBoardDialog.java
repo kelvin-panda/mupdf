@@ -97,7 +97,7 @@ public class ArtBoardDialog extends Dialog {
                     mListener.onSuccess(draw_board.getDrawPaths(), draw_board.getRegionSize());
                 }
             } else {
-                Toast.makeText(getContext(), "请进行签名", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), R.string.tip_please_signature, Toast.LENGTH_SHORT).show();
             }
         });
         inflate.findViewById(R.id.btn_cancel).setOnClickListener(v -> dismiss());
