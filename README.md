@@ -2,6 +2,9 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.16
+  - 定制版本外部打开图标改成wps
+  - 魔法值修复
 - 6.0.15
   - 调整画笔工具关闭的图标位置到最后
 - 6.0.14

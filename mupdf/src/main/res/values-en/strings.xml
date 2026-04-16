@@ -44,6 +44,17 @@
 	<string name="mupdf_bookmark">bookmark</string>
 	<string name="tip_please_signature">please signature</string>
 	<string name="mupdf_exit">exit</string>
+    <string name="mupdf_wps">WPS</string>
+	<string name="jump_to_specific_page">jump to the specific page</string>
+	<string name="please_enter_page_number">please enter page number</string>
+	<string name="minimum_page_number_is_1">The minimum page number is 1</string>
+	<string name="cannot_exceed_the_maximum_page_size">Cannot exceed the maximum page size</string>
+	<string name="save_to_annotation_directory_upon_exit">Save to annotation directory upon exit</string>
+	<string name="cancel_exit_and_save_to_annotation_directory">Cancel exit and save to annotation directory</string>
+	<string name="title_save_pop">The file has been modified. Do you want to save it to the annotation directory</string>
+	<string name="save_and_exit">Save and Exit</string>
+	<string name="exit_directly">exit directly</string>
+	<string name="please_wait">Please wait</string>
 
 
 </resources>

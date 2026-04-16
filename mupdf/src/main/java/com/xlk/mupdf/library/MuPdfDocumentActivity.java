@@ -485,7 +485,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //退出文档批注上传开关
         viewTopSave.setOnClickListener(v -> {
             saveWhenExit = !saveWhenExit;
-            toast(saveWhenExit ? "将在退出时保存到批注目录" : "已取消退出时保存到批注目录");
+            toast(saveWhenExit ? getString(R.string.save_to_annotation_directory_upon_exit) : getString(R.string.cancel_exit_and_save_to_annotation_directory));
         });
         viewTopSave.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
 
@@ -608,30 +608,30 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         //界面跳转
         mPageNumberView.setOnClickListener(v -> {
             AlertDialog alert = mAlertBuilder.create();
-            alert.setTitle("调整到指定页");
+            alert.setTitle(getString(R.string.jump_to_specific_page));
             EditText editText = new EditText(this);
             editText.setInputType(InputType.TYPE_CLASS_NUMBER);
             alert.setView(editText);
             alert.setButton(AlertDialog.BUTTON_POSITIVE, "确定", (dialog, which) -> {
                 String number = editText.getText().toString().trim();
                 if (number.isEmpty()) {
-                    toast("请输入页码");
+                    toast(getString(R.string.please_enter_page_number));
                     return;
                 }
                 int max = core.countPages();
                 int value = Integer.parseInt(number);
                 if (value < 1) {
-                    toast("页码最小值为1");
+                    toast(getString(R.string.minimum_page_number_is_1));
                     return;
                 }
                 if (value > max) {
-                    toast("不能大于最大页");
+                    toast(getString(R.string.cannot_exceed_the_maximum_page_size));
                     return;
                 }
                 mDocView.setDisplayedViewIndex(value - 1);
                 dialog.dismiss();
             });
-            alert.setButton(AlertDialog.BUTTON_NEGATIVE, "取消", (dialog, which) -> dialog.dismiss());
+            alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.cancel), (dialog, which) -> dialog.dismiss());
             alert.setOnCancelListener(dialog -> dialog.dismiss());
             alert.show();
         });
@@ -1465,15 +1465,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
 
     private void tipSavePop() {
         new AlertDialog.Builder(this)
-                .setTitle("文件已修改，是否保存到批注目录？")
-                .setPositiveButton("保存并退出", new DialogInterface.OnClickListener() {
+                .setTitle(getString(R.string.title_save_pop))
+                .setPositiveButton(getString(R.string.save_and_exit), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         dialog.dismiss();
                         saveAndExit();
                     }
                 })
-                .setNegativeButton("直接退出", new DialogInterface.OnClickListener() {
+                .setNegativeButton(getString(R.string.exit_directly), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         dialog.dismiss();
@@ -1486,7 +1486,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
 
     private void saveAndExit() {
         ProgressDialog progressDialog = new ProgressDialog(MuPdfDocumentActivity.this);
-        progressDialog.setMessage("请稍后...");
+        progressDialog.setMessage(getString(R.string.please_wait));
         progressDialog.setCancelable(false);
         progressDialog.show();
         new Thread(() -> {

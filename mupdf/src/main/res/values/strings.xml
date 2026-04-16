@@ -44,6 +44,17 @@
 	<string name="mupdf_bookmark">书签</string>
 	<string name="tip_please_signature">请进行签名</string>
 	<string name="mupdf_exit">退出</string>
+    <string name="mupdf_wps">WPS</string>
+	<string name="jump_to_specific_page">跳转到指定页</string>
+	<string name="please_enter_page_number">请输入页码</string>
+	<string name="minimum_page_number_is_1">页码最小值为1</string>
+	<string name="cannot_exceed_the_maximum_page_size">不能大于最大页</string>
+	<string name="save_to_annotation_directory_upon_exit">将在退出时保存到批注目录</string>
+	<string name="cancel_exit_and_save_to_annotation_directory">已取消退出时保存到批注目录</string>
+	<string name="title_save_pop">文件已修改，是否保存到批注目录？</string>
+	<string name="save_and_exit">保存并退出</string>
+	<string name="exit_directly">直接退出</string>
+	<string name="please_wait">请稍等</string>
 
 
 </resources>
