@@ -2,6 +2,8 @@
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 
 #### 更新
+- 6.0.17
+  - 限制频繁点击刷新
 - 6.0.16
   - 定制版本外部打开图标改成wps
   - 魔法值修复

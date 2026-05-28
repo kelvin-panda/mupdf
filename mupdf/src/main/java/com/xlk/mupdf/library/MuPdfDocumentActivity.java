@@ -464,6 +464,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         Debugger.i(TAG, "createUI: end");
     }
 
+    long lastClickTime = 0L;
+
     private void extracted(Bundle savedInstanceState) {
         makeButtonsView();
         if (MupdfMacro.shareAnnotationEnable) {
@@ -479,8 +481,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
         });
         //刷新，重新加载当前页
         viewTopRefresh.setOnClickListener(v -> {
-            mDocView.setDisplayedViewIndex(mDocView.mCurrent);
-            core.logAnnotations(mDocView.mCurrent);
+            if (System.currentTimeMillis() - lastClickTime > 3000) {
+                lastClickTime = System.currentTimeMillis();
+                mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                core.logAnnotations(mDocView.mCurrent);
+            }
         });
         //退出文档批注上传开关
         viewTopSave.setOnClickListener(v -> {
