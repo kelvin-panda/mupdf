@@ -50,6 +50,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.4.1'
     implementation 'com.google.android.material:material:1.5.0'
     implementation 'org.greenrobot:eventbus:3.3.1'
+    api 'com.github.JessYanCoding:AndroidAutoSize:v1.2.1'
 }
 
 //https://github.com/jitpack/android-example
@@ -58,7 +59,7 @@ publishing {
         release(MavenPublication) {
             groupId = 'com.gitee.xlk_gitee'
             artifactId = 'mupdf-library'
-            version = '6.0.17'
+            version = '6.0.18'
 
             afterEvaluate {
                 from components.release

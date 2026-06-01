@@ -81,11 +81,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import me.jessyan.autosize.internal.CancelAdapt;
+
 /**
  * <p>mupdf文档查看器</p>
  * 需要取消屏幕适配： AutoSizeConfig.getInstance().getExternalAdaptManager().addCancelAdaptOfActivity(MuPdfDocumentActivity.class);
  */
-public class MuPdfDocumentActivity extends AppCompatActivity {
+public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAdapt {
     private static final String TAG = "MuPdfDocumentActivity";
 
     //<editor-fold desc="成员变量">
@@ -371,6 +373,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity {
             showCannotOpenDialog();
             return;
         }
+
         createUI(savedInstanceState);
         registerEventBus();
         ActUtil.addActivity(this);
