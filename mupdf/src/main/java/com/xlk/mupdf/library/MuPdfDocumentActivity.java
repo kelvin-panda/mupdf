@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.PointF;
@@ -81,6 +82,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import me.jessyan.autosize.AutoSizeCompat;
 import me.jessyan.autosize.internal.CancelAdapt;
 
 /**
@@ -211,6 +213,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         context.startActivity(intent);
     }
 
+    @Override
+    public Resources getResources() {
+        Resources superResources = super.getResources();
+        AutoSizeCompat.cancelAdapt(superResources);
+        return superResources;
+    }
+
     /**
      * Called when the activity is first created.
      */
@@ -225,7 +234,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
         mDisplayDPI = (int) metrics.densityDpi;
         mAlertBuilder = new AlertDialog.Builder(this);
-
+        Debugger.i(TAG, "mupdf version: 6.0.19");
         if (core == null) {
             if (savedInstanceState != null && savedInstanceState.containsKey("DocTitle")) {
                 mDocTitle = savedInstanceState.getString("DocTitle");
