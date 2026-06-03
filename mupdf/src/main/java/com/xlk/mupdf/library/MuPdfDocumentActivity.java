@@ -10,7 +10,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PointF;
 import android.graphics.RectF;
 import android.net.Uri;
@@ -78,7 +81,9 @@ import org.greenrobot.eventbus.ThreadMode;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -96,7 +101,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private View viewTopAnnotation, viewTopSignature, viewTopScreenshot, viewTopRefresh, viewTopJump, viewTopSave, viewTopBookmark, viewTopClose,//顶部控件
             viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
-            viewArtInvite;
+            viewArtInvite, viewArtUnderline, viewArtStrikeout, viewArtFreeText,
+            viewTopWatermark, viewTopSignTable, viewTopSignRow;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
@@ -175,6 +181,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 当前页：索引
      */
     private int currentPageIndex = 0;
+    private int signTableTotalNames = 0;
+
+    private Runnable pendingPageUpdate;
+
+    private void schedulePageUpdate(Runnable update) {
+        if (pendingPageUpdate != null) {
+            mainHandler.removeCallbacks(pendingPageUpdate);
+        }
+        pendingPageUpdate = update;
+        mainHandler.postDelayed(update, 50);
+    }
     //</editor-fold>
 
     public static void jump(Context context, MupdfConfig config) {
@@ -505,6 +522,25 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             toast(saveWhenExit ? getString(R.string.save_to_annotation_directory_upon_exit) : getString(R.string.cancel_exit_and_save_to_annotation_directory));
         });
         viewTopSave.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
+        //内容流水印
+        viewTopWatermark.setOnClickListener(v -> {
+            showWatermarkDialog();
+        });
+        viewTopWatermark.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
+        //签名表格
+        if (viewTopSignTable != null) {
+            viewTopSignTable.setOnClickListener(v -> {
+                showSignTableDialog();
+            });
+            viewTopSignTable.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
+        }
+        //填写签名
+        if (viewTopSignRow != null) {
+            viewTopSignRow.setOnClickListener(v -> {
+                showSignRowDialog();
+            });
+            viewTopSignRow.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
+        }
 
         //<editor-fold desc="签名操作">
         //签名
@@ -741,7 +777,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                             int paintColor = inkAnnotation.getPaintColor();
                             int type = inkAnnotation.getType();
                             paintSize = paintSize / 3.0f;
-                            Point[] percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
+                            Point[] percentPoints;
+
+                            percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
 
                             if (MupdfMacro.isSharing) {
                                 //points是经过core.addAnnotation方法计算后的实际坐标
@@ -777,6 +815,23 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
             });
             artBoard.setPaintWidth(default_ink_size);
+            artBoard.setFreeTextListener(pos -> {
+                showFreeTextDialog(pos);
+            });
+            artBoard.setTextMarkupListener((type, start, end, color, strokeWidth) -> {
+                PageView pv = (PageView) mDocView.getDisplayedView();
+                if (pv == null || core == null) return;
+                int w = pv.getWidth();
+                int h = pv.getHeight();
+                if (w <= 0 || h <= 0) return;
+                float[] c = core.parseColor(color);
+                Object result = core.addTextMarkupAnnotation(mDocView.mCurrent, w, h,
+                        type, start, end, c, mDisplayDPI, mDisplayDPI);
+                if (result != null) {
+                    hadAnnotation = true;
+                    schedulePageUpdate(() -> pv.update());
+                }
+            });
             pageView.addView(artBoard);
             artBoard.layout(0, 0, width, height);
         });
@@ -786,6 +841,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         ibs.add(viewArtPen);//墨迹
         ibs.add(viewArtLine);//直线
         ibs.add(viewArtHighlight);//高亮，矩形
+        ibs.add(viewArtUnderline);//文字下划线
+        ibs.add(viewArtStrikeout);//文字删除线
+        ibs.add(viewArtFreeText);//自由文本标注
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             viewArtSeekBar.setMin(1);
         }
@@ -865,6 +923,27 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     artBoard.setDrawType(AnnotationArtBoard.DRAW_RECT);
                     chooseType(3);
                 }
+            }
+        });
+        //文字下划线
+        viewArtUnderline.setOnClickListener(v -> {
+            if (artBoard != null) {
+                artBoard.setDrawType(AnnotationArtBoard.DRAW_UNDERLINE);
+                chooseType(4);
+            }
+        });
+        //文字删除线
+        viewArtStrikeout.setOnClickListener(v -> {
+            if (artBoard != null) {
+                artBoard.setDrawType(AnnotationArtBoard.DRAW_STRIKEOUT);
+                chooseType(5);
+            }
+        });
+        //自由文本标注
+        viewArtFreeText.setOnClickListener(v -> {
+            if (artBoard != null) {
+                artBoard.setDrawType(AnnotationArtBoard.DRAW_FREETEXT);
+                chooseType(6);
             }
         });
         //邀请多人批注
@@ -1394,6 +1473,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewTopSignature = mButtonsView.findViewById(R.id.viewTopSignature);
         viewTopAnnotation = mButtonsView.findViewById(R.id.viewTopAnnotation);
         viewTopBookmark = mButtonsView.findViewById(R.id.viewTopBookmark);
+        viewTopWatermark = mButtonsView.findViewById(R.id.viewTopWatermark);
+        viewTopSignTable = mButtonsView.findViewById(R.id.viewTopSignTable);
+        viewTopSignRow = mButtonsView.findViewById(R.id.viewTopSignRow);
         viewTopClose = mButtonsView.findViewById(R.id.viewTopClose);
         //</editor-fold>
 
@@ -1418,6 +1500,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewArtHighlight = mButtonsView.findViewById(R.id.viewArtHighlight);
         //撤销
         viewArtRevoke = mButtonsView.findViewById(R.id.viewArtRevoke);
+        //下划线
+        viewArtUnderline = mButtonsView.findViewById(R.id.viewArtUnderline);
+        //删除线
+        viewArtStrikeout = mButtonsView.findViewById(R.id.viewArtStrikeout);
+        //自由文本
+        viewArtFreeText = mButtonsView.findViewById(R.id.viewArtFreeText);
         //确定
         viewArtDone = mButtonsView.findViewById(R.id.viewArtDone);
         //</editor-fold>
@@ -1430,6 +1518,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             viewTopSave.setVisibility(View.GONE);
             viewTopSignature.setVisibility(View.GONE);
             viewTopAnnotation.setVisibility(View.GONE);
+            viewTopWatermark.setVisibility(View.GONE);
+            if (viewTopSignTable != null) viewTopSignTable.setVisibility(View.GONE);
         }
     }
 
@@ -1522,6 +1612,192 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private void showFreeTextDialog(final Point position) {
+        AlertDialog alert = mAlertBuilder.create();
+        alert.setTitle(R.string.mupdf_freetext_title);
+
+        final EditText editText = new EditText(this);
+        editText.setHint(R.string.mupdf_freetext_hint);
+        editText.setMinLines(2);
+
+        alert.setView(editText);
+        alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_ensure), (dialog, which) -> {
+            String text = editText.getText().toString().trim();
+            if (!text.isEmpty() && core != null) {
+                PageView pageView = (PageView) mDocView.getDisplayedView();
+                if (pageView == null) return;
+                int width = pageView.getWidth();
+                int height = pageView.getHeight();
+                float[] color = core.parseColor(artBoard != null ? artBoard.getPaintColor() : Color.RED);
+                core.addFreeTextAnnotation(mDocView.mCurrent, width, height,
+                        position, text, "Helv", 16f, color);
+                hadAnnotation = true;
+                schedulePageUpdate(() -> pageView.update());
+            }
+            dialog.dismiss();
+        });
+        alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
+                (dialog, which) -> dialog.dismiss());
+        alert.show();
+    }
+
+    private void showWatermarkDialog() {
+        AlertDialog alert = mAlertBuilder.create();
+        alert.setTitle(R.string.mupdf_watermark_title);
+
+        final EditText editText = new EditText(this);
+        editText.setHint(R.string.mupdf_watermark_text_hint);
+        editText.setSingleLine();
+
+        alert.setView(editText);
+        alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_ensure), (dialog, which) -> {
+            String text = editText.getText().toString().trim();
+            if (!text.isEmpty() && core != null) {
+                float[] color = new float[]{0.82f, 0.20f, 0.18f};
+                core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
+                hadAnnotation = true;
+                mDocView.afterAnnotation();
+                mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                Toast.makeText(MuPdfDocumentActivity.this,
+                        getString(R.string.mupdf_watermark) + " " + getString(R.string.mupdf_art_done),
+                        Toast.LENGTH_SHORT).show();
+            }
+            dialog.dismiss();
+        });
+        alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
+                (dialog, which) -> dialog.dismiss());
+        alert.show();
+    }
+
+    private void showSignTableDialog() {
+        AlertDialog alert = mAlertBuilder.create();
+        alert.setTitle(R.string.mupdf_sign_table_title);
+
+        final EditText editText = new EditText(this);
+        editText.setHint(R.string.mupdf_sign_table_hint);
+        editText.setMinLines(3);
+        editText.setGravity(android.view.Gravity.TOP);
+
+        alert.setView(editText);
+        alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_sign_table_create), (dialog, which) -> {
+            String input = editText.getText().toString().trim();
+            if (!input.isEmpty() && core != null) {
+                String[] names = input.split("[,\n]");
+                java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
+                for (String n : names) {
+                    String trimmed = n.trim();
+                    if (!trimmed.isEmpty()) nameList.add(trimmed);
+                }
+                if (!nameList.isEmpty()) {
+                    signTableTotalNames = nameList.size();
+                    core.createSignatureTable(nameList.toArray(new String[0]),
+                            "姓名", "时间", "签名");
+                    hadAnnotation = true;
+                    mDocView.afterAnnotation();
+                    mDocView.setDisplayedViewIndex(core.countPages() - 1);
+                    Toast.makeText(MuPdfDocumentActivity.this,
+                            getString(R.string.mupdf_sign_table) + " " + getString(R.string.mupdf_art_done),
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+            dialog.dismiss();
+        });
+        alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
+                (dialog, which) -> dialog.dismiss());
+        alert.show();
+    }
+
+    private void showSignRowDialog() {
+        AlertDialog alert = mAlertBuilder.create();
+        alert.setTitle(R.string.mupdf_sign_row_title);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(40, 20, 40, 10);
+
+        final EditText rowInput = new EditText(this);
+        rowInput.setHint(R.string.mupdf_sign_row_hint);
+        rowInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        layout.addView(rowInput);
+
+        final EditText timeInput = new EditText(this);
+        timeInput.setHint(R.string.mupdf_sign_row_hint2);
+        timeInput.setText(new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(new Date()));
+        layout.addView(timeInput);
+
+        alert.setView(layout);
+        alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_sign_row_draw), (dialog, which) -> {
+            String rowStr = rowInput.getText().toString().trim();
+            String timeStr = timeInput.getText().toString().trim();
+            if (!rowStr.isEmpty() && core != null) {
+                int rowIndex = Integer.parseInt(rowStr);
+                // 打开签名画板
+                new ArtBoardDialog(MuPdfDocumentActivity.this, false, new ArtBoardDialog.SignatureListener() {
+                    @Override
+                    public void onSuccess(Object[] object) {
+                        List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
+                        RectF regionSize = (RectF) object[1];
+                        // 生成签名图片
+                        Bitmap bmp = renderSignatureBitmap(drawPaths, regionSize);
+                        if (bmp != null) {
+                            int w = bmp.getWidth();
+                            int h = bmp.getHeight();
+                            int[] pixels = new int[w * h];
+                            bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+                            byte[] rgb = new byte[w * h * 3];
+                            for (int i = 0; i < pixels.length; i++) {
+                                int px = pixels[i];
+                                rgb[i * 3] = (byte) ((px >> 16) & 0xFF);
+                                rgb[i * 3 + 1] = (byte) ((px >> 8) & 0xFF);
+                                rgb[i * 3 + 2] = (byte) (px & 0xFF);
+                            }
+                            core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
+                            hadAnnotation = true;
+                            mDocView.afterAnnotation();
+                            mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                            Toast.makeText(MuPdfDocumentActivity.this,
+                                    getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
+                                    Toast.LENGTH_SHORT).show();
+                            bmp.recycle();
+                        }
+                    }
+                }).show();
+            }
+            dialog.dismiss();
+        });
+        alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
+                (dialog, which) -> dialog.dismiss());
+        alert.show();
+    }
+
+    private android.graphics.Bitmap renderSignatureBitmap(List<SignatureBoard.DrawPath> paths, RectF region) {
+        int w = (int) (region.right - region.left + 20);
+        int h = (int) (region.bottom - region.top + 20);
+        if (w <= 0 || h <= 0) return null;
+        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas = new android.graphics.Canvas(bmp);
+        canvas.drawColor(Color.WHITE);
+        for (SignatureBoard.DrawPath dp : paths) {
+            android.graphics.Paint p = new android.graphics.Paint();
+            p.setAntiAlias(true);
+            p.setDither(true);
+            p.setStyle(android.graphics.Paint.Style.STROKE);
+            p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+            p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            p.setColor(dp.color);
+            p.setStrokeWidth(3f);
+            android.graphics.Path path = new android.graphics.Path();
+            for (int i = 0; i < dp.points.length; i++) {
+                float x = dp.points[i].x - region.left + 10;
+                float y = dp.points[i].y - region.top + 10;
+                if (i == 0) path.moveTo(x, y);
+                else path.lineTo(x, y);
+            }
+            canvas.drawPath(path, p);
+        }
+        return bmp;
     }
 
     public void onDestroy() {

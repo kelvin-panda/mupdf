@@ -91,4 +91,12 @@ public class PDFPage extends Page
 	public Link createLinkFitBH(Rect bbox, int page, float y) {
 		return createLink(bbox, LinkDestination.FitBH(0, page, y));
 	}
+
+	public native PDFAnnotation addTextMarkupAnnotation(int type, Rect selection,
+		float[] color, float dpiX, float dpiY);
+
+	public native PDFAnnotation addFreeTextAnnotation(Point pos, String text,
+		String fontName, float fontSize, float[] color, int textLen);
+
+	public native int clearAnnotations();
 }

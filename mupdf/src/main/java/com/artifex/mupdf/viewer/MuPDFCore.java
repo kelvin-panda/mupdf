@@ -20,6 +20,7 @@ import com.artifex.mupdf.fitz.Link;
 import com.artifex.mupdf.fitz.Matrix;
 import com.artifex.mupdf.fitz.Outline;
 import com.artifex.mupdf.fitz.PDFAnnotation;
+import com.artifex.mupdf.fitz.PDFDocument;
 import com.artifex.mupdf.fitz.PDFPage;
 import com.artifex.mupdf.fitz.Page;
 import com.artifex.mupdf.fitz.Point;
@@ -286,7 +287,7 @@ public class MuPDFCore {
 //            point.x = realWidth / width * point.x;
 //            point.y = realHeight / height * point.y;
 //        }
-        PDFPage pdfPage = new PDFPage(page.pointer);
+        PDFPage pdfPage = (PDFPage) page;
         PDFAnnotation annotation = pdfPage.createAnnotation(TYPE_WATERMARK);
         annotation.setBorderWidth(1f);
         annotation.setContents("测试水印");
@@ -300,7 +301,7 @@ public class MuPDFCore {
         Rect bounds = page.getBounds();
         float realWidth = bounds.x1 - bounds.x0;
         float realHeight = bounds.y1 - bounds.y0;
-        PDFPage pdfPage = new PDFPage(page.pointer);
+        PDFPage pdfPage = (PDFPage) page;
         PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_FREE_TEXT);
         pdfAnnotation.setBorderWidth(1f);
     }
@@ -327,7 +328,7 @@ public class MuPDFCore {
             point.y = point.y * realHeight;
             Debugger.i(TAG, "addShareInk: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
         }
-        PDFPage pdfPage = new PDFPage(page.pointer);
+        PDFPage pdfPage = (PDFPage) page;
         PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_INK);
         float[] color = parseColor(paintColor);
         pdfAnnotation.setColor(color);
@@ -363,7 +364,7 @@ public class MuPDFCore {
                 percentPoints[i] = new Point(point.x / realWidth, point.y / realHeight);
                 Debugger.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
             }
-            PDFPage pdfPage = new PDFPage(page.pointer);
+            PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(type);
             float[] color = parseColor(paintColor);
             pdfAnnotation.setColor(color);
@@ -414,6 +415,7 @@ public class MuPDFCore {
             }
             boolean update = pdfAnnotation.update();
             boolean update1 = pdfPage.update();
+            invalidatePageCache();
             Debugger.i(TAG, "addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
             return percentPoints;
         } catch (Exception e) {
@@ -423,9 +425,143 @@ public class MuPDFCore {
         return null;
     }
 
+    /**
+     * 添加文本标记标注: 下划线/删除线，自动提取选区内的文字quad。
+     */
+    public PDFAnnotation addTextMarkupAnnotation(int pageNum, int width, int height, int type,
+                                                 Point startPt, Point endPt, float[] color, float dpiX, float dpiY) {
+        try {
+            if (color == null || color.length < 3) {
+                Debugger.e(TAG, "addTextMarkupAnnotation: invalid color");
+                return null;
+            }
+            Page page = doc.loadPage(pageNum);
+            if (page == null) return null;
+            Rect bounds = page.getBounds();
+            float realWidth = bounds.x1 - bounds.x0;
+            float realHeight = bounds.y1 - bounds.y0;
+            if (realWidth <= 0 || realHeight <= 0 || width <= 0 || height <= 0) return null;
+
+            // widget坐标 → 页坐标
+            float x0 = realWidth / width * Math.min(startPt.x, endPt.x);
+            float y0 = realHeight / height * Math.min(startPt.y, endPt.y);
+            float x1 = realWidth / width * Math.max(startPt.x, endPt.x);
+            float y1 = realHeight / height * Math.max(startPt.y, endPt.y);
+            Rect selection = new Rect(x0, y0, x1, y1);
+
+            Debugger.i(TAG, "addTextMarkupAnnotation: page selection=" + selection + " color=" + color[0] + "," + color[1] + "," + color[2]);
+
+            PDFPage pdfPage = (PDFPage) page;
+            // dpi=72让JNI内部screen→page换算为恒等变换
+            PDFAnnotation result = pdfPage.addTextMarkupAnnotation(type, selection,
+                    new float[]{color[0], color[1], color[2]}, 72f, 72f);
+            invalidatePageCache();
+            return result;
+        } catch (Exception e) {
+            Debugger.e(TAG, "addTextMarkupAnnotation Exception: " + e);
+        }
+        return null;
+    }
+
+    /**
+     * 添加自由文本标注。
+     * @param pos 在widget上的位置坐标
+     */
+    public PDFAnnotation addFreeTextAnnotation(int pageNum, int width, int height, Point pos,
+                                                String text, String fontName, float fontSize, float[] color) {
+        try {
+            Page page = doc.loadPage(pageNum);
+            if (page == null) return null;
+            Rect bounds = page.getBounds();
+            float realWidth = bounds.x1 - bounds.x0;
+            float realHeight = bounds.y1 - bounds.y0;
+            Point pt = new Point(realWidth / width * pos.x, realHeight / height * pos.y);
+
+            PDFPage pdfPage = (PDFPage) page;
+            // JNI函数：自动检测CJK嵌入字体，创建FreeText标注
+            PDFAnnotation annot = pdfPage.addFreeTextAnnotation(pt, text,
+                    fontName != null ? fontName : "Helv", fontSize, color, text.length());
+            invalidatePageCache();
+            return annot;
+        } catch (Exception e) {
+            Debugger.e(TAG, "addFreeTextAnnotation Exception: " + e);
+        }
+        return null;
+    }
+
+    private void invalidatePageCache() {
+        if (page != null) { page.destroy(); page = null; }
+        if (displayList != null) { displayList.destroy(); displayList = null; }
+        currentPage = -1;
+        pageWidth = 0;
+        pageHeight = 0;
+    }
+
+    /**
+     * 水印: JNI content stream方式写入每页。
+     */
+    public void addContentWatermark(String text, float fontSize, float angle,
+                                     float opacity, float[] color, float spacing) {
+        try {
+            /* doc 实际已是 PDFDocument 实例，直接 cast 避免 new PDFDocument(ptr)
+             * 造成引用计数错误导致文档被意外释放 */
+            PDFDocument pdfDoc = (PDFDocument) doc;
+            pdfDoc.addWatermark(text, fontSize, angle, opacity, color, spacing);
+            invalidatePageCache();
+            Debugger.i(TAG, "addContentWatermark: done");
+        } catch (Exception e) {
+            Debugger.e(TAG, "addContentWatermark Exception: " + e);
+        }
+    }
+
+    /**
+     * 在文档末尾创建签名表格。
+     */
+    public void createSignatureTable(String[] names, String headerName,
+                                      String headerTime, String headerImage) {
+        try {
+            PDFDocument pdfDoc = (PDFDocument) doc;
+            pdfDoc.createSignatureTable(names, headerName, headerTime, headerImage);
+            pageCount = doc.countPages();
+            invalidatePageCache();
+            Debugger.i(TAG, "createSignatureTable: done, pages=" + pageCount);
+        } catch (Exception e) {
+            Debugger.e(TAG, "createSignatureTable Exception: " + e);
+        }
+    }
+
+    /**
+     * 设置签名表格行的签名时间和图片。
+     */
+    public void setSignatureRow(int rowIndex, String time, byte[] imageRGB,
+                                 int imageW, int imageH, int totalNames) {
+        try {
+            PDFDocument pdfDoc = (PDFDocument) doc;
+            pdfDoc.setSignatureRow(rowIndex, time, imageRGB, imageW, imageH, totalNames);
+            invalidatePageCache();
+            Debugger.i(TAG, "setSignatureRow: row=" + rowIndex + " done");
+        } catch (Exception e) {
+            Debugger.e(TAG, "setSignatureRow Exception: " + e);
+        }
+    }
+
+    /**
+     * 清除当前页面上的全部标注。
+     */
+    public int clearAnnotations(int pageNum) {
+        try {
+            Page page = doc.loadPage(pageNum);
+            PDFPage pdfPage = (PDFPage) page;
+            return pdfPage.clearAnnotations();
+        } catch (Exception e) {
+            Debugger.e(TAG, "clearAnnotations Exception: " + e);
+        }
+        return 0;
+    }
+
     public void logAnnotations(int pageNum) {
         Page page = doc.loadPage(pageNum);
-        PDFPage pdfPage = new PDFPage(page.pointer);
+        PDFPage pdfPage = (PDFPage) page;
         PDFAnnotation[] annotations = pdfPage.getAnnotations();
         if (annotations == null) {
             return;
@@ -579,7 +715,7 @@ public class MuPDFCore {
     public void deleteAnnotation(ReaderView docView, int width, int height, float x, float y) {
         try {
             Page page = doc.loadPage(docView.mCurrent);
-            PDFPage pdfPage = new PDFPage(page.pointer);
+            PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation[] annotations = pdfPage.getAnnotations();
             if (annotations == null) {
                 return;

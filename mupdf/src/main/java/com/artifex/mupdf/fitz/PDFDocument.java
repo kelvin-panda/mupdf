@@ -228,6 +228,15 @@ public class PDFDocument extends Document
 	public native Buffer loadEmbeddedFileContents(PDFObject fs);
 	public native boolean verifyEmbeddedFileChecksum(PDFObject fs);
 
+	public native void addWatermark(String text, float fontSize, float angle,
+		float opacity, float[] color, float spacing);
+
+	public native void createSignatureTable(String[] names, String headerName,
+		String headerTime, String headerImage);
+
+	public native void setSignatureRow(int rowIndex, String time,
+		byte[] imageRGB, int imageW, int imageH, int totalNames);
+
 	public PDFObject addEmbeddedFile(String filename, String mimetype, InputStream stream, Date created, Date modified, boolean addChecksum) {
 		Buffer contents = new Buffer();
 		contents.writeFromStream(stream);

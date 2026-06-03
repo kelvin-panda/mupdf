@@ -55,6 +55,13 @@
 	<string name="save_and_exit">Save and Exit</string>
 	<string name="exit_directly">exit directly</string>
 	<string name="please_wait">Please wait</string>
-
+    <string name="mupdf_art_underline">Underline</string>
+    <string name="mupdf_art_strikeout">Strikeout</string>
+    <string name="mupdf_art_freetext">Text</string>
+    <string name="mupdf_watermark">Watermark</string>
+    <string name="mupdf_freetext_title">Input text annotation</string>
+    <string name="mupdf_freetext_hint">Please enter annotation text</string>
+    <string name="mupdf_watermark_title">Watermark settings</string>
+    <string name="mupdf_watermark_text_hint">Please enter watermark text</string>
 
 </resources>

@@ -63,6 +63,9 @@ public class AnnotationArtBoard extends View {
     public static final int DRAW_TEXT = 5;
     public static final int DRAW_ERASER = 6;
     public static final int DRAW_DELLINE = 7;
+    public static final int DRAW_UNDERLINE = 8;
+    public static final int DRAW_STRIKEOUT = 9;
+    public static final int DRAW_FREETEXT = 10;
     /**
      * 当前画笔默认是曲线
      */
@@ -198,6 +201,23 @@ public class AnnotationArtBoard extends View {
                 mPaint.setStyle(Paint.Style.FILL_AND_STROKE);
                 mPaint.setStrokeWidth(3f);
                 mPaint.setColor(delLineColor);
+                break;
+            case DRAW_UNDERLINE:
+                mPaint.setStyle(Paint.Style.STROKE);
+                mPaint.setStrokeWidth(2f);
+                mPaint.setColor(Color.argb(120, 0, 120, 255));
+                mPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{8, 4}, 0));
+                break;
+            case DRAW_STRIKEOUT:
+                mPaint.setStyle(Paint.Style.STROKE);
+                mPaint.setStrokeWidth(2f);
+                mPaint.setColor(Color.argb(120, 255, 60, 60));
+                mPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{8, 4}, 0));
+                break;
+            case DRAW_FREETEXT:
+                mPaint.setStyle(Paint.Style.FILL);
+                mPaint.setColor(Color.argb(120, 60, 180, 60));
+                mPaint.setStrokeWidth(1f);
                 break;
             case DRAW_SLINE:
             case DRAW_CIRCLE:
@@ -361,6 +381,17 @@ public class AnnotationArtBoard extends View {
                     case DRAW_DELLINE:
                         drawRect(x, y);
                         break;
+                    //文字下划线-选区
+                    case DRAW_UNDERLINE:
+                        drawRect(x, y);
+                        break;
+                    //文字删除线-选区
+                    case DRAW_STRIKEOUT:
+                        drawRect(x, y);
+                        break;
+                    //自由文本-不绘制拖动轨迹
+                    case DRAW_FREETEXT:
+                        break;
                     //直线
                     case DRAW_LINE:
                         drawLine(x, y);
@@ -404,19 +435,38 @@ public class AnnotationArtBoard extends View {
                     mPath = new Path();
                     mPath.moveTo(startX, y);
                     mPath.lineTo(x, y);
+                } else if (currentDrawGraphics == DRAW_UNDERLINE) {//文字下划线-即时生效
+                    if (textMarkupListener != null) {
+                        textMarkupListener.onTextMarkup(PDFAnnotation.TYPE_UNDERLINE,
+                                new Point(startX, startY), new Point(x, y), paintColor, paintWidth);
+                    }
+                } else if (currentDrawGraphics == DRAW_STRIKEOUT) {//文字删除线-即时生效
+                    if (textMarkupListener != null) {
+                        textMarkupListener.onTextMarkup(PDFAnnotation.TYPE_STRIKE_OUT,
+                                new Point(startX, startY), new Point(x, y), paintColor, paintWidth);
+                    }
+                } else if (currentDrawGraphics == DRAW_FREETEXT) {//自由文本标注
+                    if (freeTextListener != null) {
+                        freeTextListener.onFreeTextTap(new Point(startX, startY));
+                    }
                 } else {
                     Point[] array = list2array(points);
                     AnnotationBean annotationBean = new AnnotationBean(operid, PDFAnnotation.TYPE_INK, array, paintWidth, paintColor);
                     annotationBeans.add(annotationBean);
                 }
-                if (currentDrawGraphics != DRAW_TEXT && currentDrawGraphics != DRAW_ERASER) {
+                if (currentDrawGraphics != DRAW_TEXT && currentDrawGraphics != DRAW_ERASER
+                        && currentDrawGraphics != DRAW_FREETEXT
+                        && currentDrawGraphics != DRAW_UNDERLINE
+                        && currentDrawGraphics != DRAW_STRIKEOUT) {
                     drawPath = new DrawPath();
                     drawPath.operid = operid;
                     drawPath.path = new Path(mPath);
                     drawPath.paint = new Paint(mPaint);
                     pathList.add(drawPath);
                 }
-                if (currentDrawGraphics != DRAW_ERASER) {
+                if (currentDrawGraphics != DRAW_ERASER
+                        && currentDrawGraphics != DRAW_UNDERLINE
+                        && currentDrawGraphics != DRAW_STRIKEOUT) {
                     mCanvas.drawPath(mPath, mPaint);
                     mPath = null;
                     invalidate();
@@ -696,6 +746,26 @@ public class AnnotationArtBoard extends View {
 
     public interface DrawExitListener {
         void onDrawAnnotations(List<AnnotationBean> inkAnnotations);
+    }
+
+    private TextMarkupListener textMarkupListener;
+
+    public interface TextMarkupListener {
+        void onTextMarkup(int type, Point start, Point end, int color, float strokeWidth);
+    }
+
+    public void setTextMarkupListener(TextMarkupListener textMarkupListener) {
+        this.textMarkupListener = textMarkupListener;
+    }
+
+    private FreeTextListener freeTextListener;
+
+    public interface FreeTextListener {
+        void onFreeTextTap(Point position);
+    }
+
+    public void setFreeTextListener(FreeTextListener freeTextListener) {
+        this.freeTextListener = freeTextListener;
     }
 
     public List<AnnotationBean> getAnnotationBeans() {

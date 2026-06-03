@@ -55,6 +55,22 @@
 	<string name="save_and_exit">保存并退出</string>
 	<string name="exit_directly">直接退出</string>
 	<string name="please_wait">请稍等</string>
-
+    <string name="mupdf_art_underline">下划线</string>
+    <string name="mupdf_art_strikeout">删除线</string>
+    <string name="mupdf_art_freetext">文字</string>
+    <string name="mupdf_watermark">水印</string>
+    <string name="mupdf_freetext_title">输入文本标注</string>
+    <string name="mupdf_freetext_hint">请输入标注文字</string>
+    <string name="mupdf_watermark_title">水印设置</string>
+    <string name="mupdf_watermark_text_hint">请输入水印文字</string>
+    <string name="mupdf_sign_table">签名表</string>
+    <string name="mupdf_sign_table_title">创建签名表格</string>
+    <string name="mupdf_sign_table_hint">输入姓名，每行一个或用逗号分隔</string>
+    <string name="mupdf_sign_table_create">生成表格</string>
+    <string name="mupdf_sign_row">填写签名</string>
+    <string name="mupdf_sign_row_title">填写签名信息</string>
+    <string name="mupdf_sign_row_hint">请输入序号 (0开始)</string>
+    <string name="mupdf_sign_row_hint2">请输入签名时间</string>
+    <string name="mupdf_sign_row_draw">选取签名图片</string>
 
 </resources>
