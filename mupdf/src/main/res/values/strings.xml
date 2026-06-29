@@ -5,7 +5,7 @@
 	<string name="cannot_open_document_Reason">无法打开文档: %1$s</string>
 	<string name="dismiss">Dismiss</string>
 	<string name="enter_password">输入密码</string>
-	<string name="no_further_occurrences_found">未发现其他事件</string>
+	<string name="no_further_occurrences_found">未找到更多结果</string>
 	<string name="not_supported">不支持</string>
 	<string name="okay">确认</string>
 	<string name="search">搜索&#x2026;</string>

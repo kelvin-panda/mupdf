@@ -9,6 +9,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Point;
 import android.graphics.PointF;
 import android.graphics.Rect;
@@ -381,7 +382,7 @@ public class PageView extends ViewGroup {
 
         mDrawEntire.execute();
 
-        /*if (mSearchView == null) {
+        if (mSearchView == null) {
             mSearchView = new View(mContext) {
                 @Override
                 protected void onDraw(final Canvas canvas) {
@@ -390,6 +391,7 @@ public class PageView extends ViewGroup {
                     // from source to view
                     final float scale = mSourceScale * (float) getWidth() / (float) mSize.x;
                     final Paint paint = new Paint();
+                    paint.setStyle(Paint.Style.FILL);
 
                     if (!mIsBlank && mSearchBoxes != null) {
                         paint.setColor(HIGHLIGHT_COLOR);
@@ -417,7 +419,7 @@ public class PageView extends ViewGroup {
             };
 
             addView(mSearchView);
-        }*/
+        }
 
         Debugger.d(TAG, "setPage 调用 requestLayout page=" + page);
         requestLayout();

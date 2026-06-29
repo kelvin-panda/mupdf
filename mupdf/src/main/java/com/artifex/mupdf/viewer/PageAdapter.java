@@ -106,7 +106,10 @@ public class PageAdapter extends BaseAdapter {
                 protected void onPostExecute(PointF result) {
                     int page = pageView.getPage();
                     Debugger.i(TAG, "getView onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
-                    result = new PointF(result.x * mScale, result.y * mScale);
+                    // 注意：这里不能再乘以 fullWidthScale(mScale)。
+                    // setPage 与 mSearchView 的高亮坐标都假定传给它的 size 就是 MuPDFCore.getPageSize
+                    // 返回的原始页面尺寸(72dpi 点)，预先缩放会破坏搜索高亮 Quad 与文字的精确对齐。
+                    // 页面默认撑满全宽由 ReaderView.measureView 的 mScale 独立负责，无需在此提前缩放。
                     super.onPostExecute(result);
                     // We now know the page size
                     mPageSizes.put(position, result);

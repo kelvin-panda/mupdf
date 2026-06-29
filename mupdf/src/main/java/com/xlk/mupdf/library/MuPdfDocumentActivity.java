@@ -23,15 +23,19 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.text.method.PasswordTransformationMethod;
 import android.util.DisplayMetrics;
 import android.view.Menu;
+import android.view.KeyEvent;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.animation.Animation;
+import android.view.inputmethod.InputMethodManager;
 import android.view.animation.TranslateAnimation;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
@@ -63,6 +67,7 @@ import com.artifex.mupdf.viewer.PageAdapter;
 import com.artifex.mupdf.viewer.PageView;
 import com.artifex.mupdf.viewer.Pallet;
 import com.artifex.mupdf.viewer.ReaderView;
+import com.artifex.mupdf.viewer.SearchTask;
 import com.artifex.mupdf.viewer.SearchTaskResult;
 import com.xlk.mupdf.library.bus.MupdfAnnotationBean;
 import com.xlk.mupdf.library.bus.MupdfBusType;
@@ -102,7 +107,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private View viewTopAnnotation, viewTopSignature, viewTopScreenshot, viewTopRefresh, viewTopJump, viewTopSave, viewTopBookmark, viewTopClose,//顶部控件
             viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
             viewArtInvite, viewArtUnderline, viewArtStrikeout, viewArtFreeText,
-            viewTopWatermark, viewTopSignTable, viewTopSignRow;
+            viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
@@ -138,7 +143,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private boolean isFullScreen = true;
 
     /* The core rendering instance */
-    enum TopBarMode {Main, More}
+    enum TopBarMode {Main, Search, More}
 
     private Handler mainHandler = new Handler(Looper.getMainLooper());
     private final int OUTLINE_REQUEST = 0;
@@ -157,6 +162,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private ViewAnimator mTopBarSwitcher, inkOperationSwitcher;
     private TopBarMode mTopBarMode = TopBarMode.Main;
     private AlertDialog.Builder mAlertBuilder;
+    private ImageButton mSearchBack, mSearchFwd, mSearchClose;
+    private EditText mSearchText;
+    private SearchTask mSearchTask;
     private ArrayList<OutlineActivity.Item> mFlatOutline;
     private boolean mReturnToLibraryActivity = false;
 
@@ -445,7 +453,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             @Override
             protected void onDocMotion() {
                 Debugger.i(TAG, "onDocMotion: ");
-                hideButtons();
+                // 搜索模式下拖动文档不隐藏工具栏，避免搜索框消失影响连续搜索
+                if (mTopBarMode != TopBarMode.Search) {
+                    hideButtons();
+                }
             }
 
             @Override
@@ -462,6 +473,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         };
         PageAdapter pageAdapter = new PageAdapter(this, core, fullWidthScale, "");
         mDocView.setAdapter(pageAdapter);
+
+        mSearchTask = new SearchTask(this, core) {
+            @Override
+            protected void onTextFound(SearchTaskResult result) {
+                SearchTaskResult.set(result);
+                // Ask the ReaderView to move to the resulting page
+                mDocView.setDisplayedViewIndex(result.pageNumber);
+                // Make the ReaderView act on the change to SearchTaskResult
+                // via overridden onChildSetup method.
+                mDocView.resetupChildren();
+            }
+        };
 
         extracted(savedInstanceState);
 
@@ -497,6 +520,58 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private void extracted(Bundle savedInstanceState) {
         makeButtonsView();
+
+        // 文本查找：搜索栏切换与搜索按钮
+        mSearchClose.setOnClickListener(v -> searchModeOff());
+        mSearchBack.setEnabled(false);
+        mSearchFwd.setEnabled(false);
+        mSearchBack.setColorFilter(Color.argb(255, 128, 128, 128));
+        mSearchFwd.setColorFilter(Color.argb(255, 128, 128, 128));
+        mSearchBack.setOnClickListener(v -> search(-1));
+        mSearchFwd.setOnClickListener(v -> search(1));
+        mSearchText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void afterTextChanged(Editable s) {
+                boolean haveText = s.toString().length() > 0;
+                setButtonEnabled(mSearchBack, haveText);
+                setButtonEnabled(mSearchFwd, haveText);
+                // Remove any previous search results
+                if (SearchTaskResult.get() != null
+                        && !mSearchText.getText().toString().equals(SearchTaskResult.get().txt)) {
+                    SearchTaskResult.set(null);
+                    mDocView.resetupChildren();
+                }
+            }
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+        });
+        mSearchText.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                search(1);
+            }
+            return false;
+        });
+        mSearchText.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_ENTER) {
+                search(1);
+            }
+            return false;
+        });
+
+        // 顶部搜索入口按钮
+        if (viewTopSearch != null) {
+            viewTopSearch.setOnClickListener(v -> {
+                showButtons();
+                searchModeOn();
+            });
+        }
+
         if (MupdfMacro.shareAnnotationEnable) {
             //有文件id才显示
             viewArtInvite.setVisibility(mediaId != 0 ? View.VISIBLE : View.GONE);
@@ -1003,6 +1078,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         if (savedInstanceState == null || !savedInstanceState.getBoolean("ButtonsHidden", false)) {
             showButtons();
         }
+        if (savedInstanceState != null && savedInstanceState.getBoolean("SearchMode", false)) {
+            searchModeOn();
+        }
     }
 
     private void registerEventBus() {
@@ -1280,11 +1358,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
         if (!mButtonsVisible)
             outState.putBoolean("ButtonsHidden", true);
+
+        if (mTopBarMode == TopBarMode.Search)
+            outState.putBoolean("SearchMode", true);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+
+        if (mSearchTask != null)
+            mSearchTask.stop();
 
         if (mDocKey != null && mDocView != null) {
             SharedPreferences prefs = getPreferences(Context.MODE_PRIVATE);
@@ -1342,6 +1426,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             // Update page number text and slider
             int index = mDocView.getDisplayedViewIndex();
             updatePageNumView(index);
+            if (mTopBarMode == TopBarMode.Search) {
+                mSearchText.requestFocus();
+                showKeyboard();
+            }
 
             Animation anim = new TranslateAnimation(0, 0, -mTopBarSwitcher.getHeight(), 0);
             anim.setDuration(200);
@@ -1381,6 +1469,50 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             });
             mTopBarSwitcher.startAnimation(anim);
         }
+    }
+
+    private void searchModeOn() {
+        if (mTopBarMode != TopBarMode.Search) {
+            mTopBarMode = TopBarMode.Search;
+            mSearchText.requestFocus();
+            showKeyboard();
+            mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
+        }
+    }
+
+    private void searchModeOff() {
+        if (mTopBarMode == TopBarMode.Search) {
+            mTopBarMode = TopBarMode.Main;
+            hideKeyboard();
+            mTopBarSwitcher.setDisplayedChild(mTopBarMode.ordinal());
+            SearchTaskResult.set(null);
+            mDocView.resetupChildren();
+        }
+    }
+
+    private void search(int direction) {
+        hideKeyboard();
+        int displayPage = mDocView.getDisplayedViewIndex();
+        SearchTaskResult r = SearchTaskResult.get();
+        int searchPage = r != null ? r.pageNumber : -1;
+        mSearchTask.go(mSearchText.getText().toString(), direction, displayPage, searchPage);
+    }
+
+    private void setButtonEnabled(ImageButton button, boolean enabled) {
+        button.setEnabled(enabled);
+        button.setColorFilter(enabled ? Color.argb(255, 255, 255, 255) : Color.argb(255, 128, 128, 128));
+    }
+
+    private void showKeyboard() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null)
+            imm.showSoftInput(mSearchText, 0);
+    }
+
+    private void hideKeyboard() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null && mSearchText != null)
+            imm.hideSoftInputFromWindow(mSearchText.getWindowToken(), 0);
     }
 
     private void showAnnotationViews() {
@@ -1466,6 +1598,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
         //<editor-fold desc="顶部默认组件">
         mTopBarSwitcher = mButtonsView.findViewById(R.id.switcher);
+        mSearchBack = mButtonsView.findViewById(R.id.searchBack);
+        mSearchFwd = mButtonsView.findViewById(R.id.searchForward);
+        mSearchClose = mButtonsView.findViewById(R.id.searchClose);
+        mSearchText = mButtonsView.findViewById(R.id.searchText);
         viewTopSave = mButtonsView.findViewById(R.id.viewTopSave);
         viewTopRefresh = mButtonsView.findViewById(R.id.viewTopRefresh);
         viewTopJump = mButtonsView.findViewById(R.id.viewTopJump);
@@ -1477,6 +1613,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewTopSignTable = mButtonsView.findViewById(R.id.viewTopSignTable);
         viewTopSignRow = mButtonsView.findViewById(R.id.viewTopSignRow);
         viewTopClose = mButtonsView.findViewById(R.id.viewTopClose);
+        viewTopSearch = mButtonsView.findViewById(R.id.viewTopSearch);
         //</editor-fold>
 
         //<editor-fold desc="批注控件">
@@ -1520,17 +1657,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             viewTopAnnotation.setVisibility(View.GONE);
             viewTopWatermark.setVisibility(View.GONE);
             if (viewTopSignTable != null) viewTopSignTable.setVisibility(View.GONE);
+            if (viewTopSearch != null) viewTopSearch.setVisibility(View.GONE);
         }
     }
 
     @Override
     public boolean onSearchRequested() {
-//        if (mButtonsVisible && mTopBarMode == TopBarMode.Search) {
-//            hideButtons();
-//        } else {
-//            showButtons();
-//            searchModeOn();
-//        }
+        if (mButtonsVisible && mTopBarMode == TopBarMode.Search) {
+            hideButtons();
+        } else {
+            showButtons();
+            searchModeOn();
+        }
         return super.onSearchRequested();
     }
 
