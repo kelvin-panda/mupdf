@@ -20,7 +20,6 @@ public class PageAdapter extends BaseAdapter {
     private float mScale = 1.0f;
     private final MuPDFCore mCore;
     private final SparseArray<PointF> mPageSizes = new SparseArray<PointF>();
-    private Bitmap mSharedHqBm;
 
     public PageAdapter(Context c, MuPDFCore core) {
         mContext = c;
@@ -52,10 +51,7 @@ public class PageAdapter extends BaseAdapter {
     }
 
     public void releaseBitmaps() {
-        //  recycle and release the shared bitmap.
-        if (mSharedHqBm != null)
-            mSharedHqBm.recycle();
-        mSharedHqBm = null;
+        // 连续拼页：每个 PageView 独立持有 HQ 位图，由 PageView.releaseBitmaps() 各自回收
     }
 
     public void refresh() {
@@ -68,16 +64,14 @@ public class PageAdapter extends BaseAdapter {
             Point point = new Point(parent.getWidth(), parent.getHeight());
             int parentWidth = point.x;
             int parentHeight = point.y;
-            if (mSharedHqBm == null || mSharedHqBm.getWidth() != parentWidth || mSharedHqBm.getHeight() != parentHeight) {
-                if (parentWidth > 0 && parentHeight > 0)
-                    mSharedHqBm = Bitmap.createBitmap(parentWidth, parentHeight, Bitmap.Config.ARGB_8888);
-                else
-                    mSharedHqBm = null;
-            }
+            // 连续拼页：每个 PageView 独立创建 HQ 位图，避免多页渲染时共享位图互相覆盖
+            Bitmap hqBm = null;
+            if (parentWidth > 0 && parentHeight > 0)
+                hqBm = Bitmap.createBitmap(parentWidth, parentHeight, Bitmap.Config.ARGB_8888);
 
             Point parentSize = new Point(parentWidth, parentHeight);
             Debugger.i(TAG, "getView: parentSize=" + parentSize);
-            pageView = new PageView(mContext, mCore, parentSize, mSharedHqBm, mWaterMark);
+            pageView = new PageView(mContext, mCore, parentSize, hqBm, mWaterMark);
         } else {
             pageView = (PageView) convertView;
         }
@@ -122,5 +116,20 @@ public class PageAdapter extends BaseAdapter {
             sizingTask.execute((Void) null);
         }
         return pageView;
+    }
+
+    /** 同步获取页面原始尺寸(72dpi)，用于连续拼页位置估算。已在 mPageSizes 缓存则直接返回。 */
+    public PointF getPageSizeSync(int position) {
+        PointF size = mPageSizes.get(position);
+        if (size == null) {
+            try {
+                size = mCore.getPageSize(position);
+            } catch (Exception e) {
+                size = null;
+            }
+            if (size == null) size = new PointF(612, 792);
+            mPageSizes.put(position, size);
+        }
+        return size;
     }
 }

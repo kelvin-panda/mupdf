@@ -18,6 +18,7 @@ import com.artifex.mupdf.fitz.PDFAnnotation;
 import com.artifex.mupdf.fitz.Point;
 import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.viewer.MuPDFCore;
+import com.artifex.mupdf.viewer.PageView;
 import com.artifex.mupdf.viewer.ReaderView;
 import com.xlk.mupdf.library.MupdfMacro;
 
@@ -89,6 +90,13 @@ public class AnnotationArtBoard extends View {
     private MuPDFCore core;
     private ReaderView docView;
     private boolean isCancelAnnotation;
+    /** 当前文档滚动偏移（px），用于屏幕坐标→文档坐标的转换 */
+    private int documentScrollY;
+
+    // 双指滑动/缩放 PDF 上下文状态
+    private boolean isMultiTouching;
+    private float multiTouchLastCX, multiTouchLastCY;
+    private static final float MULTI_SCROLL_THRESHOLD = 5f;  // px
 
     public AnnotationArtBoard(Context context) {
         this(context, null);
@@ -249,12 +257,73 @@ public class AnnotationArtBoard extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        // 双指或多指：平移/缩放底层 PDF 上下文
+        if (event.getPointerCount() > 1 || isMultiTouching) {
+            return handleMultiTouch(event);
+        }
         if (drag) {
             drag(event);
         } else {
             draw(event);
         }
         return true;
+    }
+
+    /** 双指手势处理：平移 PDF，标注保持页面相对位置不变 */
+    private boolean handleMultiTouch(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN:
+                // 丢弃进行中的单指绘制
+                mPath = null;
+                points.clear();
+                invalidate();
+                isMultiTouching = true;
+                if (docView != null) docView.setAnnotationMultiTouch(true);
+                multiTouchLastCX = get2CenterX(event);
+                multiTouchLastCY = get2CenterY(event);
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (!isMultiTouching) {
+                    isMultiTouching = true;
+                    if (docView != null) docView.setAnnotationMultiTouch(true);
+                    multiTouchLastCX = get2CenterX(event);
+                    multiTouchLastCY = get2CenterY(event);
+                    break;
+                }
+                float cx = get2CenterX(event);
+                float cy = get2CenterY(event);
+                float dx = cx - multiTouchLastCX;
+                float dy = cy - multiTouchLastCY;
+
+                // 双指仅滑动，不支持缩放
+                // dy 取反：手指上滑(cy减小→dy为负)文档前进(mScrollY增大)
+                if ((Math.abs(dx) > MULTI_SCROLL_THRESHOLD || Math.abs(dy) > MULTI_SCROLL_THRESHOLD)
+                        && docView != null) {
+                    docView.scrollBy(dx, -dy);
+                    if (docView != null) documentScrollY = docView.getDocumentScrollY();
+                    multiTouchLastCX = cx;
+                    multiTouchLastCY = cy;
+                }
+                break;
+            case MotionEvent.ACTION_POINTER_UP:
+                // 不重置 isMultiTouching——某指抬起后剩余手指仍属于本次手势，
+                // 若立即切回 draw() 会导致抬指边缘处误触为画笔操作
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                isMultiTouching = false;
+                if (docView != null) docView.setAnnotationMultiTouch(false);
+                break;
+        }
+        return true;
+    }
+
+    private float get2CenterX(MotionEvent e) {
+        return (e.getX(0) + e.getX(Math.min(1, e.getPointerCount() - 1))) / 2f;
+    }
+    private float get2CenterY(MotionEvent e) {
+        return (e.getY(0) + e.getY(Math.min(1, e.getPointerCount() - 1))) / 2f;
     }
 
     /**
@@ -349,6 +418,17 @@ public class AnnotationArtBoard extends View {
             case MotionEvent.ACTION_DOWN:
                 startX = event.getX();
                 startY = event.getY();
+                // 即时保存模式：上次笔画已提交到 PDF，清空画板开始新笔画
+                pathList.clear();
+                try {
+                    initCanvas();
+                } catch (Exception e) {
+                    // 若画板初始化失败（OOM/尺寸为0），保留上次的 mCanvas/mBitmap
+                    if (mCanvas == null) {
+                        Debugger.e(TAG, e);
+                        break;
+                    }
+                }
                 mPath = new Path();
                 mPath.moveTo(x, y);
                 tempX = x;
@@ -362,6 +442,14 @@ public class AnnotationArtBoard extends View {
                 invalidate();
                 break;
             case MotionEvent.ACTION_MOVE:
+                // 从双指切回单指时 mPath 可能为 null，重新初始化
+                if (mPath == null) {
+                    mPath = new Path();
+                    mPath.moveTo(x, y);
+                    tempX = x;
+                    tempY = y;
+                    initPaint();
+                }
                 switch (currentDrawGraphics) {
                     //曲线
                     case DRAW_SLINE:
@@ -399,8 +487,20 @@ public class AnnotationArtBoard extends View {
                     //橡皮搽
                     case DRAW_ERASER:
                         eraserPath(x, y);
-                        if (MupdfMacro.delete_history_annotation && core != null && docView != null) {
-                            core.deleteAnnotation(docView, screenWidth, screenHeight, x, y);
+                        // 即时保存模式下批注已写进 PDF，擦除时必须从 PDF 层删除
+                        if (core != null && docView != null) {
+                            int docY = docView.getDocumentScrollY() + (int) y;
+                            int pageIdx = docView.findPageAtY(docY);
+                            int pageTop = docView.getPageDocTop(pageIdx);
+                            int pageW = docView.getWidth();
+                            int pageH = docView.getPageDisplayHeight(pageIdx);
+                            if (pageH <= 0) pageH = screenHeight;
+                            float localY = y + docView.getDocumentScrollY() - pageTop;
+                            boolean deleted = core.deleteAnnotation(pageIdx, pageW, pageH, x, localY);
+                            if (deleted) {
+                                View pv = docView.getView(pageIdx);
+                                if (pv instanceof PageView) ((PageView) pv).update();
+                            }
                         }
                         break;
                     default:
@@ -410,71 +510,83 @@ public class AnnotationArtBoard extends View {
                 tempY = y;
                 invalidate();
                 break;
-            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_UP: {
                 long utcstamp = System.currentTimeMillis();
                 int operid = (int) (utcstamp / 10);
+                // 屏幕坐标 → 文档坐标（画板固定在屏幕，需加滚动偏移）
+                float dx = x, dy = y + documentScrollY;
+                float dsx = startX, dsy = startY + documentScrollY;
                 if (currentDrawGraphics == DRAW_LINE) {
                     Point[] array = new Point[2];
-                    array[0] = new Point(startX, startY);
-                    array[1] = new Point(x, y);
+                    array[0] = new Point(dsx, dsy);
+                    array[1] = new Point(dx, dy);
                     AnnotationBean annotationBean = new AnnotationBean(operid, PDFAnnotation.TYPE_LINE, array, paintWidth, paintColor);
                     annotationBeans.add(annotationBean);
                 } else if (currentDrawGraphics == DRAW_RECT) {
                     Point[] array = new Point[2];
-                    array[0] = new Point(startX, startY);
-                    array[1] = new Point(x, y);
-//                    MupdfAnnotationBean annotationBean = new MupdfAnnotationBean(operid, PDFAnnotation.TYPE_SQUARE, array, paintWidth, paintColor);
+                    array[0] = new Point(dsx, dsy);
+                    array[1] = new Point(dx, dy);
                     AnnotationBean annotationBean = new AnnotationBean(operid, PDFAnnotation.TYPE_HIGHLIGHT, array, paintWidth, paintColor);
                     annotationBeans.add(annotationBean);
-                } else if (currentDrawGraphics == DRAW_DELLINE) {//下划线
+                } else if (currentDrawGraphics == DRAW_DELLINE) {
                     Point[] array = new Point[2];
-                    array[0] = new Point(startX, y);
-                    array[1] = new Point(x, y);
+                    array[0] = new Point(dsx, dy);
+                    array[1] = new Point(dx, dy);
                     AnnotationBean annotationBean = new AnnotationBean(operid, PDFAnnotation.TYPE_LINE, array, 3.0f, delLineColor);
                     annotationBeans.add(annotationBean);
                     mPath = new Path();
                     mPath.moveTo(startX, y);
                     mPath.lineTo(x, y);
-                } else if (currentDrawGraphics == DRAW_UNDERLINE) {//文字下划线-即时生效
+                } else if (currentDrawGraphics == DRAW_UNDERLINE) {
                     if (textMarkupListener != null) {
                         textMarkupListener.onTextMarkup(PDFAnnotation.TYPE_UNDERLINE,
-                                new Point(startX, startY), new Point(x, y), paintColor, paintWidth);
+                                new Point(dsx, dsy), new Point(dx, dy), paintColor, paintWidth);
                     }
-                } else if (currentDrawGraphics == DRAW_STRIKEOUT) {//文字删除线-即时生效
+                } else if (currentDrawGraphics == DRAW_STRIKEOUT) {
                     if (textMarkupListener != null) {
                         textMarkupListener.onTextMarkup(PDFAnnotation.TYPE_STRIKE_OUT,
-                                new Point(startX, startY), new Point(x, y), paintColor, paintWidth);
+                                new Point(dsx, dsy), new Point(dx, dy), paintColor, paintWidth);
                     }
-                } else if (currentDrawGraphics == DRAW_FREETEXT) {//自由文本标注
+                } else if (currentDrawGraphics == DRAW_FREETEXT) {
                     if (freeTextListener != null) {
-                        freeTextListener.onFreeTextTap(new Point(startX, startY));
+                        freeTextListener.onFreeTextTap(new Point(dsx, dsy));
                     }
                 } else {
+                    // 墨迹：批量转换
                     Point[] array = list2array(points);
+                    for (Point p : array) p.y += documentScrollY;
                     AnnotationBean annotationBean = new AnnotationBean(operid, PDFAnnotation.TYPE_INK, array, paintWidth, paintColor);
                     annotationBeans.add(annotationBean);
                 }
-                if (currentDrawGraphics != DRAW_TEXT && currentDrawGraphics != DRAW_ERASER
-                        && currentDrawGraphics != DRAW_FREETEXT
-                        && currentDrawGraphics != DRAW_UNDERLINE
-                        && currentDrawGraphics != DRAW_STRIKEOUT) {
-                    drawPath = new DrawPath();
-                    drawPath.operid = operid;
-                    drawPath.path = new Path(mPath);
-                    drawPath.paint = new Paint(mPaint);
-                    pathList.add(drawPath);
-                }
-                if (currentDrawGraphics != DRAW_ERASER
-                        && currentDrawGraphics != DRAW_UNDERLINE
-                        && currentDrawGraphics != DRAW_STRIKEOUT) {
-                    mCanvas.drawPath(mPath, mPaint);
+                if (mPath != null) {
+                    if (currentDrawGraphics != DRAW_TEXT && currentDrawGraphics != DRAW_ERASER
+                            && currentDrawGraphics != DRAW_FREETEXT
+                            && currentDrawGraphics != DRAW_UNDERLINE
+                            && currentDrawGraphics != DRAW_STRIKEOUT) {
+                        drawPath = new DrawPath();
+                        drawPath.operid = operid;
+                        drawPath.path = new Path(mPath);
+                        drawPath.paint = new Paint(mPaint);
+                        pathList.add(drawPath);
+                    }
+                    if (mCanvas != null && currentDrawGraphics != DRAW_ERASER
+                            && currentDrawGraphics != DRAW_UNDERLINE
+                            && currentDrawGraphics != DRAW_STRIKEOUT) {
+                        mCanvas.drawPath(mPath, mPaint);
+                    }
                     mPath = null;
                     invalidate();
                 }
                 //不管有没有同屏都要删除
                 points.clear();
                 drawPath = null;
+                // 即时保存：笔画完成后立即通知外部保存到 PDF
+                if (strokeListener != null && !annotationBeans.isEmpty()) {
+                    AnnotationBean last = annotationBeans.get(annotationBeans.size() - 1);
+                    strokeListener.onStroke(last);
+                }
                 break;
+            } // end ACTION_UP block
             default:
                 break;
         }
@@ -516,6 +628,7 @@ public class AnnotationArtBoard extends View {
     }
 
     private void drawLine(float x, float y) {
+        if (mPath == null) return;
         float dx = Math.abs(x - tempX);
         float dy = Math.abs(tempY - y);
         if (dx >= DIFFERENCE || dy >= DIFFERENCE) {
@@ -526,6 +639,7 @@ public class AnnotationArtBoard extends View {
     }
 
     private void drawRect(float x, float y) {
+        if (mPath == null) return;
         float dx = Math.abs(x - tempX);
         float dy = Math.abs(tempY - y);
         float sx = startX;//关键代码,
@@ -548,6 +662,7 @@ public class AnnotationArtBoard extends View {
     }
 
     private void drawOval(float x, float y) {
+        if (mPath == null) return;
         float dx = Math.abs(x - tempX);
         float dy = Math.abs(tempY - y);
         if (dx >= DIFFERENCE || dy >= DIFFERENCE) {
@@ -564,6 +679,7 @@ public class AnnotationArtBoard extends View {
     }
 
     private void drawSLine(float x, float y) {
+        if (mPath == null) return;
         float dx = Math.abs(x - tempX);
         float dy = Math.abs(tempY - y);
         if (dx >= DIFFERENCE || dy >= DIFFERENCE) {
@@ -703,6 +819,15 @@ public class AnnotationArtBoard extends View {
         isCancelAnnotation = true;
     }
 
+    /** 设置当前文档滚动偏移，用于双指滑动时更新坐标基准 */
+    public void setDocumentScrollY(int scrollY) {
+        this.documentScrollY = scrollY;
+    }
+
+    public int getDocumentScrollY() {
+        return documentScrollY;
+    }
+
     public static class DrawPath {
         public boolean isDelete;//=true 表示橡皮擦操作
         public int deleteIndex;//进行删除操作的操作列表中的索引位
@@ -744,6 +869,17 @@ public class AnnotationArtBoard extends View {
         mDrawExitListener = listener;
     }
 
+    public interface StrokeListener {
+        /** 笔画完成时立即回调（已转为文档坐标），用于即时保存到 PDF */
+        void onStroke(AnnotationBean bean);
+    }
+
+    private StrokeListener strokeListener;
+
+    public void setStrokeListener(StrokeListener l) {
+        this.strokeListener = l;
+    }
+
     public interface DrawExitListener {
         void onDrawAnnotations(List<AnnotationBean> inkAnnotations);
     }
@@ -770,6 +906,14 @@ public class AnnotationArtBoard extends View {
 
     public List<AnnotationBean> getAnnotationBeans() {
         return annotationBeans;
+    }
+
+    /** 清空画板位图和所有已画路径（即时保存模式下每次笔画提交后调用） */
+    public void clearStrokes() {
+        pathList.clear();
+        annotationBeans.clear();
+        initCanvas();
+        invalidate();
     }
 
     public void release() {

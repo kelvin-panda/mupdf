@@ -48,7 +48,6 @@ public class MuPDFCore {
     private Page page;
     private float pageWidth;
     private float pageHeight;
-    private DisplayList displayList;
 
     /* Default to "A Format" pocket book size. */
     private int layoutW = 312;
@@ -130,10 +129,6 @@ public class MuPDFCore {
                     }
                 }
                 page = null;
-                if (displayList != null)
-                    displayList.destroy();
-                displayList = null;
-                page = null;
                 pageWidth = 0;
                 pageHeight = 0;
                 currentPage = -1;
@@ -170,14 +165,15 @@ public class MuPDFCore {
             Debugger.d(TAG, "---drawPage start pageNum:" + pageNum);
             gotoPage(pageNum);
 
-            if (displayList == null && page != null)
+            DisplayList localDL = null;
+            if (page != null)
                 try {
-                    displayList = page.toDisplayList();
+                    localDL = page.toDisplayList();
                 } catch (Exception ex) {
-                    displayList = null;
+                    localDL = null;
                 }
 
-            if (displayList == null || page == null)
+            if (localDL == null || page == null)
                 return;
             float zoom = resolution / 72;
             Matrix ctm = new Matrix(zoom, zoom);
@@ -195,18 +191,12 @@ public class MuPDFCore {
                     + "\nctm:" + ctm
                     + "\nxscale:" + xscale + ",yscale:" + yscale
                     + "\nbm:" + bm.getWidth() + "," + bm.getHeight());
-//            try {
-//                throw new Exception("哪里调用 pageNum=" + pageNum);
-//            } catch (Exception e) {
-//                Debugger.e(e);
-//            }
             Debugger.i(TAG, "drawPage AndroidDrawDevice start pageNum:" + pageNum);
             AndroidDrawDevice dev = new AndroidDrawDevice(bm, patchX, patchY, true);
             Debugger.i(TAG, "drawPage AndroidDrawDevice end--- pageNum:" + pageNum);
             try {
                 Debugger.i(TAG, "drawPage displayList.run start--- pageNum:" + pageNum);
-                displayList.run(dev, ctm, cookie);
-//                page.runPageContents(dev, ctm, cookie);
+                localDL.run(dev, ctm, cookie);
                 Debugger.i(TAG, "drawPage displayList.run end--- pageNum:" + pageNum);
                 dev.close();
                 Debugger.i(TAG, "drawPage dev.close() end--- pageNum:" + pageNum);
@@ -491,7 +481,6 @@ public class MuPDFCore {
 
     private void invalidatePageCache() {
         if (page != null) { page.destroy(); page = null; }
-        if (displayList != null) { displayList.destroy(); displayList = null; }
         currentPage = -1;
         pageWidth = 0;
         pageHeight = 0;
@@ -555,6 +544,24 @@ public class MuPDFCore {
             return pdfPage.clearAnnotations();
         } catch (Exception e) {
             Debugger.e(TAG, "clearAnnotations Exception: " + e);
+        }
+        return 0;
+    }
+
+    /**
+     * 删除指定页最后一条标注（用于撤销），返回删除条数（0或1）。
+     */
+    public int deleteLastAnnotation(int pageNum) {
+        try {
+            Page page = doc.loadPage(pageNum);
+            PDFPage pdfPage = (PDFPage) page;
+            PDFAnnotation[] anns = pdfPage.getAnnotations();
+            if (anns == null || anns.length == 0) return 0;
+            pdfPage.deleteAnnotation(anns[anns.length - 1]);
+            invalidatePageCache();
+            return 1;
+        } catch (Exception e) {
+            Debugger.e(TAG, "deleteLastAnnotation Exception: " + e);
         }
         return 0;
     }
@@ -706,40 +713,35 @@ public class MuPDFCore {
     /**
      * 根据坐标点删除页面已有的批注
      *
-     * @param docView {@link ReaderView} 主要用来获取当前页码
-     * @param width   当前预览的宽
-     * @param height  当前预览的高
-     * @param x       当前宽高下所触摸的坐标x
-     * @param y       当前宽高下所触摸的坐标y
+     * @param pageIdx 页面索引
+     * @param width   当前页面在屏幕上显示的像素宽度
+     * @param height  当前页面在屏幕上显示的像素高度
+     * @param x       页内文档坐标 x（已减去 pageTop，即相对页顶的屏幕 px）
+     * @param y       页内文档坐标 y
+     * @return true 表示删除了批注
      */
-    public void deleteAnnotation(ReaderView docView, int width, int height, float x, float y) {
+    public boolean deleteAnnotation(int pageIdx, int width, int height, float x, float y) {
         try {
-            Page page = doc.loadPage(docView.mCurrent);
+            Page page = doc.loadPage(pageIdx);
             PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation[] annotations = pdfPage.getAnnotations();
-            if (annotations == null) {
-                return;
-            }
+            if (annotations == null) return false;
             Rect bounds = page.getBounds();
             float realWidth = bounds.x1 - bounds.x0;
             float realHeight = bounds.y1 - bounds.y0;
-            x = realWidth / width * x;
-            y = realHeight / height * y;
+            float pdfX = realWidth / width * x;
+            float pdfY = realHeight / height * y;
             List<AnnotationPathBean> annotationPathBeans = annotations2path(annotations);
-            PDFAnnotation pdfAnnotation = findShouldDeleteAnnotation(annotationPathBeans, x, y);
+            PDFAnnotation pdfAnnotation = findShouldDeleteAnnotation(annotationPathBeans, pdfX, pdfY);
             if (pdfAnnotation != null) {
                 pdfPage.deleteAnnotation(pdfAnnotation);
-//                boolean update = pdfAnnotation.update();
-                Debugger.d(TAG, "deleteAnnotation: 删除批注 ");
-//                PageView pageView = (PageView) docView.getDisplayedView();
-//                pageView.update();
-//                pageView.setPage(pageView.getPage(), new PointF(realWidth, realHeight));
-//                pdfPage.update();//不需要
-//                docView.setDisplayedViewIndex(docView.mCurrent);
+                invalidatePageCache();
+                return true;
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+        return false;
     }
 
     public String save(String srcPath, String saveDirPath) throws Exception {
@@ -769,9 +771,6 @@ public class MuPDFCore {
     public synchronized void onDestroy() {
         Debugger.i(TAG, "onDestroy: start");
         try {
-            if (displayList != null)
-                displayList.destroy();
-            displayList = null;
             if (page != null)
                 page.destroy();
             page = null;

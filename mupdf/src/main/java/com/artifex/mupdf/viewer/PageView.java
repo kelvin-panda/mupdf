@@ -164,12 +164,14 @@ public class PageView extends ViewGroup {
             mSize = mParentSize;
 
         if (mEntire != null) {
-            mEntire.setImageBitmap(null);
+            // reinit 中不设 null，保留旧图作为渲染完成前的占位，
+            // 消除页面回收后再入视口的白闪。需真正清空时由调用方自行处理。
+            // mEntire.setImageBitmap(null);
             mEntire.invalidate();
         }
 
         if (mPatch != null) {
-            mPatch.setImageBitmap(null);
+            // mPatch.setImageBitmap(null);
             mPatch.invalidate();
         }
 
@@ -195,6 +197,16 @@ public class PageView extends ViewGroup {
     public void releaseBitmaps() {
         reinit();
 
+        // 清除 ImageView 引用，防止显示已回收的 Bitmap
+        if (mEntire != null) {
+            mEntire.setImageBitmap(null);
+            mEntire.invalidate();
+        }
+        if (mPatch != null) {
+            mPatch.setImageBitmap(null);
+            mPatch.invalidate();
+        }
+
         // recycle bitmaps before releasing them.
 
         if (mEntireBm != null)
@@ -209,6 +221,16 @@ public class PageView extends ViewGroup {
     public void blank(int page) {
         reinit();
         mPageNumber = page;
+
+        // blank 需要彻底清空上一页的内容
+        if (mEntire != null) {
+            mEntire.setImageBitmap(null);
+            mEntire.invalidate();
+        }
+        if (mPatch != null) {
+            mPatch.setImageBitmap(null);
+            mPatch.invalidate();
+        }
 
         if (mBusyIndicator == null) {
             mBusyIndicator = new ProgressBar(mContext);
@@ -324,7 +346,7 @@ public class PageView extends ViewGroup {
         // filter whenever a cached view is assigned to another page.
         applyColorFilter(mEntire);
 
-        mEntire.setImageBitmap(null);
+        // 不设 null——渲染完成前保留旧内容，消除页面切换时的白闪。
         mEntire.invalidate();
 
         // 在后台获取链接信息
@@ -350,7 +372,6 @@ public class PageView extends ViewGroup {
             public void onPreExecute() {
                 Debugger.i(TAG, "后台渲染页面 setPage onPreExecute page=" + page);
                 setBackgroundColor(MupdfMacro.backgroundColor);
-                mEntire.setImageBitmap(null);
                 mEntire.invalidate();
 
                 if (mBusyIndicator == null) {

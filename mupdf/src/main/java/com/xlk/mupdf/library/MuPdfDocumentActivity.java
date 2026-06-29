@@ -185,6 +185,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      */
     private boolean hadAnnotation;
 
+    /** 即时保存模式：记录每笔保存的 (pageIndex)，用于撤销时删除 PDF 注解 */
+    private final List<Integer> savedAnnotationPages = new ArrayList<>();
+
     /**
      * 当前页：索引
      */
@@ -243,7 +246,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     @Override
     public Resources getResources() {
         Resources superResources = super.getResources();
-        AutoSizeCompat.cancelAdapt(superResources);
+        // cancelAdapt 必须在主线程调用，但 getResources 可能被 Binder 线程调用
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            AutoSizeCompat.cancelAdapt(superResources);
+        }
         return superResources;
     }
 
@@ -849,80 +855,67 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             mDocView.savePosition();
             hideButtons();
             showAnnotationViews();
-            PageView pageView = (PageView) mDocView.getDisplayedView();
-            int width = pageView.getWidth();
-            int height = pageView.getHeight();
-            Debugger.i(TAG, "开启批注:(" + width + "," + height + ")");
+            // 画板固定在屏幕位置，坐标通过 documentScrollY 实时转为文档空间
+            int artW = mDocView.getWidth();
+            int artH = mDocView.getHeight();
             chooseType(1);
-            artBoard = new AnnotationArtBoard(this, core, mDocView, width, height, new AnnotationArtBoard.DrawExitListener() {
+            savedAnnotationPages.clear();
+            artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH, new AnnotationArtBoard.DrawExitListener() {
                 @Override
                 public void onDrawAnnotations(List<AnnotationBean> inkAnnotations) {
-                    Debugger.i(TAG, "onDrawAnnotations 将要绘制的批注数量： " + inkAnnotations.size() + ",MupdfMacro.isSharing=" + MupdfMacro.isSharing);
-                    if (!inkAnnotations.isEmpty()) {
-                        List<MupdfAnnotationBean> annotationBeans = new ArrayList<>();
-                        for (AnnotationBean inkAnnotation : inkAnnotations) {
-                            Point[] points = inkAnnotation.getPoints();
-                            float paintSize = inkAnnotation.getPaintSize();
-                            int paintColor = inkAnnotation.getPaintColor();
-                            int type = inkAnnotation.getType();
-                            paintSize = paintSize / 3.0f;
-                            Point[] percentPoints;
-
-                            percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
-
-                            if (MupdfMacro.isSharing) {
-                                //points是经过core.addAnnotation方法计算后的实际坐标
-                                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent + 1, type, paintSize, paintColor, percentPoints));
-                            }
-                        }
-                        if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {
-                            Debugger.i(TAG, "onDrawAnnotations 将要共享绘制的批注数量： " + annotationBeans.size());
-                            EventBus.getDefault().post(new MupdfEventMessage.Builder()
-                                    .type(MupdfBusType.inform_share_annotation)
-                                    .objects(annotationBeans)
-                                    .build());
-                        }
-                        Debugger.i(TAG, "onDrawAnnotations 批注完刷新页面");
-                        //批注后进行实时显示出来
-                        //方式一：无效
-//                        PageView displayedView = (PageView) mDocView.getDisplayedView();
-//                        if (displayedView != null) {
-//                            displayedView.update();
-//                        }
-
-                        //方式二：该方式有效，但是整个画面会重新加载且会回到页面顶部
-//                        mDocView.setDisplayedViewIndex(mDocView.mCurrent);
-
-                        //方式三：
+                    // 即时保存模式下笔画已逐个提交，这里仅做退出后的刷新和位置恢复
+                    Debugger.i(TAG, "onDrawAnnotations 退出批注，hadAnnotation=" + hadAnnotation);
+                    if (hadAnnotation) {
                         mDocView.afterAnnotation();
-                        hadAnnotation = true;
-
                         mDocView.restorePosition();
-
-//                        core.logAnnotations(mDocView.mCurrent);
                     }
                 }
             });
+            artBoard.setDocumentScrollY(mDocView.getDocumentScrollY());
             artBoard.setPaintWidth(default_ink_size);
+            // 即时保存：每笔松开即提交到 PDF，避免滚动时标注视觉偏移
+            artBoard.setStrokeListener(bean -> {
+                Point[] docPts = bean.getPoints();
+                if (docPts.length == 0) return;
+                float ps = bean.getPaintSize() / 3.0f;
+                int type = bean.getType();
+                int pageIdx = mDocView.findPageAtY((int) docPts[0].y);
+                int pageTop = mDocView.getPageDocTop(pageIdx);
+                int pageW = mDocView.getWidth();
+                int pageH = mDocView.getPageDisplayHeight(pageIdx);
+                if (pageH <= 0) pageH = artH;
+                Point[] localPts = new Point[docPts.length];
+                for (int i = 0; i < docPts.length; i++)
+                    localPts[i] = new Point(docPts[i].x, docPts[i].y - pageTop);
+                core.addAnnotation(pageIdx, pageW, pageH, type, ps, bean.getPaintColor(), localPts);
+                savedAnnotationPages.add(pageIdx);  // 记录用于撤销
+                hadAnnotation = true;
+                // 更新页面渲染显示已保存的标注
+                PageView pv = (PageView) mDocView.getView(pageIdx);
+                if (pv != null) schedulePageUpdate(() -> pv.update());
+            });
             artBoard.setFreeTextListener(pos -> {
                 showFreeTextDialog(pos);
             });
             artBoard.setTextMarkupListener((type, start, end, color, strokeWidth) -> {
-                PageView pv = (PageView) mDocView.getDisplayedView();
-                if (pv == null || core == null) return;
-                int w = pv.getWidth();
-                int h = pv.getHeight();
-                if (w <= 0 || h <= 0) return;
+                if (core == null) return;
+                // 点已在文档空间
+                int pageIdx = mDocView.findPageAtY((int) start.y);
+                int pageTop = mDocView.getPageDocTop(pageIdx);
+                int pageW = mDocView.getWidth();
+                int pageH = mDocView.getPageDisplayHeight(pageIdx);
+                if (pageH <= 0) pageH = artH;
+                Point localStart = new Point(start.x, start.y - pageTop);
+                Point localEnd = new Point(end.x, end.y - pageTop);
                 float[] c = core.parseColor(color);
-                Object result = core.addTextMarkupAnnotation(mDocView.mCurrent, w, h,
-                        type, start, end, c, mDisplayDPI, mDisplayDPI);
-                if (result != null) {
-                    hadAnnotation = true;
-                    schedulePageUpdate(() -> pv.update());
-                }
+                core.addTextMarkupAnnotation(pageIdx, pageW, pageH,
+                        type, localStart, localEnd, c, mDisplayDPI, mDisplayDPI);
+                hadAnnotation = true;
+                PageView pv = (PageView) mDocView.getView(pageIdx);
+                if (pv != null) schedulePageUpdate(() -> pv.update());
             });
-            pageView.addView(artBoard);
-            artBoard.layout(0, 0, width, height);
+            mRootLayout.addView(artBoard, 1); // index=1：在 mDocView(0) 之上，mButtonsView(2) 之下
+            artBoard.layout(0, 0, artW, artH);
         });
         viewTopAnnotation.setVisibility(annotationEnable ? View.VISIBLE : View.GONE);
 
@@ -970,6 +963,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //撤销
         viewArtRevoke.setOnClickListener(v -> {
+            // 即时保存模式：从 PDF 内容层删除最后一笔标注
+            if (!savedAnnotationPages.isEmpty()) {
+                int lastPage = savedAnnotationPages.remove(savedAnnotationPages.size() - 1);
+                core.deleteLastAnnotation(lastPage);
+                PageView pv = (PageView) mDocView.getView(lastPage);
+                if (pv != null) schedulePageUpdate(() -> pv.update());
+            }
+            // 同时清理画板残留（橡皮擦后可能遗留）
             if (artBoard != null) {
                 artBoard.revoke();
             }
@@ -1049,7 +1050,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //取消批注
         viewArtClose.setOnClickListener(v -> {
+            // 即时保存模式：取消时删除所有本次已保存的标注
             artBoard.setCancelAnnotation();
+            for (int pageIdx : savedAnnotationPages) {
+                core.deleteLastAnnotation(pageIdx);
+            }
+            savedAnnotationPages.clear();
+            hadAnnotation = false;
             hideAnnotationViews();
         });
         //</editor-fold>
@@ -1562,7 +1569,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     inkOperationSwitcher.setVisibility(View.INVISIBLE);
                     viewArtSeekBar.setProgress(default_ink_size);
                     if (artBoard != null) {
-                        ((PageView) mDocView.getDisplayedView()).removeView(artBoard);
+                        mRootLayout.removeView(artBoard);
                         artBoard.clear();
                         artBoard.release();
                         artBoard = null;

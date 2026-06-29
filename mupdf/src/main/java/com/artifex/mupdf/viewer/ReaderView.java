@@ -2,6 +2,7 @@ package com.artifex.mupdf.viewer;
 
 import android.content.Context;
 import android.graphics.Point;
+import android.graphics.PointF;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
@@ -62,6 +63,23 @@ public class ReaderView
     private boolean mScaling;    // Whether the user is currently pinch zooming
     private float mScale = 1.0f;
     private float mDefaultScale = 1.0f;// 存放默认宽度占满时的比例
+
+    // --- 连续拼页模式新增字段 ---
+    // 文档坐标系中的绝对滚动偏移 (正数 = 向下滚动)
+    private int mScrollY = 0;
+    // 每页缩放后的像素高度，key=页面索引
+    private final SparseArray<Integer> mPageHeights = new SparseArray<>();
+    // 每页在文档坐标系中的 Y 坐标(top)，key=页面索引
+    private final SparseArray<Integer> mPagePositions = new SparseArray<>();
+    // 文档总高度(px)
+    private int mTotalDocumentHeight = 0;
+    // 页面位置缓存失效标记 (缩放/批注后置 true)
+    private boolean mPositionsDirty = true;
+    // 页面原始尺寸缓存(从 PageAdapter 获取的 PointF)
+    private final SparseArray<PointF> mPageSizes = new SparseArray<>();
+    // 可见区域上下各保留的屏幕倍数作为缓冲区（预加载范围）
+    private static final int VISUAL_BUFFER_SCREENS = 2;
+
     private int mXScroll;    // Scroll amounts recorded from events.
     private int mYScroll;    // and then accounted for in onLayout
     private GestureDetector mGestureDetector;
@@ -79,6 +97,10 @@ public class ReaderView
      * 是否正在批注中，=true时不拦截触摸事件
      */
     private boolean isInAnnotation;
+    /**
+     * 批注画板正在双指滑动中，阻止 settle 及 HQ 渲染
+     */
+    private boolean mAnnotationMultiTouch;
     /**
      * <li>签名期间禁止缩放页面</li>
      * <li>签名期间禁止通过惯性拖动进行翻页</li>
@@ -98,6 +120,7 @@ public class ReaderView
 
     public void savePosition() {
         View cv = mChildViews.get(mCurrent);
+        if (cv == null) return;
         savedLeft = cv.getLeft();
         savedTop = cv.getTop();
         savedRight = cv.getRight();
@@ -107,6 +130,7 @@ public class ReaderView
 
     public void restorePosition() {
         View cv = mChildViews.get(mCurrent);
+        if (cv == null) return;
         Debugger.d("模拟手指拖动 恢复：mCurrent=" + mCurrent + ",方位：" + cv.getLeft() + "," + cv.getTop() + "," + cv.getRight() + "," + cv.getBottom());
         if (savedTop != 0) {
             simulateSwipeAsync(this, 0, 0, 0, savedTop, 200);
@@ -188,6 +212,31 @@ public class ReaderView
         return mScale;
     }
 
+    /** 获取文档绝对滚动偏移（供外部标注确定操作页用） */
+    public int getDocumentScrollY() {
+        return mScrollY;
+    }
+
+    /** 根据屏幕 Y 坐标查找所在的页面索引 */
+    public int findPageAtScreenY(float screenY) {
+        return findPageAtY(mScrollY + (int) screenY);
+    }
+
+    /** 获取指定页在屏幕上的 Y 坐标 */
+    public int getPageScreenTop(int pageIndex) {
+        return mPagePositions.get(pageIndex, 0) - mScrollY;
+    }
+
+    /** 获取指定页在文档坐标系中的 Y 坐标 */
+    public int getPageDocTop(int pageIndex) {
+        return mPagePositions.get(pageIndex, 0);
+    }
+
+    /** 获取指定页缩放后像素高度 */
+    public int getPageDisplayHeight(int pageIndex) {
+        return getPageHeight(pageIndex);
+    }
+
     private void setup(Context context) {
         mContext = context;
         mGestureDetector = new GestureDetector(context, this);
@@ -233,21 +282,22 @@ public class ReaderView
             onMoveOffChild(mCurrent);
             mCurrent = i;
             onMoveToChild(i);
+            // 转为连续滚动：定位到目标页顶部
+            recalculatePagePositions();
+            mScrollY = mPagePositions.get(i, 0);
             mResetLayout = true;
             requestLayout();
         }
     }
 
     public void moveToNext() {
-        View v = mChildViews.get(mCurrent + 1);
-        if (v != null)
-            slideViewOntoScreen(v);
+        // 连续拼页：向下滚动一屏
+        smartMoveForwards();
     }
 
     public void moveToPrevious() {
-        View v = mChildViews.get(mCurrent - 1);
-        if (v != null)
-            slideViewOntoScreen(v);
+        // 连续拼页：向上滚动一屏
+        smartMoveBackwards();
     }
 
     // When advancing down the page, we want to advance by about
@@ -276,147 +326,20 @@ public class ReaderView
     }
 
     public void smartMoveForwards() {
-        View v = mChildViews.get(mCurrent);
-        if (v == null)
-            return;
-
-        // The following code works in terms of where the screen is on the views;
-        // so for example, if the currentView is at (-100,-100), the visible
-        // region would be at (100,100). If the previous page was (2000, 3000) in
-        // size, the visible region of the previous page might be (2100 + GAP, 100)
-        // (i.e. off the previous page). This is different to the way the rest of
-        // the code in this file is written, but it's easier for me to think about.
-        // At some point we may refactor this to fit better with the rest of the
-        // code.
-
-        // screenWidth/Height are the actual width/height of the screen. e.g. 480/800
-        int screenWidth = getWidth();
+        // 连续拼页：前进约 90% 的屏幕高度（向下滚动 = mScrollY 增大，scroller 需负方向）
+        recalculatePagePositions();
         int screenHeight = getHeight();
-        // We might be mid scroll; we want to calculate where we scroll to based on
-        // where this scroll would end, not where we are now (to allow for people
-        // bashing 'forwards' very fast.
-        int remainingX = mScroller.getFinalX() - mScroller.getCurrX();
-        int remainingY = mScroller.getFinalY() - mScroller.getCurrY();
-        // right/bottom is in terms of pixels within the scaled document; e.g. 1000
-        int top = -(v.getTop() + mYScroll + remainingY);
-        int right = screenWidth - (v.getLeft() + mXScroll + remainingX);
-        int bottom = screenHeight + top;
-        // docWidth/Height are the width/height of the scaled document e.g. 2000x3000
-        int docWidth = v.getMeasuredWidth();
-        int docHeight = v.getMeasuredHeight();
-
-        int xOffset, yOffset;
-        if (bottom >= docHeight) {
-            // We are flush with the bottom. Advance to next column.
-            if (right + screenWidth > docWidth) {
-                // No room for another column - go to next page
-                View nv = mChildViews.get(mCurrent + 1);
-                if (nv == null) // No page to advance to
-                    return;
-                int nextTop = -(nv.getTop() + mYScroll + remainingY);
-                int nextLeft = -(nv.getLeft() + mXScroll + remainingX);
-                int nextDocWidth = nv.getMeasuredWidth();
-                int nextDocHeight = nv.getMeasuredHeight();
-
-                // Allow for the next page maybe being shorter than the screen is high
-                yOffset = (nextDocHeight < screenHeight ? ((nextDocHeight - screenHeight) >> 1) : 0);
-
-                if (nextDocWidth < screenWidth) {
-                    // Next page is too narrow to fill the screen. Scroll to the top, centred.
-                    xOffset = (nextDocWidth - screenWidth) >> 1;
-                } else {
-                    // Reset X back to the left hand column
-                    xOffset = right % screenWidth;
-                    // Adjust in case the previous page is less wide
-                    if (xOffset + screenWidth > nextDocWidth)
-                        xOffset = nextDocWidth - screenWidth;
-                }
-                xOffset -= nextLeft;
-                yOffset -= nextTop;
-            } else {
-                // Move to top of next column
-                xOffset = screenWidth;
-                yOffset = screenHeight - bottom;
-            }
-        } else {
-            // Advance by 90% of the screen height downwards (in case lines are partially cut off)
-            xOffset = 0;
-            yOffset = smartAdvanceAmount(screenHeight, docHeight - bottom);
-        }
+        int advance = smartAdvanceAmount(screenHeight, Math.max(0, mTotalDocumentHeight - mScrollY));
         mScrollerLastX = mScrollerLastY = 0;
-        mScroller.startScroll(0, 0, remainingX - xOffset, remainingY - yOffset, 400);
+        mScroller.startScroll(0, 0, 0, -advance, 400);
         mStepper.prod();
     }
 
     public void smartMoveBackwards() {
-        View v = mChildViews.get(mCurrent);
-        if (v == null)
-            return;
-
-        // The following code works in terms of where the screen is on the views;
-        // so for example, if the currentView is at (-100,-100), the visible
-        // region would be at (100,100). If the previous page was (2000, 3000) in
-        // size, the visible region of the previous page might be (2100 + GAP, 100)
-        // (i.e. off the previous page). This is different to the way the rest of
-        // the code in this file is written, but it's easier for me to think about.
-        // At some point we may refactor this to fit better with the rest of the
-        // code.
-
-        // screenWidth/Height are the actual width/height of the screen. e.g. 480/800
-        int screenWidth = getWidth();
-        int screenHeight = getHeight();
-        // We might be mid scroll; we want to calculate where we scroll to based on
-        // where this scroll would end, not where we are now (to allow for people
-        // bashing 'forwards' very fast.
-        int remainingX = mScroller.getFinalX() - mScroller.getCurrX();
-        int remainingY = mScroller.getFinalY() - mScroller.getCurrY();
-        // left/top is in terms of pixels within the scaled document; e.g. 1000
-        int left = -(v.getLeft() + mXScroll + remainingX);
-        int top = -(v.getTop() + mYScroll + remainingY);
-        // docWidth/Height are the width/height of the scaled document e.g. 2000x3000
-        int docHeight = v.getMeasuredHeight();
-
-        int xOffset, yOffset;
-        if (top <= 0) {
-            // We are flush with the top. Step back to previous column.
-            if (left < screenWidth) {
-                /* No room for previous column - go to previous page */
-                View pv = mChildViews.get(mCurrent - 1);
-                if (pv == null) /* No page to advance to */
-                    return;
-                int prevDocWidth = pv.getMeasuredWidth();
-                int prevDocHeight = pv.getMeasuredHeight();
-
-                // Allow for the next page maybe being shorter than the screen is high
-                yOffset = (prevDocHeight < screenHeight ? ((prevDocHeight - screenHeight) >> 1) : 0);
-
-                int prevLeft = -(pv.getLeft() + mXScroll);
-                int prevTop = -(pv.getTop() + mYScroll);
-                if (prevDocWidth < screenWidth) {
-                    // Previous page is too narrow to fill the screen. Scroll to the bottom, centred.
-                    xOffset = (prevDocWidth - screenWidth) >> 1;
-                } else {
-                    // Reset X back to the right hand column
-                    xOffset = (left > 0 ? left % screenWidth : 0);
-                    if (xOffset + screenWidth > prevDocWidth)
-                        xOffset = prevDocWidth - screenWidth;
-                    while (xOffset + screenWidth * 2 < prevDocWidth)
-                        xOffset += screenWidth;
-                }
-                xOffset -= prevLeft;
-                yOffset -= prevTop - prevDocHeight + screenHeight;
-            } else {
-                // Move to bottom of previous column
-                xOffset = -screenWidth;
-                yOffset = docHeight - screenHeight + top;
-            }
-        } else {
-            // Retreat by 90% of the screen height downwards (in case lines are partially cut off)
-            xOffset = 0;
-            yOffset = -smartAdvanceAmount(screenHeight, top);
-        }
+        // 连续拼页：后退约 90% 的屏幕高度（向上滚动 = mScrollY 减小，scroller 需正方向）
+        int advance = smartAdvanceAmount(getHeight(), mScrollY);
         mScrollerLastX = mScrollerLastY = 0;
-        mScroller.startScroll(0, 0, remainingX - xOffset, remainingY - yOffset, 400);
+        mScroller.startScroll(0, 0, 0, advance, 400);
         mStepper.prod();
     }
 
@@ -450,6 +373,10 @@ public class ReaderView
         //需要清理缓存，不然会在加载存在批注的页面时闪烁
         mViewCache.clear();
 
+        // 连续拼页：页面高度可能变化
+        mPageHeights.clear();
+        mPositionsDirty = true;
+
         Debugger.i("afterAnnotation：end");
     }
 
@@ -459,6 +386,7 @@ public class ReaderView
 
         mScale = mDefaultScale;
         mXScroll = mYScroll = 0;
+        mScrollY = 0;
 
         //由于页面和屏幕的大小都发生了变化，导致大小和位图无效，因此所有页面视图都需要重新创建。
         mAdapter.refresh();
@@ -469,6 +397,11 @@ public class ReaderView
         }
         mChildViews.clear();
         mViewCache.clear();
+
+        // 连续拼页：位置需要完全重算
+        mPageHeights.clear();
+        mPageSizes.clear();
+        mPositionsDirty = true;
 
         requestLayout();
     }
@@ -493,13 +426,8 @@ public class ReaderView
             mScrollerLastY = y;
             requestLayout();
             mStepper.prod();
-        } else if (!mUserInteracting) {
-            // 惯性滚动结束，用户没有互动。
-            // 布局是稳定的
-            View v = mChildViews.get(mCurrent);
-            if (v != null)
-                postSettle(v);
         }
+        // 连续拼页：惯性结束后由 onLayout2 统一处理 settle
     }
 
     public boolean onDown(MotionEvent arg0) {
@@ -511,82 +439,14 @@ public class ReaderView
     public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX,
                            float velocityY) {
         Debugger.i(TAG, "GestureDetector onFling velocityX:" + velocityX + ",velocityY:" + velocityY + ",mScaling:" + mScaling + ",isSimulating:" + isSimulating);
-        if (mScaling)
-            return true;
+        if (mScaling) return true;
+        if (isSimulating) return true;
 
-        if (isSimulating)
-            return true;
-
-        View v = mChildViews.get(mCurrent);
-        if (v != null) {
-            Rect bounds = getScrollBounds(v);
-            switch (directionOfTravel(velocityX, velocityY)) {
-                case MOVING_LEFT:
-                    if (HORIZONTAL_SCROLLING && bounds.left >= 0) {
-                        // Fling off to the left bring next view onto screen
-                        View vl = mChildViews.get(mCurrent + 1);
-
-                        if (vl != null) {
-                            slideViewOntoScreen(vl);
-                            return true;
-                        }
-                    }
-                    break;
-                case MOVING_UP:
-                    if (!HORIZONTAL_SCROLLING && bounds.top >= 0) {
-                        // Fling off to the top bring next view onto screen 飞到顶部，将下一视图带到屏幕上
-                        View vl = mChildViews.get(mCurrent + 1);
-
-                        if (vl != null) {
-                            slideViewOntoScreen(vl);
-                            return true;
-                        }
-                    }
-                    break;
-                case MOVING_RIGHT:
-                    if (HORIZONTAL_SCROLLING && bounds.right <= 0) {
-                        // Fling off to the right bring previous view onto screen 向右弹跳，将之前的视图带到屏幕上
-                        View vr = mChildViews.get(mCurrent - 1);
-
-                        if (vr != null) {
-                            slideViewOntoScreen(vr);
-                            return true;
-                        }
-                    }
-                    break;
-                case MOVING_DOWN:
-                    if (!HORIZONTAL_SCROLLING && bounds.bottom <= 0) {
-                        // Fling off to the bottom bring previous view onto screen 弹跳到底部，将之前的视图带到屏幕上
-                        View vr = mChildViews.get(mCurrent - 1);
-
-                        if (vr != null) {
-                            slideViewOntoScreen(vr);
-                            return true;
-                        }
-                    }
-                    break;
-            }
-            mScrollerLastX = mScrollerLastY = 0;
-            // If the page has been dragged out of bounds then we want to spring back
-            // nicely. fling jumps back into bounds instantly, so we don't want to use
-            // fling in that case. On the other hand, we don't want to forgo a fling
-            // just because of a slightly off-angle drag taking us out of bounds other
-            // than in the direction of the drag, so we test for out of bounds only
-            // in the direction of travel.
-            //
-            // Also don't fling if out of bounds in any direction by more than fling
-            // margin
-            Rect expandedBounds = new Rect(bounds);
-            expandedBounds.inset(-FLING_MARGIN, -FLING_MARGIN);
-
-            if (withinBoundsInDirectionOfTravel(bounds, velocityX, velocityY)
-                    && expandedBounds.contains(0, 0)) {
-//                Debugger.i(TAG, "ReaderView.onFling: prod");
-                mScroller.fling(0, 0, (int) velocityX, (int) velocityY, bounds.left, bounds.right, bounds.top, bounds.bottom);
-                mStepper.prod();
-            }
-        }
-
+        // 连续拼页：Fling 直接以全局坐标滚动
+        Rect bounds = getGlobalScrollBounds();
+        mScrollerLastX = mScrollerLastY = 0;
+        mScroller.fling(0, 0, (int)velocityX, (int)velocityY, bounds.left, bounds.right, bounds.top, bounds.bottom);
+        mStepper.prod();
         return true;
     }
 
@@ -617,39 +477,13 @@ public class ReaderView
         float previousScale = mScale;
         mScale = scale;
 
-        {
-            float factor = mScale / previousScale;
-
-            View v = mChildViews.get(mCurrent);
-            if (v != null) {
-                float currentFocusX = 0;
-                float currentFocusY = 0;
-                // Work out the focus point relative to the view top left
-                int viewFocusX = (int) currentFocusX - (v.getLeft() + mXScroll);
-                int viewFocusY = (int) currentFocusY - (v.getTop() + mYScroll);
-                // Scroll to maintain the focus point
-                mXScroll += viewFocusX - viewFocusX * factor;
-                mYScroll += viewFocusY - viewFocusY * factor;
-
-                if (mLastScaleFocusX >= 0)
-                    mXScroll += currentFocusX - mLastScaleFocusX;
-                if (mLastScaleFocusY >= 0)
-                    mYScroll += currentFocusY - mLastScaleFocusY;
-
-                mLastScaleFocusX = currentFocusX;
-                mLastScaleFocusY = currentFocusY;
-//                Debugger.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
-//                        + "\nscaleFactor:" + scaleFactor
-//                        + "\nmScale:" + mScale
-//                        + "\nfactor:" + factor
-//                        + "\nmXScroll:" + mXScroll
-//                        + "\nmYScroll:" + mYScroll
-//                        + "\nmLastScaleFocusX:" + mLastScaleFocusX
-//                        + "\nmLastScaleFocusY:" + mLastScaleFocusY
-//                );
-                requestLayout();
-            }
-        }
+        // 连续拼页：缩放后页面高度变化，需重算位置
+        mPageHeights.clear();
+        mPositionsDirty = true;
+        float factor = mScale / previousScale;
+        int centerY = mScrollY + getHeight() / 2;
+        mScrollY = (int)(centerY * factor - getHeight() / 2);
+        requestLayout();
     }
 
     public boolean onScale(ScaleGestureDetector detector) {
@@ -659,41 +493,20 @@ public class ReaderView
         float scaleFactor = detector.getScaleFactor();
         mScale = Math.min(Math.max(mScale * scaleFactor, MIN_SCALE), MAX_SCALE);
 
-        {
-            float factor = mScale / previousScale;
-
-            View v = mChildViews.get(mCurrent);
-            if (v != null) {
-                float currentFocusX = detector.getFocusX();
-                float currentFocusY = detector.getFocusY();
-                // Work out the focus point relative to the view top left
-                int viewFocusX = (int) currentFocusX - (v.getLeft() + mXScroll);
-                int viewFocusY = (int) currentFocusY - (v.getTop() + mYScroll);
-                // Scroll to maintain the focus point
-                mXScroll += viewFocusX - viewFocusX * factor;
-                mYScroll += viewFocusY - viewFocusY * factor;
-
-                if (mLastScaleFocusX >= 0)
-                    mXScroll += currentFocusX - mLastScaleFocusX;
-                if (mLastScaleFocusY >= 0)
-                    mYScroll += currentFocusY - mLastScaleFocusY;
-
-                mLastScaleFocusX = currentFocusX;
-                mLastScaleFocusY = currentFocusY;
-                Debugger.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
-                        + "\nscaleFactor:" + scaleFactor
-                        + "\nmScale:" + mScale
-                        + "\nfactor:" + factor
-                        + "\nmXScroll:" + mXScroll
-                        + "\nmYScroll:" + mYScroll
-                        + "\nmLastScaleFocusX:" + mLastScaleFocusX
-                        + "\nmLastScaleFocusY:" + mLastScaleFocusY
-                );
-                requestLayout();
-            }
-        }
+        // 连续拼页：缩放后页面高度变化，需重算位置
+        mPageHeights.clear();
+        mPositionsDirty = true;
+        float factor = mScale / previousScale;
+        float focusY = detector.getFocusY();
+        int docFocusY = mScrollY + (int)focusY;
+        mScrollY = (int)(docFocusY * factor - focusY);
+        Debugger.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
+                + "\nscaleFactor:" + scaleFactor
+                + "\nmScale:" + mScale
+                + "\nfactor:" + factor
+                + "\nmScrollY:" + mScrollY);
+        requestLayout();
         return true;
-//        return !isSigning;
     }
 
     public boolean onScaleBegin(ScaleGestureDetector detector) {
@@ -733,25 +546,8 @@ public class ReaderView
         }
         if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP) {
             mUserInteracting = false;
-
-            View v = mChildViews.get(mCurrent);
-            if (v != null) {
-                if (mScroller.isFinished()) {
-                    // If, at the end of user interaction, there is no
-                    // current inertial scroll in operation then animate
-                    // the view onto screen if necessary
-                    // 如果在用户互动结束时，没有当前的惯性卷轴在运行，那么如果有必要，将视图动画化到屏幕上。
-                    slideViewOntoScreen(v);
-                }
-
-                if (mScroller.isFinished()) {
-                    // If still there is no inertial scroll in operation
-                    // then the layout is stable
-                    // 如果仍然没有惯性滚动在运行，那么布局是稳定的。
-                    Debugger.d(TAG, "onTouchEvent 通知调用ReaderView中的run方法");
-                    postSettle(v);
-                }
-            }
+            // 连续拼页：抬指后触发一次 layout，由 onLayout2 统一处理 mCurrent 更新和 settle
+            if (mScroller.isFinished()) requestLayout();
         }
 
         requestLayout();
@@ -760,6 +556,36 @@ public class ReaderView
 
     public void setAnnotation(boolean isInAnnotation) {
         this.isInAnnotation = isInAnnotation;
+    }
+
+    /** 告知 ReaderView 批注画板正在双指手势中，期间阻止 settle/HQ 渲染 */
+    public void setAnnotationMultiTouch(boolean multiTouching) {
+        this.mAnnotationMultiTouch = multiTouching;
+    }
+
+    /**
+     * 批注画板双指平移 PDF 上下文（由 AnnotationArtBoard 调用）。
+     * dx,dy: 手指双指中心在屏幕上的位移量（像素）
+     */
+    public void scrollBy(float dx, float dy) {
+        mXScroll -= (int) dx;
+        mYScroll -= (int) dy;
+        requestLayout();
+    }
+
+    /**
+     * 批注画板双指缩放 PDF 上下文（由 AnnotationArtBoard 调用）。
+     */
+    public void zoomBy(float scaleFactor, float focusX, float focusY) {
+        if (isSigning) return;
+        float prev = mScale;
+        mScale = Math.min(Math.max(mScale * scaleFactor, MIN_SCALE), MAX_SCALE);
+        float factor = mScale / prev;
+        int docFocusY = mScrollY + (int) focusY;
+        mScrollY = (int) (docFocusY * factor - focusY);
+        mPageHeights.clear();
+        mPositionsDirty = true;
+        requestLayout();
     }
 
     @Override
@@ -785,75 +611,19 @@ public class ReaderView
     private void onLayout2(boolean changed, int left, int top, int right,
                            int bottom) {
         Debugger.i(TAG, "onLayout2: start changed:" + changed + "," + left + "," + top + "," + right + "," + bottom);
-        // "Edit mode" means when the View is being displayed in the Android GUI editor. (this class is instantiated in the IDE, so we need to be a bit careful what we do).
-        if (isInEditMode())
-            return;
-        View cv = mChildViews.get(mCurrent);
-        Point cvOffset;
-        Debugger.d(TAG, "onLayout2: mResetLayout=" + mResetLayout + ",cv=" + (cv != null) + ",mCurrent=" + mCurrent + ",mXScroll=" + mXScroll + ",mYScroll=" + mYScroll);
-        if (!mResetLayout) {
-            // 如果当前充分偏离中心，则移动到下一个或上一个。
-            if (cv != null) {
-                boolean move;
-                cvOffset = subScreenSizeOffset(cv);
-                // cv.getRight() may be out of date with the current scale so add left to the measured width for the correct position
-                // cv.getRight（）可能与当前比例不符，因此在正确位置的测量宽度上向左添加
-                if (HORIZONTAL_SCROLLING)
-                    move = cv.getLeft() + cv.getMeasuredWidth() + cvOffset.x + GAP / 2 + mXScroll < getWidth() / 2;
-                else
-                    move = cv.getTop() + cv.getMeasuredHeight() + cvOffset.y + GAP / 2 + mYScroll < getHeight() / 2;
-                //如果当前正在签名-则禁止翻页
-                if (isSigning) move = false;
-                if (move && mCurrent + 1 < mAdapter.getCount()) {
-                    postUnsettle(cv);
-                    // post to invoke test for end of animation where we must set hq area for the new current view
-                    // post调用动画结束测试，我们必须为新的当前视图设置hq区域
-                    mStepper.prod();
+        if (isInEditMode()) return;
 
-                    onMoveOffChild(mCurrent);
-                    mCurrent++;
-                    onMoveToChild(mCurrent);
-                }
+        int screenWidth = right - left;
+        int screenHeight = bottom - top;
+        int count = mAdapter != null ? mAdapter.getCount() : 0;
 
-                if (HORIZONTAL_SCROLLING)
-                    move = cv.getLeft() - cvOffset.x - GAP / 2 + mXScroll >= getWidth() / 2;
-                else
-                    move = cv.getTop() - cvOffset.y - GAP / 2 + mYScroll >= getHeight() / 2;
-                //如果当前正在签名-则禁止翻页
-                if (isSigning) move = false;
-                if (move && mCurrent > 0) {
-                    postUnsettle(cv);
-                    // post to invoke test for end of animation
-                    // where we must set hq area for the new current view
-                    mStepper.prod();
+        // --- 1. 确保位置计算最新 ---
+        recalculatePagePositions();
 
-                    onMoveOffChild(mCurrent);
-                    mCurrent--;
-                    onMoveToChild(mCurrent);
-                }
-            }
-
-            // 删除不需要的子项并保留它们以供重复使用
-            int numChildren = mChildViews.size();
-            int childIndices[] = new int[numChildren];
-            for (int i = 0; i < numChildren; i++)
-                childIndices[i] = mChildViews.keyAt(i);
-
-            for (int i = 0; i < numChildren; i++) {
-                int ai = childIndices[i];
-                if (ai < mCurrent - 1 || ai > mCurrent + 1) {
-                    View v = mChildViews.get(ai);
-                    onNotInUse(v);
-                    mViewCache.add(v);
-                    removeViewInLayout(v);
-                    mChildViews.remove(ai);
-                }
-            }
-        } else {
+        // --- 2. 处理滚动 ---
+        if (mResetLayout) {
             mResetLayout = false;
-            mXScroll = mYScroll = 0;
-
-            // 移走所有子项并将其保留以供重复使用
+            // 重置场景：清空所有子View
             int numChildren = mChildViews.size();
             for (int i = 0; i < numChildren; i++) {
                 View v = mChildViews.valueAt(i);
@@ -862,91 +632,65 @@ public class ReaderView
                 removeViewInLayout(v);
             }
             mChildViews.clear();
-
-            // post to ensure generation of hq area
-            mStepper.prod();
-        }
-        // Ensure current view is present
-        int cvLeft, cvRight, cvTop, cvBottom;
-        boolean notPresent = (mChildViews.get(mCurrent) == null);
-        cv = getOrCreateChild(mCurrent);
-        // When the view is sub-screen-size in either dimension we
-        // offset it to center within the screen area, and to keep
-        // the views spaced out
-        cvOffset = subScreenSizeOffset(cv);
-        if (notPresent) {
-            // Main item not already present. Just place it top left
-            cvLeft = cvOffset.x;
-            cvTop = cvOffset.y;
+            mXScroll = mYScroll = 0;
         } else {
-            // Main item already present. Adjust by scroll offsets
-            cvLeft = cv.getLeft() + mXScroll;
-            cvTop = cv.getTop() + mYScroll;
-        }
-        // Scroll values have been accounted for
-        mXScroll = mYScroll = 0;
-        cvRight = cvLeft + cv.getMeasuredWidth();
-        cvBottom = cvTop + cv.getMeasuredHeight();
-        Debugger.i(TAG, "onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
-        if (!mUserInteracting && mScroller.isFinished()) {
-            Point corr = getCorrection(getScrollBounds(cvLeft, cvTop, cvRight, cvBottom));
-            cvRight += corr.x;
-            cvLeft += corr.x;
-            cvTop += corr.y;
-            cvBottom += corr.y;
-        } else if (HORIZONTAL_SCROLLING && cv.getMeasuredHeight() <= getHeight()) {
-            // When the current view is as small as the screen in height, clamp
-            // it vertically
-            Point corr = getCorrection(getScrollBounds(cvLeft, cvTop, cvRight, cvBottom));
-            cvTop += corr.y;
-            cvBottom += corr.y;
-        } else if (!HORIZONTAL_SCROLLING && cv.getMeasuredWidth() <= getWidth()) {
-            // When the current view is as small as the screen in width, clamp
-            // it horizontally
-            Point corr = getCorrection(getScrollBounds(cvLeft, cvTop, cvRight, cvBottom));
-            cvRight += corr.x;
-            cvLeft += corr.x;
-        }
-
-        Debugger.i(TAG, "onLayout2: cvLeft:" + cvLeft + ",cvTop:" + cvTop + ",cvRight:" + cvRight + ",cvBottom:" + cvBottom);
-        cv.layout(cvLeft, cvTop, cvRight, cvBottom);
-
-        if (mCurrent > 0) {
-            View lv = getOrCreateChild(mCurrent - 1);
-            Point leftOffset = subScreenSizeOffset(lv);
-            if (HORIZONTAL_SCROLLING) {
-                int gap = leftOffset.x + GAP + cvOffset.x;
-                lv.layout(cvLeft - lv.getMeasuredWidth() - gap,
-                        (cvBottom + cvTop - lv.getMeasuredHeight()) / 2,
-                        cvLeft - gap,
-                        (cvBottom + cvTop + lv.getMeasuredHeight()) / 2);
-            } else {
-                int gap = leftOffset.y + GAP + cvOffset.y;
-                lv.layout((cvLeft + cvRight - lv.getMeasuredWidth()) / 2,
-                        cvTop - lv.getMeasuredHeight() - gap,
-                        (cvLeft + cvRight + lv.getMeasuredWidth()) / 2,
-                        cvTop - gap);
+            // 增量滚动：将 mXScroll/mYScroll 累积到 mScrollY
+            // 注意：mYScroll 负值表示内容向下滚动(页面向上移动)，对应 mScrollY 增大
+            if (mXScroll != 0 || mYScroll != 0) {
+                mScrollY -= mYScroll;
+                mXScroll = mYScroll = 0;
             }
+            // 签名期间禁止翻页，不更新mScrollY
         }
 
-        if (mCurrent + 1 < mAdapter.getCount()) {
-            View rv = getOrCreateChild(mCurrent + 1);
-            Point rightOffset = subScreenSizeOffset(rv);
-            if (HORIZONTAL_SCROLLING) {
-                int gap = cvOffset.x + GAP + rightOffset.x;
-                rv.layout(cvRight + gap,
-                        (cvBottom + cvTop - rv.getMeasuredHeight()) / 2,
-                        cvRight + rv.getMeasuredWidth() + gap,
-                        (cvBottom + cvTop + rv.getMeasuredHeight()) / 2);
-            } else {
-                int gap = cvOffset.y + GAP + rightOffset.y;
-                rv.layout((cvLeft + cvRight - rv.getMeasuredWidth()) / 2,
-                        cvBottom + gap,
-                        (cvLeft + cvRight + rv.getMeasuredWidth()) / 2,
-                        cvBottom + gap + rv.getMeasuredHeight());
-            }
+        // --- 3. 约束滚动范围 ---
+        int maxScroll = Math.max(0, mTotalDocumentHeight - screenHeight);
+        if (mScrollY < 0) mScrollY = 0;
+        if (mScrollY > maxScroll) mScrollY = maxScroll;
+
+        Debugger.d(TAG, "onLayout2: mScrollY=" + mScrollY + ", mCurrent=" + mCurrent + ", totalHeight=" + mTotalDocumentHeight);
+
+        // --- 4. 确定可见页面范围 ---
+        int viewTop = mScrollY;
+        int viewBottom = mScrollY + screenHeight;
+        int firstVisible = findPageAtY(viewTop);
+        int lastVisible = findPageAtY(viewBottom);
+
+        // --- 5. 回收缓冲区外的页面 ---
+        recycleOutside(firstVisible, lastVisible);
+
+        // --- 6. 加载并布局可见范围内的页面 ---
+        int buffer = VISUAL_BUFFER_SCREENS;
+        int loadFirst = Math.max(0, firstVisible - buffer);
+        int loadLast = Math.min(count - 1, lastVisible + buffer);
+
+        for (int i = loadFirst; i <= loadLast; i++) {
+            View child = getOrCreateChild(i);
+            int pageTop = mPagePositions.get(i, 0);
+            int childW = child.getMeasuredWidth();
+            int childH = child.getMeasuredHeight();
+            // 屏幕 X 坐标：水平居中
+            int cx = (screenWidth - childW) / 2;
+            // 屏幕 Y 坐标：文档坐标 - 滚动偏移
+            int cy = pageTop - mScrollY;
+            child.layout(cx, cy, cx + childW, cy + childH);
         }
-        Debugger.i(TAG, "onLayout2: invalidate");
+
+        // --- 7. 滚动停止时更新 mCurrent 并触发 HQ 渲染 ---
+        boolean settled = !mUserInteracting && mScroller.isFinished() && !mAnnotationMultiTouch;
+        if (settled) {
+            int newCurrent = findMostVisiblePage();
+            if (newCurrent != mCurrent && newCurrent >= 0 && newCurrent < count) {
+                onMoveOffChild(mCurrent);
+                mCurrent = newCurrent;
+                onMoveToChild(mCurrent);
+            }
+            // 仅对当前页触发 HQ settle——多页并发渲染会导致 native 设备栈异常
+            View cv = mChildViews.get(mCurrent);
+            if (cv != null) postSettle(cv);
+        }
+
+        Debugger.i(TAG, "onLayout2: invalidate mCurrent=" + mCurrent + " mScrollY=" + mScrollY);
         invalidate();
         Debugger.i(TAG, "onLayout2: end");
     }
@@ -1001,17 +745,108 @@ public class ReaderView
         addViewInLayout(v, 0, params, true);
         mChildViews.append(i, v); // Record the view against its adapter index
         measureView(v);
+        // 缓存实际像素高度，标记位置需要重算
+        mPageHeights.put(i, v.getMeasuredHeight());
+        mPositionsDirty = true;
     }
 
     private void measureView(View v) {
         // 查看视图所需的尺寸
         v.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        // 制定一个适合此视图的比例
-        float scale = Math.min((float) getWidth() / (float) v.getMeasuredWidth(),
-                (float) getHeight() / (float) v.getMeasuredHeight());
+        // 连续拼页：所有页面按统一宽度缩放，不再限制高度
+        float scale = (float) getWidth() / (float) v.getMeasuredWidth();
         // 使用按当前比例因子缩放的拟合值
         v.measure(View.MeasureSpec.EXACTLY | (int) (v.getMeasuredWidth() * scale * mScale),
                 View.MeasureSpec.EXACTLY | (int) (v.getMeasuredHeight() * scale * mScale));
+    }
+
+    // ====== 连续拼页辅助方法 ======
+
+    /** 获取指定页在 mPageSizes 中缓存的原始尺寸(PointF)，未缓存则从 MuPDFCore 同步加载 */
+    private PointF getCachedPageSize(int pageIndex) {
+        PointF size = mPageSizes.get(pageIndex);
+        if (size == null && mAdapter != null) {
+            size = mAdapter.getPageSizeSync(pageIndex);
+            if (size != null) mPageSizes.put(pageIndex, size);
+        }
+        return size;
+    }
+
+    /** 获取指定页在当前缩放下像素高度 */
+    private int getPageHeight(int pageIndex) {
+        Integer h = mPageHeights.get(pageIndex);
+        if (h != null && h > 0) return h;
+        PointF size = getCachedPageSize(pageIndex);
+        if (size != null && size.x > 0) {
+            return (int)(getWidth() * (size.y / size.x) * mScale);
+        }
+        // 兜底：假设页面宽高比 1:1
+        return (int)(getWidth() * mScale);
+    }
+
+    /** 重新计算所有页面全局 Y 坐标 */
+    private void recalculatePagePositions() {
+        if (!mPositionsDirty) return;
+        mPagePositions.clear();
+        int count = mAdapter != null ? mAdapter.getCount() : 0;
+        int y = 0;
+        for (int i = 0; i < count; i++) {
+            mPagePositions.put(i, y);
+            int h = getPageHeight(i);
+            y += h + GAP;
+        }
+        mTotalDocumentHeight = y > GAP ? y - GAP : 0;
+        mPositionsDirty = false;
+    }
+
+    /** 查找文档 Y 坐标落在哪一页 */
+    public int findPageAtY(int y) {
+        int count = mAdapter != null ? mAdapter.getCount() : 0;
+        for (int i = 0; i < count; i++) {
+            int top = mPagePositions.get(i, 0);
+            int bottom = top + getPageHeight(i);
+            if (y >= top && y < bottom) return i;
+        }
+        // y 落在文档末尾之后 → 返回最后一页
+        return count > 0 ? count - 1 : 0;
+    }
+
+    /** 返回视口中心线所在的页面索引 */
+    private int findMostVisiblePage() {
+        int centerY = mScrollY + getHeight() / 2;
+        return findPageAtY(centerY);
+    }
+
+    /** 全局滚动边界（相对于当前 mScrollY） */
+    private Rect getGlobalScrollBounds() {
+        int maxScroll = Math.max(0, mTotalDocumentHeight - getHeight());
+        // fling 边界: Scroller 从 0 出发 → 达到 minY 时 mScrollY 增大到 maxScroll
+        //                         → 达到 maxY 时 mScrollY 减小到 0
+        // mScrollY = oldScrollY - scrollerY (符号修正: mYScroll 负 → 内容下滚 → mScrollY 增)
+        int minY = -(maxScroll - mScrollY);
+        int maxY = mScrollY;
+        return new Rect(0, minY, 0, maxY);
+    }
+
+    /** 回收视口缓冲区之外的子 View */
+    private void recycleOutside(int firstVisible, int lastVisible) {
+        int buffer = VISUAL_BUFFER_SCREENS;
+        int keepFirst = Math.max(0, firstVisible - buffer);
+        int keepLast = lastVisible + buffer;
+        int num = mChildViews.size();
+        int[] indices = new int[num];
+        for (int i = 0; i < num; i++) indices[i] = mChildViews.keyAt(i);
+        for (int idx : indices) {
+            if (idx < keepFirst || idx > keepLast) {
+                View v = mChildViews.get(idx);
+                if (v != null) {
+                    onNotInUse(v);
+                    mViewCache.add(v);
+                    removeViewInLayout(v);
+                    mChildViews.remove(idx);
+                }
+            }
+        }
     }
 
     private Rect getScrollBounds(int left, int top, int right, int bottom) {
@@ -1068,12 +903,11 @@ public class ReaderView
     private void slideViewOntoScreen(View v) {
         /* *** 签名期间禁止通过滑动、惯性拖动进行翻页 *** */
         if (isSigning) return;
-        Point corr = getCorrection(getScrollBounds(v));
-        if (corr.x != 0 || corr.y != 0) {
-            mScrollerLastX = mScrollerLastY = 0;
-            mScroller.startScroll(0, 0, corr.x, corr.y, 400);
-            mStepper.prod();
-        }
+        // 连续拼页：将滚动约束在全局有效范围内
+        int maxScroll = Math.max(0, mTotalDocumentHeight - getHeight());
+        if (mScrollY < 0) mScrollY = 0;
+        if (mScrollY > maxScroll) mScrollY = maxScroll;
+        requestLayout();
     }
 
     private Point subScreenSizeOffset(View v) {
