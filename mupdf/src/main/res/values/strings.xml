@@ -21,6 +21,13 @@
 	<string name="mupdf_cancel">取消</string>
 	<string name="mupdf_confirm">确认</string>
 	<string name="mupdf_close">关闭</string>
+	<string name="mupdf_setting">设置</string>
+	<string name="mupdf_setting_title">显示设置</string>
+	<string name="mupdf_brightness">亮度</string>
+	<string name="mupdf_background">背景颜色</string>
+	<string name="mupdf_zoom">缩放</string>
+	<string name="mupdf_reset">重置</string>
+	<string name="mupdf_custom_color">自定义</string>
 	<string name="mupdf_size">粗细</string>
 	<string name="mupdf_brush">画笔</string>
 	<string name="mupdf_art_highlight">高亮</string>

@@ -129,7 +129,7 @@ public class PageView extends ViewGroup {
         mContext = c;
         mCore = core;
         mParentSize = parentSize;
-        setBackgroundColor(BACKGROUND_COLOR);
+        setBackgroundColor(MupdfMacro.backgroundColor);
         mEntireBm = Bitmap.createBitmap((int) parentSize.x, (int) parentSize.y, Config.ARGB_8888);
         mPatchBm = sharedHqBm;
         mEntireMat = new Matrix();
@@ -216,7 +216,7 @@ public class PageView extends ViewGroup {
             addView(mBusyIndicator);
         }
 
-        setBackgroundColor(BACKGROUND_COLOR);
+        setBackgroundColor(MupdfMacro.backgroundColor);
     }
 
     protected void clearRenderError() {
@@ -320,6 +320,9 @@ public class PageView extends ViewGroup {
             mEntire.setScaleType(ImageView.ScaleType.MATRIX);
             addView(mEntire);
         }
+        // PageView instances are recycled by ReaderView. Reapply the current
+        // filter whenever a cached view is assigned to another page.
+        applyColorFilter(mEntire);
 
         mEntire.setImageBitmap(null);
         mEntire.invalidate();
@@ -346,7 +349,7 @@ public class PageView extends ViewGroup {
             @Override
             public void onPreExecute() {
                 Debugger.i(TAG, "后台渲染页面 setPage onPreExecute page=" + page);
-                setBackgroundColor(BACKGROUND_COLOR);
+                setBackgroundColor(MupdfMacro.backgroundColor);
                 mEntire.setImageBitmap(null);
                 mEntire.invalidate();
 
@@ -567,6 +570,7 @@ public class PageView extends ViewGroup {
             if (mSearchView != null)
                 mSearchView.bringToFront();
         }
+        applyColorFilter(mPatch);
 
         CancellableTaskDefinition<Void, Boolean> task;
         Debugger.i(TAG, "updateHq: completeRedraw:" + completeRedraw + ",update:" + update);
@@ -656,6 +660,28 @@ public class PageView extends ViewGroup {
 
     public int getPage() {
         return mPageNumber;
+    }
+
+    /**
+     * 将背景颜色（纸张色）与亮度作为颜色滤镜应用到渲染图像上。
+     * 默认（白底/亮度0）时 {@link MupdfMacro#buildColorFilter()} 返回 null，即不做处理。
+     */
+    private void applyColorFilter(ImageView imageView) {
+        if (imageView != null) {
+            imageView.setColorFilter(MupdfMacro.buildColorFilter());
+        }
+    }
+
+    /**
+     * 运行时刷新背景颜色与亮度设置。修改 {@link MupdfMacro#backgroundColor}
+     * 或 {@link MupdfMacro#brightness} 后调用即可立即生效。
+     */
+    public void refreshColorFilter() {
+        applyColorFilter(mEntire);
+        applyColorFilter(mPatch);
+        setBackgroundColor(MupdfMacro.backgroundColor);
+        if (mEntire != null) mEntire.invalidate();
+        if (mPatch != null) mPatch.invalidate();
     }
 
     @Override

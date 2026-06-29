@@ -107,7 +107,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private View viewTopAnnotation, viewTopSignature, viewTopScreenshot, viewTopRefresh, viewTopJump, viewTopSave, viewTopBookmark, viewTopClose,//顶部控件
             viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
             viewArtInvite, viewArtUnderline, viewArtStrikeout, viewArtFreeText,
-            viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch;
+            viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch, viewTopSetting;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark;
     private int mWatermarkColor;
     private int mediaId;
@@ -222,6 +222,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putInt(MupdfMacro.bundle_key_page_index, config.getPageIndex());
         bundle.putInt(MupdfMacro.bundle_key_clarityLimitMode, config.getClarityLimitMode());
         bundle.putBoolean(MupdfMacro.bundle_key_full_screen, config.isFullScreenEnable());
+        bundle.putInt(MupdfMacro.bundle_key_background_color, config.getBackgroundColor());
+        bundle.putInt(MupdfMacro.bundle_key_brightness, config.getBrightness());
         jump(context, bundle);
     }
 
@@ -292,6 +294,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
                     MupdfMacro.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, -1);
                     isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
+                    MupdfMacro.backgroundColor = bundle.getInt(MupdfMacro.bundle_key_background_color, MupdfMacro.DEFAULT_BACKGROUND_COLOR);
+                    MupdfMacro.brightness = MupdfMacro.clampBrightness(
+                            bundle.getInt(MupdfMacro.bundle_key_brightness, 0));
                     Uri uri;
                     if (!srcFilePath.isEmpty()) {
                         uri = Uri.parse(new File(srcFilePath).toURI().toString());
@@ -414,6 +419,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     float fullWidthScale = 1.0f;
+    /**
+     * 当前缩放百分比（相对于适宽缩放 {@link #fullWidthScale}），100 表示适宽。
+     */
+    private int currentZoomPercent = 100;
 
     public void createUI(Bundle savedInstanceState) {
         if (core == null)
@@ -570,6 +579,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 showButtons();
                 searchModeOn();
             });
+        }
+
+        // 顶部设置入口按钮（亮度、背景颜色、缩放）
+        if (viewTopSetting != null) {
+            viewTopSetting.setOnClickListener(v -> showSettingsDialog());
         }
 
         if (MupdfMacro.shareAnnotationEnable) {
@@ -1614,6 +1628,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewTopSignRow = mButtonsView.findViewById(R.id.viewTopSignRow);
         viewTopClose = mButtonsView.findViewById(R.id.viewTopClose);
         viewTopSearch = mButtonsView.findViewById(R.id.viewTopSearch);
+        viewTopSetting = mButtonsView.findViewById(R.id.viewTopSetting);
         //</editor-fold>
 
         //<editor-fold desc="批注控件">
@@ -1779,6 +1794,233 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
                 (dialog, which) -> dialog.dismiss());
         alert.show();
+    }
+
+    /**
+     * 对所有已缓存/可见的页面应用最新的颜色滤镜（背景颜色 + 亮度）。
+     */
+    private void refreshAllPageColorFilter() {
+        if (mDocView != null) {
+            mDocView.applyToChildren(new ReaderView.ViewMapper() {
+                @Override
+                public void applyToView(View view) {
+                    if (view instanceof PageView) {
+                        ((PageView) view).refreshColorFilter();
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * 背景颜色预设色板
+     */
+    private static final int[] BG_PRESET_COLORS = {
+            0xFFFFFFFF, // 默认白
+            0xFFF5E9D5, // 护眼米黄
+            0xFFC7EDCC, // 护眼淡绿
+            0xFFD9D9D9, // 淡灰
+            0xFF40444B  // 夜间深灰
+    };
+
+    /**
+     * 根据当前 {@link MupdfMacro#backgroundColor} 刷新色板选中态。
+     */
+    private void updateSwatchSelection(View[] swatches, float density) {
+        for (int i = 0; i < swatches.length; i++) {
+            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+            gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            gd.setColor(BG_PRESET_COLORS[i]);
+            if (BG_PRESET_COLORS[i] == MupdfMacro.backgroundColor) {
+                gd.setStroke((int) (3 * density), 0xFF2196F3);
+            } else {
+                gd.setStroke((int) (1 * density), 0xFFBBBBBB);
+            }
+            swatches[i].setBackground(gd);
+        }
+    }
+
+    /**
+     * 显示设置页：亮度、背景颜色、缩放。修改即时生效。
+     */
+    private void showSettingsDialog() {
+        if (core == null) return;
+        final float density = getResources().getDisplayMetrics().density;
+
+        // 同步实际缩放（可能被双指缩放改变过），保证滑块与当前画面一致
+        if (mDocView != null && fullWidthScale > 0) {
+            int actual = Math.round(mDocView.getScale() / fullWidthScale * 100f);
+            currentZoomPercent = Math.max(100, Math.min(300, actual));
+        }
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (20 * density);
+        root.setPadding(pad, pad, pad, pad);
+        scroll.addView(root);
+
+        //<editor-fold desc="亮度">
+        root.addView(makeSectionLabel(getString(R.string.mupdf_brightness), density, false));
+
+        LinearLayout brightnessRow = new LinearLayout(this);
+        brightnessRow.setOrientation(LinearLayout.HORIZONTAL);
+        brightnessRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        final SeekBar brightnessBar = new SeekBar(this);
+        brightnessBar.setMax(MupdfMacro.MAX_BRIGHTNESS - MupdfMacro.MIN_BRIGHTNESS);
+        brightnessBar.setProgress(MupdfMacro.brightness - MupdfMacro.MIN_BRIGHTNESS);
+        brightnessBar.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        final TextView brightnessValue = new TextView(this);
+        brightnessValue.setWidth((int) (48 * density));
+        brightnessValue.setGravity(android.view.Gravity.END);
+        brightnessValue.setText(String.valueOf(MupdfMacro.brightness));
+
+        brightnessBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                MupdfMacro.brightness = progress + MupdfMacro.MIN_BRIGHTNESS;
+                brightnessValue.setText(String.valueOf(MupdfMacro.brightness));
+                refreshAllPageColorFilter();
+            }
+
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            public void onStopTrackingTouch(SeekBar sb) {
+            }
+        });
+        brightnessRow.addView(brightnessBar);
+        brightnessRow.addView(brightnessValue);
+        root.addView(brightnessRow);
+        //</editor-fold>
+
+        //<editor-fold desc="背景颜色">
+        root.addView(makeSectionLabel(getString(R.string.mupdf_background), density, true));
+
+        LinearLayout swatchRow = new LinearLayout(this);
+        swatchRow.setOrientation(LinearLayout.HORIZONTAL);
+        swatchRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        final View[] swatches = new View[BG_PRESET_COLORS.length];
+        for (int i = 0; i < BG_PRESET_COLORS.length; i++) {
+            final int color = BG_PRESET_COLORS[i];
+            View sw = new View(this);
+            int sz = (int) (40 * density);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(sz, sz);
+            lp.setMargins(0, 0, (int) (12 * density), 0);
+            sw.setLayoutParams(lp);
+            sw.setOnClickListener(v -> {
+                MupdfMacro.backgroundColor = color;
+                refreshAllPageColorFilter();
+                updateSwatchSelection(swatches, density);
+            });
+            swatches[i] = sw;
+            swatchRow.addView(sw);
+        }
+        updateSwatchSelection(swatches, density);
+
+        TextView customColor = new TextView(this);
+        customColor.setText(getString(R.string.mupdf_custom_color));
+        customColor.setTextColor(0xFF2196F3);
+        customColor.setPadding((int) (8 * density), 0, 0, 0);
+        customColor.setOnClickListener(v -> new MupdfColorPickerDialog(this,
+                new MupdfColorPickerView.OnColorSubmitListener() {
+                    @Override
+                    public void submitColor(int color) {
+                        // 自定义颜色保留 alpha 全不透明
+                        MupdfMacro.backgroundColor = 0xFF000000 | (color & 0x00FFFFFF);
+                        refreshAllPageColorFilter();
+                        updateSwatchSelection(swatches, density);
+                    }
+                }, MupdfMacro.backgroundColor).show());
+        swatchRow.addView(customColor);
+        root.addView(swatchRow);
+        //</editor-fold>
+
+        //<editor-fold desc="缩放">
+        root.addView(makeSectionLabel(getString(R.string.mupdf_zoom), density, true));
+
+        LinearLayout zoomRow = new LinearLayout(this);
+        zoomRow.setOrientation(LinearLayout.HORIZONTAL);
+        zoomRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        final SeekBar zoomBar = new SeekBar(this);
+        zoomBar.setMax(200); // 缩放 [100%,300%] 映射到 [0,200]
+        zoomBar.setProgress(Math.max(0, Math.min(200, currentZoomPercent - 100)));
+        zoomBar.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        final TextView zoomValue = new TextView(this);
+        zoomValue.setWidth((int) (56 * density));
+        zoomValue.setGravity(android.view.Gravity.END);
+        zoomValue.setText(currentZoomPercent + "%");
+
+        zoomBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                currentZoomPercent = progress + 100;
+                zoomValue.setText(currentZoomPercent + "%");
+                if (fromUser && mDocView != null) {
+                    mDocView.defaultScale(fullWidthScale * currentZoomPercent / 100f);
+                }
+            }
+
+            public void onStartTrackingTouch(SeekBar sb) {
+            }
+
+            public void onStopTrackingTouch(SeekBar sb) {
+            }
+        });
+        zoomRow.addView(zoomBar);
+        zoomRow.addView(zoomValue);
+        root.addView(zoomRow);
+        //</editor-fold>
+
+        // 重置按钮（不关闭弹窗，直接复位三项）
+        TextView resetBtn = new TextView(this);
+        resetBtn.setText(getString(R.string.mupdf_reset));
+        resetBtn.setTextColor(0xFF2196F3);
+        resetBtn.setGravity(android.view.Gravity.CENTER);
+        resetBtn.setPadding(0, (int) (16 * density), 0, 0);
+        LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        resetLp.topMargin = (int) (8 * density);
+        resetBtn.setLayoutParams(resetLp);
+        resetBtn.setOnClickListener(v -> {
+            brightnessBar.setProgress(255); // 亮度归零
+            zoomBar.setProgress(0);         // 100%
+            MupdfMacro.backgroundColor = MupdfMacro.DEFAULT_BACKGROUND_COLOR;
+            currentZoomPercent = 100;
+            if (mDocView != null) {
+                mDocView.defaultScale(fullWidthScale);
+            }
+            refreshAllPageColorFilter();
+            updateSwatchSelection(swatches, density);
+            zoomValue.setText("100%");
+        });
+        root.addView(resetBtn);
+
+        AlertDialog alert = mAlertBuilder.create();
+        alert.setTitle(R.string.mupdf_setting_title);
+        alert.setView(scroll);
+        alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_close),
+                (dialog, which) -> dialog.dismiss());
+        alert.show();
+    }
+
+    /**
+     * 构造设置项的小标题。
+     */
+    private TextView makeSectionLabel(String text, float density, boolean topMargin) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(0xFF333333);
+        label.setTextSize(14);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (topMargin) lp.topMargin = (int) (16 * density);
+        lp.bottomMargin = (int) (4 * density);
+        label.setLayoutParams(lp);
+        return label;
     }
 
     private void showWatermarkDialog() {
@@ -1979,4 +2221,3 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
 }
-

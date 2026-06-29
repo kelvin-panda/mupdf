@@ -27,6 +27,8 @@ public class MupdfConfig {
     private final int pageIndex;
     private final int clarityLimitMode;
     private final boolean fullScreenEnable;
+    private final int backgroundColor;
+    private final int brightness;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -47,6 +49,8 @@ public class MupdfConfig {
         this.pageIndex = builder.pageIndex;
         this.clarityLimitMode = builder.clarityLimitMode;
         this.fullScreenEnable = builder.fullScreenEnable;
+        this.backgroundColor = builder.backgroundColor;
+        this.brightness = builder.brightness;
     }
 
     public String getFilePath() {
@@ -121,6 +125,14 @@ public class MupdfConfig {
         return fullScreenEnable;
     }
 
+    public int getBackgroundColor() {
+        return backgroundColor;
+    }
+
+    public int getBrightness() {
+        return brightness;
+    }
+
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -140,6 +152,8 @@ public class MupdfConfig {
                 ", pageIndex=" + pageIndex +
                 ", clarityLimitMode=" + clarityLimitMode +
                 ", fullScreenEnable=" + fullScreenEnable +
+                ", backgroundColor=" + backgroundColor +
+                ", brightness=" + brightness +
                 '}';
     }
 
@@ -162,6 +176,8 @@ public class MupdfConfig {
         private int pageIndex = 0;
         private int clarityLimitMode = MupdfClarityMode.UNRESTRICTED;
         private boolean fullScreenEnable = true;
+        private int backgroundColor = MupdfMacro.DEFAULT_BACKGROUND_COLOR;
+        private int brightness = 0;
 
         public Builder filePath(String filePath) {
             this.filePath = filePath;
@@ -250,6 +266,28 @@ public class MupdfConfig {
 
         public Builder fullScreenEnable(boolean fullScreenEnable) {
             this.fullScreenEnable = fullScreenEnable;
+            return this;
+        }
+
+        /**
+         * 设置页面背景颜色（纸张色，护眼/夜间模式）。
+         * 默认白色 {@code 0xFFFFFFFF} 表示不改变。
+         *
+         * @param backgroundColor ARGB 颜色值
+         */
+        public Builder backgroundColor(int backgroundColor) {
+            this.backgroundColor = backgroundColor;
+            return this;
+        }
+
+        /**
+         * 设置亮度偏移，取值范围 [-255, 255]，{@code 0} 表示不改变。
+         * 正值变亮、负值变暗。
+         *
+         * @param brightness 亮度偏移
+         */
+        public Builder brightness(int brightness) {
+            this.brightness = MupdfMacro.clampBrightness(brightness);
             return this;
         }
 

@@ -1,5 +1,7 @@
 package com.xlk.mupdf.library;
 
+import android.graphics.Color;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.PointF;
 
 import java.util.ArrayList;
@@ -72,6 +74,62 @@ public class MupdfMacro {
      */
     public static int clarityLimitMode = MupdfClarityMode.UNRESTRICTED;
 
+    /**
+     * <p>页面背景颜色（纸张色，护眼/夜间模式），默认白色 {@code 0xFFFFFFFF} 表示不改变。</p>
+     * <p>浅色背景使用乘法着色，白底被染成纸张色且黑色文字保持不变；
+     * 深色背景会反转前景，使白底映射为纸张色、黑色文字映射为白色。</p>
+     * {@link #buildColorFilter()}
+     */
+    public static final int DEFAULT_BACKGROUND_COLOR = 0xFFFFFFFF;
+    public static int backgroundColor = DEFAULT_BACKGROUND_COLOR;
+    public static final int MIN_BRIGHTNESS = -255;
+    public static final int MAX_BRIGHTNESS = 255;
+    /**
+     * <p>亮度偏移，取值范围 [-255, 255]，{@code 0} 表示不改变。</p>
+     * <p>正值变亮、负值变暗，作为加法偏移叠加到每个颜色通道上。</p>
+     * {@link #buildColorFilter()}
+     */
+    public static int brightness = 0;
+
+    /**
+     * 根据 {@link #backgroundColor} 与 {@link #brightness} 构建颜色滤镜。
+     * <p>浅色背景按通道做乘法着色，深色背景同时反转前景，亮度做加法偏移；
+     * 当背景和亮度均为默认值时返回 {@code null}（即不做处理）。</p>
+     *
+     * @return {@link ColorMatrixColorFilter}，或在默认状态下返回 {@code null}
+     */
+    public static ColorMatrixColorFilter buildColorFilter() {
+        if (backgroundColor == DEFAULT_BACKGROUND_COLOR && brightness == 0) {
+            return null;
+        }
+        float r = Color.red(backgroundColor) / 255f;
+        float g = Color.green(backgroundColor) / 255f;
+        float b = Color.blue(backgroundColor) / 255f;
+        float t = clampBrightness(brightness);
+        // 深色纸张需要同时反转前景，否则黑色文字在深色背景上不可见。
+        // 映射关系为：原始白色 -> 纸张色，原始黑色 -> 白色。
+        boolean darkBackground = Color.red(backgroundColor) * 299
+                + Color.green(backgroundColor) * 587
+                + Color.blue(backgroundColor) * 114 < 128000;
+        if (darkBackground) {
+            r -= 1f;
+            g -= 1f;
+            b -= 1f;
+            t += 255f;
+        }
+        float[] matrix = {
+                r, 0, 0, 0, t,
+                0, g, 0, 0, t,
+                0, 0, b, 0, t,
+                0, 0, 0, 1, 0
+        };
+        return new ColorMatrixColorFilter(matrix);
+    }
+
+    public static int clampBrightness(int value) {
+        return Math.max(MIN_BRIGHTNESS, Math.min(MAX_BRIGHTNESS, value));
+    }
+
     //</editor-fold>
 
     //<editor-fold desc="bundle key值">
@@ -136,6 +194,14 @@ public class MupdfMacro {
      * 自动缩放成全屏
      */
     public static final String bundle_key_full_screen = "full_screen";
+    /**
+     * 页面背景颜色（纸张色）
+     */
+    public static final String bundle_key_background_color = "background_color";
+    /**
+     * 亮度偏移
+     */
+    public static final String bundle_key_brightness = "brightness";
     //</editor-fold>
 
     //<editor-fold desc="共享批注相关">

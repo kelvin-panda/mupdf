@@ -21,6 +21,13 @@
 	<string name="mupdf_cancel">Cancel</string>
 	<string name="mupdf_confirm">Confirm</string>
 	<string name="mupdf_close">Close</string>
+	<string name="mupdf_setting">Settings</string>
+	<string name="mupdf_setting_title">Display settings</string>
+	<string name="mupdf_brightness">Brightness</string>
+	<string name="mupdf_background">Background</string>
+	<string name="mupdf_zoom">Zoom</string>
+	<string name="mupdf_reset">Reset</string>
+	<string name="mupdf_custom_color">Custom</string>
 	<string name="mupdf_size">Size</string>
 	<string name="mupdf_brush">brush</string>
 	<string name="mupdf_art_highlight">highlight</string>
