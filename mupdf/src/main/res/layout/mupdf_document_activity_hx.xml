@@ -215,7 +215,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_watermark_white" />
+                    android:src="@drawable/ic_mupdf_hx_watermark" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -242,7 +242,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_signature_white" />
+                    android:src="@drawable/ic_mupdf_hx_sign_table" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -269,7 +269,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_pen_white" />
+                    android:src="@drawable/ic_mupdf_hx_sign_row" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -321,7 +321,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_search_white_24dp" />
+                    android:src="@drawable/ic_mupdf_hx_search" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -347,7 +347,7 @@
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_setting_white" />
+                    android:src="@drawable/ic_mupdf_hx_setting" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -617,7 +617,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_underline_white" />
+                    android:src="@drawable/ic_mupdf_hx_underline" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -640,7 +640,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_strikeout_white" />
+                    android:src="@drawable/ic_mupdf_hx_strikeout" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -663,7 +663,7 @@
                 <ImageView
                     android:layout_width="30dp"
                     android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_freetext_white" />
+                    android:src="@drawable/ic_mupdf_hx_freetext" />
 
                 <TextView
                     android:layout_width="wrap_content"
