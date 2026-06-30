@@ -284,9 +284,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             final int latestTargetPage = Math.max(0, Math.min(latestPageCount - 1, targetPage));
             mDocView.setDisplayedViewIndex(latestTargetPage);
             updatePageNumView(latestTargetPage);
-            refreshDisplayedPageWhenReady(latestTargetPage, 0);
+            mDocView.post(() -> refreshDisplayedPageWhenReady(latestTargetPage, 0));
             postToMainDelayed(() -> refreshDisplayedPageWhenReady(latestTargetPage, 0), 180);
             postToMainDelayed(() -> refreshDisplayedPageWhenReady(latestTargetPage, 0), 420);
+            postToMainDelayed(() -> refreshDisplayedPageWhenReady(latestTargetPage, 0), 800);
         });
     }
 
@@ -294,10 +295,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         if (mDocView == null) return;
         View view = mDocView.getView(pageIndex);
         if (view instanceof PageView) {
-            ((PageView) view).update();
-        } else if (retryCount < 2) {
+            PageView pageView = (PageView) view;
+            if (pageView.getPage() == pageIndex && !pageView.isBlankPage()) {
+                pageView.update();
+                return;
+            }
+        }
+        if (retryCount < 5) {
             mDocView.setDisplayedViewIndex(pageIndex);
-            postToMainDelayed(() -> refreshDisplayedPageWhenReady(pageIndex, retryCount + 1), 120);
+            postToMainDelayed(() -> refreshDisplayedPageWhenReady(pageIndex, retryCount + 1), 120 + retryCount * 80L);
         }
     }
     //</editor-fold>
@@ -2553,6 +2559,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             String timeStr = timeInput.getText().toString().trim();
             if (!rowStr.isEmpty() && core != null) {
                 int rowIndex = Integer.parseInt(rowStr);
+                final int targetPage = Math.max(0, core.countPages() - 1);
                 // 打开签名画板
                 new ArtBoardDialog(MuPdfDocumentActivity.this, false, new ArtBoardDialog.SignatureListener() {
                     @Override
@@ -2575,7 +2582,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                             }
                             core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
                             hadAnnotation = true;
-                            afterAnnotationPreservingScroll();
+                            refreshDocumentAndShowPage(targetPage);
                             Toast.makeText(MuPdfDocumentActivity.this,
                                     getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
                                     Toast.LENGTH_SHORT).show();

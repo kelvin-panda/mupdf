@@ -678,6 +678,10 @@ public class PageView extends ViewGroup {
         return mPageNumber;
     }
 
+    public boolean isBlankPage() {
+        return mIsBlank;
+    }
+
     /**
      * 将背景颜色（纸张色）作为颜色滤镜应用到渲染图像上。
      * 默认白底时 {@link MupdfMacro#buildColorFilter()} 返回 null，即不做处理。

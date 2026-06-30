@@ -363,6 +363,7 @@ public class ReaderView
             // 转为连续滚动：定位到目标页顶部
             recalculatePagePositions();
             mScrollY = mPagePositions.get(i, 0);
+            mPendingCurrentAfterRestore = i;
             mResetLayout = true;
             requestLayout();
         }
@@ -792,27 +793,34 @@ public class ReaderView
         // (b) 若子View加载改动了 mPageHeights（mPositionsDirty=true），
         //     重算全局页面位置并重锚 mScrollY，消除估算高度与实测高度的不一致。
         if (mPositionsDirty) {
-            int centerDocY = mScrollY + screenHeight / 2;
-            int prevCenterPage = 0;
-            for (int p = 0; p < count; p++) {
-                int pageTop = mPagePositions.get(p, 0);
-                int h = getPageHeight(p);
-                if (centerDocY >= pageTop && centerDocY < pageTop + h) {
-                    prevCenterPage = p;
-                    break;
-                }
-                if (p == count - 1) prevCenterPage = p;
-            }
-            int prevScreenTop = mPagePositions.get(prevCenterPage, 0) - mScrollY;
-
-            recalculatePagePositions();
-
-            if (prevCenterPage >= 0 && prevCenterPage < count) {
-                int targetScrollY = mPagePositions.get(prevCenterPage, 0) - prevScreenTop;
+            if (mPendingCurrentAfterRestore >= 0) {
+                int pendingPage = Math.max(0, Math.min(count - 1, mPendingCurrentAfterRestore));
+                recalculatePagePositions();
                 int constrainedMaxScroll = Math.max(0, mTotalDocumentHeight - screenHeight);
-                int newScrollY = Math.max(0, Math.min(constrainedMaxScroll, targetScrollY));
-                if (newScrollY != mScrollY) {
-                    mScrollY = newScrollY;
+                mScrollY = Math.max(0, Math.min(constrainedMaxScroll, mPagePositions.get(pendingPage, 0)));
+            } else {
+                int centerDocY = mScrollY + screenHeight / 2;
+                int prevCenterPage = 0;
+                for (int p = 0; p < count; p++) {
+                    int pageTop = mPagePositions.get(p, 0);
+                    int h = getPageHeight(p);
+                    if (centerDocY >= pageTop && centerDocY < pageTop + h) {
+                        prevCenterPage = p;
+                        break;
+                    }
+                    if (p == count - 1) prevCenterPage = p;
+                }
+                int prevScreenTop = mPagePositions.get(prevCenterPage, 0) - mScrollY;
+
+                recalculatePagePositions();
+
+                if (prevCenterPage >= 0 && prevCenterPage < count) {
+                    int targetScrollY = mPagePositions.get(prevCenterPage, 0) - prevScreenTop;
+                    int constrainedMaxScroll = Math.max(0, mTotalDocumentHeight - screenHeight);
+                    int newScrollY = Math.max(0, Math.min(constrainedMaxScroll, targetScrollY));
+                    if (newScrollY != mScrollY) {
+                        mScrollY = newScrollY;
+                    }
                 }
             }
         }
@@ -974,6 +982,11 @@ public class ReaderView
 
     /** 返回视口中心线所在的页面索引 */
     private int findMostVisiblePage() {
+        recalculatePagePositions();
+        int count = mAdapter != null ? mAdapter.getCount() : 0;
+        if (count <= 0) return 0;
+        int maxScroll = Math.max(0, mTotalDocumentHeight - getHeight());
+        if (mScrollY >= maxScroll - 1) return count - 1;
         int centerY = mScrollY + getHeight() / 2;
         return findPageAtY(centerY);
     }
