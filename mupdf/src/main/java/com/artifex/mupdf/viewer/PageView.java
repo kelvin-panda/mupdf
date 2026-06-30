@@ -465,9 +465,25 @@ public class PageView extends ViewGroup {
             return;
 
         Point renderSize = limitBitmapSize(width, height);
-        if (!ensureEntireBitmap(renderSize.x, renderSize.y)) {
-            setRenderError("Error allocating page bitmap");
-            return;
+        final boolean quietUpdate = update
+                && mEntire != null
+                && mEntire.getDrawable() != null
+                && mEntireBm != null
+                && !mEntireBm.isRecycled()
+                && mRenderedPage == mPageNumber;
+        final Bitmap renderBitmap;
+        if (quietUpdate) {
+            renderBitmap = createBitmapSafely(renderSize.x, renderSize.y);
+            if (renderBitmap == null || renderBitmap.isRecycled()) {
+                setRenderError("Error allocating page bitmap");
+                return;
+            }
+        } else {
+            if (!ensureEntireBitmap(renderSize.x, renderSize.y)) {
+                setRenderError("Error allocating page bitmap");
+                return;
+            }
+            renderBitmap = mEntireBm;
         }
 
         final int renderPage = mPageNumber;
@@ -475,28 +491,51 @@ public class PageView extends ViewGroup {
         final int targetH = height;
         final int renderW = renderSize.x;
         final int renderH = renderSize.y;
-        CancellableTaskDefinition<Void, Boolean> task = update
-                ? getUpdatePageTask(mEntireBm, renderPage, renderW, renderH, 0, 0, renderW, renderH)
-                : getDrawPageTask(mEntireBm, renderPage, renderW, renderH, 0, 0, renderW, renderH);
+        final boolean swapBitmap = renderBitmap != mEntireBm;
+        final boolean[] bitmapAdopted = { !swapBitmap };
+        final CancellableTaskDefinition<Void, Boolean> renderTask = update
+                ? getUpdatePageTask(renderBitmap, renderPage, renderW, renderH, 0, 0, renderW, renderH)
+                : getDrawPageTask(renderBitmap, renderPage, renderW, renderH, 0, 0, renderW, renderH);
+        CancellableTaskDefinition<Void, Boolean> task = new CancellableTaskDefinition<Void, Boolean>() {
+            @Override
+            public Boolean doInBackground(Void... params) {
+                return renderTask.doInBackground(params);
+            }
+
+            @Override
+            public void doCancel() {
+                renderTask.doCancel();
+            }
+
+            @Override
+            public void doCleanup() {
+                renderTask.doCleanup();
+                if (!bitmapAdopted[0] && renderBitmap != null && !renderBitmap.isRecycled()) {
+                    renderBitmap.recycle();
+                }
+            }
+        };
 
         mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task) {
             @Override
             public void onPreExecute() {
-                setBackgroundColor(MupdfMacro.backgroundColor);
-                if (mEntire != null)
-                    mEntire.invalidate();
+                if (!quietUpdate) {
+                    setBackgroundColor(MupdfMacro.backgroundColor);
+                    if (mEntire != null)
+                        mEntire.invalidate();
 
-                if (mBusyIndicator == null) {
-                    mBusyIndicator = new ProgressBar(mContext);
-                    mBusyIndicator.setIndeterminate(true);
-                    addView(mBusyIndicator);
-                    mBusyIndicator.setVisibility(INVISIBLE);
-                    mHandler.postDelayed(new Runnable() {
-                        public void run() {
-                            if (mBusyIndicator != null)
-                                mBusyIndicator.setVisibility(VISIBLE);
-                        }
-                    }, PROGRESS_DIALOG_DELAY);
+                    if (mBusyIndicator == null) {
+                        mBusyIndicator = new ProgressBar(mContext);
+                        mBusyIndicator.setIndeterminate(true);
+                        addView(mBusyIndicator);
+                        mBusyIndicator.setVisibility(INVISIBLE);
+                        mHandler.postDelayed(new Runnable() {
+                            public void run() {
+                                if (mBusyIndicator != null)
+                                    mBusyIndicator.setVisibility(VISIBLE);
+                            }
+                        }, PROGRESS_DIALOG_DELAY);
+                    }
                 }
             }
 
@@ -521,9 +560,20 @@ public class PageView extends ViewGroup {
                     mRenderedWidth = targetW;
                     mRenderedHeight = targetH;
                     mRenderedPage = renderPage;
+                    Bitmap oldBitmap = null;
+                    if (swapBitmap) {
+                        oldBitmap = mEntireBm;
+                        mEntireBm = renderBitmap;
+                        bitmapAdopted[0] = true;
+                    }
                     if (mEntire != null && mEntireBm != null && !mEntireBm.isRecycled()) {
+                        mEntireMat.setScale(getWidth() / (float) mEntireBm.getWidth(), getHeight() / (float) mEntireBm.getHeight());
+                        mEntire.setImageMatrix(mEntireMat);
                         mEntire.setImageBitmap(mEntireBm);
                         mEntire.invalidate();
+                    }
+                    if (oldBitmap != null && oldBitmap != mEntireBm && !oldBitmap.isRecycled()) {
+                        oldBitmap.recycle();
                     }
                 } else {
                     setRenderError(update ? "Error updating page" : "Error rendering page");

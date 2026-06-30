@@ -270,6 +270,36 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         mDocView.afterAnnotation();
         mDocView.restorePagePosition(anchorPageIndex, anchorPageScreenTop);
     }
+
+    private void refreshDocumentAndShowPage(final int pageIndex) {
+        if (mDocView == null || core == null) return;
+        final int pageCount = core.countPages();
+        if (pageCount <= 0) return;
+        final int targetPage = Math.max(0, Math.min(pageCount - 1, pageIndex));
+        mDocView.afterAnnotation();
+        postToMain(() -> {
+            if (mDocView == null || core == null) return;
+            int latestPageCount = core.countPages();
+            if (latestPageCount <= 0) return;
+            final int latestTargetPage = Math.max(0, Math.min(latestPageCount - 1, targetPage));
+            mDocView.setDisplayedViewIndex(latestTargetPage);
+            updatePageNumView(latestTargetPage);
+            refreshDisplayedPageWhenReady(latestTargetPage, 0);
+            postToMainDelayed(() -> refreshDisplayedPageWhenReady(latestTargetPage, 0), 180);
+            postToMainDelayed(() -> refreshDisplayedPageWhenReady(latestTargetPage, 0), 420);
+        });
+    }
+
+    private void refreshDisplayedPageWhenReady(final int pageIndex, int retryCount) {
+        if (mDocView == null) return;
+        View view = mDocView.getView(pageIndex);
+        if (view instanceof PageView) {
+            ((PageView) view).update();
+        } else if (retryCount < 2) {
+            mDocView.setDisplayedViewIndex(pageIndex);
+            postToMainDelayed(() -> refreshDisplayedPageWhenReady(pageIndex, retryCount + 1), 120);
+        }
+    }
     //</editor-fold>
 
     public static void jump(Context context, MupdfConfig config) {
@@ -784,8 +814,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewTopSignature.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
         //提交签名
         tv_submit_signature.setOnClickListener(v -> {
+            if (mScalableView == null || mCurPageView == null) return;
             List<SignatureBoard.DrawPath> drawPaths = mScalableView.getDrawPaths();
-            PageView pageView = (PageView) mDocView.getDisplayedView();
+            PageView pageView = mCurPageView;
+            int signaturePageIndex = pageView.getPage();
             int width = pageView.getWidth();
             int height = pageView.getHeight();
 
@@ -798,9 +830,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     float y = points[i].y;
                     array[i] = new Point(x, y);
                 }
-                Point[] percentPoints = core.addAnnotation(mDocView.mCurrent, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array);
+                Point[] percentPoints = core.addAnnotation(signaturePageIndex, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array);
                 //points是经过core.addAnnotation方法计算后的实际坐标
-                annotationBeans.add(new MupdfAnnotationBean(mediaId, mDocView.mCurrent + 1, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, percentPoints));
+                annotationBeans.add(new MupdfAnnotationBean(mediaId, signaturePageIndex + 1, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, percentPoints));
                 hadAnnotation = true;
             }
             if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {
@@ -816,11 +848,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             ll_signature_layout.setVisibility(View.GONE);
             isSigning = false;
             mDocView.setSigning(false);
-            afterAnnotationPreservingScroll();
+            pageView.update();
         });
         //取消签名
         tv_cancel_signature.setOnClickListener(v -> {
-            mCurPageView.removeView(mScalableView);
+            if (mCurPageView != null && mScalableView != null) {
+                mCurPageView.removeView(mScalableView);
+            }
             mScalableView = null;
             mCurPageView = null;
             ll_signature_layout.setVisibility(View.GONE);
@@ -2482,8 +2516,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     core.createSignatureTable(nameList.toArray(new String[0]),
                             "姓名", "时间", "签名");
                     hadAnnotation = true;
-                    mDocView.afterAnnotation();
-                    mDocView.setDisplayedViewIndex(core.countPages() - 1);
+                    refreshDocumentAndShowPage(core.countPages() - 1);
                     Toast.makeText(MuPdfDocumentActivity.this,
                             getString(R.string.mupdf_sign_table) + " " + getString(R.string.mupdf_art_done),
                             Toast.LENGTH_SHORT).show();
@@ -2623,4 +2656,3 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
 }
-

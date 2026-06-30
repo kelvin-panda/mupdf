@@ -475,6 +475,9 @@ public class ReaderView
         mPageHeights.clear();
         mPositionsDirty = true;
 
+        requestLayout();
+        invalidate();
+
         Debugger.i("afterAnnotation：end");
     }
 
