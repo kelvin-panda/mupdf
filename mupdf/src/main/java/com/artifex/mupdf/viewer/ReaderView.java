@@ -73,6 +73,7 @@ public class ReaderView
     private final SparseArray<Integer> mPagePositions = new SparseArray<>();
     // 文档总高度(px)
     private int mTotalDocumentHeight = 0;
+    private int mPendingCurrentAfterRestore = -1;
     // 页面位置缓存失效标记 (缩放/批注后置 true)
     private boolean mPositionsDirty = true;
     // 页面原始尺寸缓存(从 PageAdapter 获取的 PointF)
@@ -239,6 +240,37 @@ public class ReaderView
     /** 获取文档绝对滚动偏移（供外部标注确定操作页用） */
     public int getDocumentScrollY() {
         return mScrollY;
+    }
+
+    /** 恢复文档绝对滚动偏移，避免重建页面后跳到其它页或页顶 */
+    public void setDocumentScrollY(int scrollY) {
+        recalculatePagePositions();
+        int maxScroll = Math.max(0, mTotalDocumentHeight - getHeight());
+        mScrollY = Math.max(0, Math.min(maxScroll, scrollY));
+        updateCurrent(findMostVisiblePage());
+        requestLayout();
+    }
+
+    /** 按页锚点恢复位置，保持指定页在屏幕上的相对位置不变 */
+    public void restorePagePosition(int pageIndex, int pageScreenTop) {
+        recalculatePagePositions();
+        int count = mAdapter != null ? mAdapter.getCount() : 0;
+        if (count <= 0) return;
+        int safePage = Math.max(0, Math.min(count - 1, pageIndex));
+        int targetScrollY = mPagePositions.get(safePage, 0) - pageScreenTop;
+        int maxScroll = Math.max(0, mTotalDocumentHeight - getHeight());
+        mScrollY = Math.max(0, Math.min(maxScroll, targetScrollY));
+        mPendingCurrentAfterRestore = safePage;
+        updateCurrent(safePage);
+        requestLayout();
+    }
+
+    private void updateCurrent(int newCurrent) {
+        if (mAdapter != null && newCurrent != mCurrent && newCurrent >= 0 && newCurrent < mAdapter.getCount()) {
+            onMoveOffChild(mCurrent);
+            mCurrent = newCurrent;
+            onMoveToChild(mCurrent);
+        }
     }
 
     /** 根据屏幕 Y 坐标查找所在的页面索引 */
@@ -741,19 +773,55 @@ public class ReaderView
         // --- 5. 回收缓冲区外的页面 ---
         recycleOutside(firstVisible, lastVisible);
 
-        // --- 6. 加载并布局可见范围内的页面 ---
+        // --- 6. 加载、重算、布局可见范围内的页面 ---
+        // 分三步：(a) 加载子View并测量 → 更新 mPageHeights
+        //        (b) 若高度变化，重算 mPagePositions 并重锚 mScrollY
+        //        (c) 用最终的 mPagePositions/mScrollY 统一布局
         int buffer = VISUAL_BUFFER_SCREENS;
         int loadFirst = Math.max(0, firstVisible - buffer);
         int loadLast = Math.min(count - 1, lastVisible + buffer);
 
+        // (a) 加载所有子View（触发 measureView，更新 mPageHeights）
         for (int i = loadFirst; i <= loadLast; i++) {
-            View child = getOrCreateChild(i);
+            getOrCreateChild(i);
+        }
+
+        // (b) 若子View加载改动了 mPageHeights（mPositionsDirty=true），
+        //     重算全局页面位置并重锚 mScrollY，消除估算高度与实测高度的不一致。
+        if (mPositionsDirty) {
+            int centerDocY = mScrollY + screenHeight / 2;
+            int prevCenterPage = 0;
+            for (int p = 0; p < count; p++) {
+                int pageTop = mPagePositions.get(p, 0);
+                int h = getPageHeight(p);
+                if (centerDocY >= pageTop && centerDocY < pageTop + h) {
+                    prevCenterPage = p;
+                    break;
+                }
+                if (p == count - 1) prevCenterPage = p;
+            }
+            int prevScreenTop = mPagePositions.get(prevCenterPage, 0) - mScrollY;
+
+            recalculatePagePositions();
+
+            if (prevCenterPage >= 0 && prevCenterPage < count) {
+                int targetScrollY = mPagePositions.get(prevCenterPage, 0) - prevScreenTop;
+                int constrainedMaxScroll = Math.max(0, mTotalDocumentHeight - screenHeight);
+                int newScrollY = Math.max(0, Math.min(constrainedMaxScroll, targetScrollY));
+                if (newScrollY != mScrollY) {
+                    mScrollY = newScrollY;
+                }
+            }
+        }
+
+        // (c) 统一布局：使用最终一致的位置信息
+        for (int i = loadFirst; i <= loadLast; i++) {
+            View child = mChildViews.get(i);
+            if (child == null) continue;
             int pageTop = mPagePositions.get(i, 0);
             int childW = child.getMeasuredWidth();
             int childH = child.getMeasuredHeight();
-            // 屏幕 X 坐标：水平居中
             int cx = (screenWidth - childW) / 2;
-            // 屏幕 Y 坐标：文档坐标 - 滚动偏移
             int cy = pageTop - mScrollY;
             child.layout(cx, cy, cx + childW, cy + childH);
         }
@@ -761,11 +829,11 @@ public class ReaderView
         // --- 7. 滚动停止时更新 mCurrent ---
         boolean settled = !mUserInteracting && mScroller.isFinished() && !mAnnotationMultiTouch;
         if (settled) {
-            int newCurrent = findMostVisiblePage();
-            if (newCurrent != mCurrent && newCurrent >= 0 && newCurrent < count) {
-                onMoveOffChild(mCurrent);
-                mCurrent = newCurrent;
-                onMoveToChild(mCurrent);
+            if (mPendingCurrentAfterRestore >= 0) {
+                updateCurrent(mPendingCurrentAfterRestore);
+                mPendingCurrentAfterRestore = -1;
+            } else {
+                updateCurrent(findMostVisiblePage());
             }
         }
 

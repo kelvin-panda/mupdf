@@ -408,6 +408,7 @@ public class AnnotationArtBoard extends View {
     }
 
     private float startX, startY;
+    private float startDocY;
     /**
      * 临时坐标点
      */
@@ -421,6 +422,7 @@ public class AnnotationArtBoard extends View {
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
                 startX = event.getX();
                 startY = event.getY();
+                startDocY = y + documentScrollY;
                 // 即时保存模式：上次笔画已提交到 PDF，清空画板开始新笔画
                 pathList.clear();
                 try {
@@ -440,7 +442,7 @@ public class AnnotationArtBoard extends View {
                 //只有绘制曲线的时候才去添加
                 if (currentDrawGraphics == DRAW_SLINE) {
                     //添加按下时的点
-                    points.add(new Point(x, y));
+                    points.add(toDocumentPoint(x, y));
                 }
                 invalidate();
                 break;
@@ -457,7 +459,7 @@ public class AnnotationArtBoard extends View {
                     //曲线
                     case DRAW_SLINE:
                         //添加移动时的点
-                        points.add(new Point(x, y));
+                        points.add(toDocumentPoint(x, y));
                         drawSLine(x, y);
                         break;
                     //圆
@@ -518,9 +520,9 @@ public class AnnotationArtBoard extends View {
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
                 long utcstamp = System.currentTimeMillis();
                 int operid = (int) (utcstamp / 10);
-                // 屏幕坐标 → 文档坐标（画板固定在屏幕，需加滚动偏移）
+                // 屏幕坐标 → 文档坐标（画板固定在屏幕，需使用采样时的滚动偏移）
                 float dx = x, dy = y + documentScrollY;
-                float dsx = startX, dsy = startY + documentScrollY;
+                float dsx = startX, dsy = startDocY;
                 if (currentDrawGraphics == DRAW_LINE) {
                     Point[] array = new Point[2];
                     array[0] = new Point(dsx, dsy);
@@ -557,9 +559,8 @@ public class AnnotationArtBoard extends View {
                         freeTextListener.onFreeTextTap(new Point(dsx, dsy));
                     }
                 } else {
-                    // 墨迹：批量转换
+                    // 墨迹：移动采样时已转换为文档坐标
                     Point[] array = list2array(points);
-                    for (Point p : array) p.y += documentScrollY;
                     AnnotationBean annotationBean = new AnnotationBean(operid, PDFAnnotation.TYPE_INK, array, paintWidth, paintColor);
                     annotationBeans.add(annotationBean);
                 }
@@ -595,6 +596,13 @@ public class AnnotationArtBoard extends View {
             default:
                 break;
         }
+    }
+
+    private Point toDocumentPoint(float x, float y) {
+        if (docView != null) {
+            documentScrollY = docView.getDocumentScrollY();
+        }
+        return new Point(x, y + documentScrollY);
     }
 
     private Point[] list2array(List<Point> points) {
@@ -945,5 +953,15 @@ public class AnnotationArtBoard extends View {
         if (mCanvas != null) {
             mCanvas = null;
         }
+    }
+
+    /** 仅回收画板位图资源，不触发退出回调，也不清空批注历史记录 */
+    public void recycleBitmapOnly() {
+        if (mBitmap != null && !mBitmap.isRecycled()) {
+            mBitmap.recycle();
+            Debugger.i(TAG, "recycleBitmapOnly:回收bitmap");
+        }
+        mBitmap = null;
+        mCanvas = null;
     }
 }

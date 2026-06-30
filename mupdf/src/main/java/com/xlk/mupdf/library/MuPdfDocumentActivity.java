@@ -184,9 +184,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 有进行批注
      */
     private boolean hadAnnotation;
+    private boolean hadAnnotationBeforeCurrentSession;
 
     /** 即时保存模式：记录每笔保存的 pageIndex 列表，用于撤销时删除 PDF 注解 */
     private final List<List<Integer>> savedAnnotationPages = new ArrayList<>();
+    /** 当前批注会话开始时的撤销栈位置；取消时只回滚本会话新增批注 */
+    private int annotationSessionStartIndex = 0;
 
     /**
      * 当前页：索引
@@ -244,6 +247,28 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 if (pv != null) pv.update();
             }
         });
+    }
+
+    private void scheduleAnnotationPagesUpdateWithRestore(final List<Integer> pageIndexes,
+                                                          final int anchorPageIndex,
+                                                          final int anchorPageScreenTop) {
+        schedulePageUpdate(() -> {
+            if (mDocView == null || pageIndexes == null) return;
+            for (int pageIdx : pageIndexes) {
+                PageView pv = (PageView) mDocView.getView(pageIdx);
+                if (pv != null) pv.update();
+            }
+            mDocView.restorePagePosition(anchorPageIndex, anchorPageScreenTop);
+            Debugger.i("Restored page position: page=" + anchorPageIndex + ",top=" + anchorPageScreenTop);
+        });
+    }
+
+    private void afterAnnotationPreservingScroll() {
+        if (mDocView == null) return;
+        int anchorPageIndex = mDocView.findPageAtY(mDocView.getDocumentScrollY());
+        int anchorPageScreenTop = mDocView.getPageScreenTop(anchorPageIndex);
+        mDocView.afterAnnotation();
+        mDocView.restorePagePosition(anchorPageIndex, anchorPageScreenTop);
     }
     //</editor-fold>
 
@@ -791,7 +816,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             ll_signature_layout.setVisibility(View.GONE);
             isSigning = false;
             mDocView.setSigning(false);
-            mDocView.afterAnnotation();
+            afterAnnotationPreservingScroll();
         });
         //取消签名
         tv_cancel_signature.setOnClickListener(v -> {
@@ -930,18 +955,24 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             mDocView.savePosition();
             hideButtons();
             showAnnotationViews();
+            if (artBoard != null) {
+                mRootLayout.removeView(artBoard);
+                artBoard.recycleBitmapOnly();
+                artBoard = null;
+            }
             // 画板固定在屏幕位置，坐标通过 documentScrollY 实时转为文档空间
             int artW = mDocView.getWidth();
             int artH = mDocView.getHeight();
             chooseType(1);
-            savedAnnotationPages.clear();
+            hadAnnotationBeforeCurrentSession = hadAnnotation;
+            annotationSessionStartIndex = savedAnnotationPages.size();
             artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH, new AnnotationArtBoard.DrawExitListener() {
                 @Override
                 public void onDrawAnnotations(List<AnnotationBean> inkAnnotations) {
                     // 即时保存模式下笔画已逐个提交，这里仅做退出后的刷新
                     Debugger.i(TAG, "onDrawAnnotations 退出批注，hadAnnotation=" + hadAnnotation);
                     if (hadAnnotation) {
-                        mDocView.afterAnnotation();
+                        afterAnnotationPreservingScroll();
                     }
                 }
             });
@@ -1109,25 +1140,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //提交批注
         viewArtDone.setOnClickListener(v -> {
-            hideAnnotationViews();
+            finishAnnotationWithoutRefresh();
         });
         //取消批注
         viewArtClose.setOnClickListener(v -> {
-            // 即时保存模式：取消时删除所有本次已保存的标注
-            artBoard.setCancelAnnotation();
-            List<Integer> changedPages = new ArrayList<>();
-            for (int i = savedAnnotationPages.size() - 1; i >= 0; i--) {
-                List<Integer> pages = savedAnnotationPages.get(i);
-                for (int j = pages.size() - 1; j >= 0; j--) {
-                    int pageIdx = pages.get(j);
-                    core.deleteLastAnnotation(pageIdx);
-                    changedPages.add(pageIdx);
-                }
-            }
-            savedAnnotationPages.clear();
-            hadAnnotation = false;
-            if (!changedPages.isEmpty()) scheduleAnnotationPagesUpdate(changedPages);
-            hideAnnotationViews();
+            cancelAnnotationAndHide();
         });
         //</editor-fold>
 
@@ -1222,7 +1239,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         Debugger.e("收到其他人的绘制信息 当前页正在批注，退出批注后再自动刷新");
                         afterAnnotationRefresh = true;
                     } else {
-                        mDocView.afterAnnotation();
+                        afterAnnotationPreservingScroll();
                     }
                 }
                 break;
@@ -1475,6 +1492,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         Debugger.i("onResume inkAnnotations:" + inkAnnotations.size());
         //退出批注画板时，如果批注过则inkAnnotations就不为空
         if (!inkAnnotations.isEmpty() && core != null && mDocView != null) {
+            final int anchorPageIndex = mDocView.findPageAtY(mDocView.getDocumentScrollY());
+            final int anchorPageScreenTop = mDocView.getPageScreenTop(anchorPageIndex);
+            Debugger.i("onResume before annotation: page=" + anchorPageIndex + ",top=" + anchorPageScreenTop);
             View displayedView = mDocView.getDisplayedView();
             int fallbackHeight = displayedView != null ? displayedView.getHeight() : mDocView.getHeight();
             List<Integer> changedPages = new ArrayList<>();
@@ -1485,7 +1505,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             }
             //绘制到pdf文件后清空
             inkAnnotations.clear();
-            scheduleAnnotationPagesUpdate(changedPages);
+            scheduleAnnotationPagesUpdateWithRestore(changedPages, anchorPageIndex, anchorPageScreenTop);
         }
     }
 
@@ -1625,7 +1645,41 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
     }
 
+    private void finishAnnotationWithoutRefresh() {
+        hideAnnotationViews(false, false);
+    }
+
+    private void cancelAnnotationAndHide() {
+        if (artBoard != null) {
+            artBoard.setCancelAnnotation();
+        }
+
+        List<Integer> changedPages = new ArrayList<>();
+        int startIndex = Math.max(0, Math.min(annotationSessionStartIndex, savedAnnotationPages.size()));
+        for (int i = savedAnnotationPages.size() - 1; i >= startIndex; i--) {
+            List<Integer> pages = savedAnnotationPages.get(i);
+            for (int j = pages.size() - 1; j >= 0; j--) {
+                int pageIdx = pages.get(j);
+                core.deleteLastAnnotation(pageIdx);
+                if (!changedPages.contains(pageIdx)) {
+                    changedPages.add(pageIdx);
+                }
+            }
+            savedAnnotationPages.remove(i);
+        }
+        annotationSessionStartIndex = savedAnnotationPages.size();
+        hadAnnotation = hadAnnotationBeforeCurrentSession;
+        if (!changedPages.isEmpty()) {
+            scheduleAnnotationPagesUpdate(changedPages);
+        }
+        hideAnnotationViews(true, false);
+    }
+
     private void hideAnnotationViews() {
+        hideAnnotationViews(true, true);
+    }
+
+    private void hideAnnotationViews(boolean releaseArtBoard, boolean runDeferredRefresh) {
         if (mAnnotationVisible) {
             mAnnotationVisible = false;
             Animation anim = new TranslateAnimation(0, 0, 0, -inkOperationSwitcher.getHeight());
@@ -1637,8 +1691,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     viewArtSeekBar.setProgress(default_ink_size);
                     if (artBoard != null) {
                         mRootLayout.removeView(artBoard);
-                        artBoard.clear();
-                        artBoard.release();
+                        if (releaseArtBoard) {
+                            artBoard.clear();
+                            artBoard.release();
+                        } else {
+                            artBoard.recycleBitmapOnly();
+                        }
                         artBoard = null;
                     }
                 }
@@ -1647,11 +1705,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
 
                 public void onAnimationEnd(Animation animation) {
-                    if (afterAnnotationRefresh) {
+                    if (runDeferredRefresh && afterAnnotationRefresh) {
                         Debugger.e("批注期间有收到别人的共享批注，现在进行刷新");
                         afterAnnotationRefresh = false;
-                        mDocView.afterAnnotation();
+                        afterAnnotationPreservingScroll();
                         //mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                    } else if (!runDeferredRefresh) {
+                        afterAnnotationRefresh = false;
                     }
                 }
             });
@@ -2386,8 +2446,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 float[] color = new float[]{0.82f, 0.20f, 0.18f};
                 core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
                 hadAnnotation = true;
-                mDocView.afterAnnotation();
-                mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                afterAnnotationPreservingScroll();
                 Toast.makeText(MuPdfDocumentActivity.this,
                         getString(R.string.mupdf_watermark) + " " + getString(R.string.mupdf_art_done),
                         Toast.LENGTH_SHORT).show();
@@ -2483,8 +2542,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                             }
                             core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
                             hadAnnotation = true;
-                            mDocView.afterAnnotation();
-                            mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                            afterAnnotationPreservingScroll();
                             Toast.makeText(MuPdfDocumentActivity.this,
                                     getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
                                     Toast.LENGTH_SHORT).show();
@@ -2565,3 +2623,4 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
 }
+
