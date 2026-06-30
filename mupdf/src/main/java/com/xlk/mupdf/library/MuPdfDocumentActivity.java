@@ -185,8 +185,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      */
     private boolean hadAnnotation;
 
-    /** 即时保存模式：记录每笔保存的 (pageIndex)，用于撤销时删除 PDF 注解 */
-    private final List<Integer> savedAnnotationPages = new ArrayList<>();
+    /** 即时保存模式：记录每笔保存的 pageIndex 列表，用于撤销时删除 PDF 注解 */
+    private final List<List<Integer>> savedAnnotationPages = new ArrayList<>();
 
     /**
      * 当前页：索引
@@ -195,13 +195,55 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private int signTableTotalNames = 0;
 
     private Runnable pendingPageUpdate;
+    private static final String DISPLAY_SETTINGS_PREFS = "mupdf_display_settings";
+    private static final String PREF_BACKGROUND_COLOR = "background_color";
+    private static final String PREF_BRIGHTNESS = "brightness";
+    private static final String PREF_ZOOM_PERCENT = "zoom_percent";
+    private int configuredZoomPercent = MupdfMacro.ZOOM_PERCENT_UNSET;
+
+    private boolean isActivityAlive() {
+        return !isFinishing() && (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1 || !isDestroyed());
+    }
+
+    private void postToMain(Runnable runnable) {
+        Handler handler = mainHandler;
+        if (handler == null || runnable == null || !isActivityAlive()) return;
+        handler.post(() -> {
+            if (!isActivityAlive() || mainHandler == null) return;
+            runnable.run();
+        });
+    }
+
+    private void postToMainDelayed(Runnable runnable, long delayMillis) {
+        Handler handler = mainHandler;
+        if (handler == null || runnable == null || !isActivityAlive()) return;
+        handler.postDelayed(() -> {
+            if (!isActivityAlive() || mainHandler == null) return;
+            runnable.run();
+        }, delayMillis);
+    }
 
     private void schedulePageUpdate(Runnable update) {
+        Handler handler = mainHandler;
+        if (handler == null || update == null || !isActivityAlive()) return;
         if (pendingPageUpdate != null) {
-            mainHandler.removeCallbacks(pendingPageUpdate);
+            handler.removeCallbacks(pendingPageUpdate);
         }
-        pendingPageUpdate = update;
-        mainHandler.postDelayed(update, 50);
+        pendingPageUpdate = () -> {
+            if (!isActivityAlive() || mainHandler == null) return;
+            update.run();
+        };
+        handler.postDelayed(pendingPageUpdate, 50);
+    }
+
+    private void scheduleAnnotationPagesUpdate(final List<Integer> pageIndexes) {
+        schedulePageUpdate(() -> {
+            if (mDocView == null || pageIndexes == null) return;
+            for (int pageIdx : pageIndexes) {
+                PageView pv = (PageView) mDocView.getView(pageIdx);
+                if (pv != null) pv.update();
+            }
+        });
     }
     //</editor-fold>
 
@@ -226,7 +268,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putInt(MupdfMacro.bundle_key_clarityLimitMode, config.getClarityLimitMode());
         bundle.putBoolean(MupdfMacro.bundle_key_full_screen, config.isFullScreenEnable());
         bundle.putInt(MupdfMacro.bundle_key_background_color, config.getBackgroundColor());
+        bundle.putBoolean(MupdfMacro.bundle_key_background_color_configured, config.isBackgroundColorConfigured());
         bundle.putInt(MupdfMacro.bundle_key_brightness, config.getBrightness());
+        bundle.putBoolean(MupdfMacro.bundle_key_brightness_configured, config.isBrightnessConfigured());
+        bundle.putInt(MupdfMacro.bundle_key_zoom_percent, config.getZoomPercent());
+        bundle.putBoolean(MupdfMacro.bundle_key_zoom_percent_configured, config.isZoomPercentConfigured());
         jump(context, bundle);
     }
 
@@ -300,9 +346,26 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
                     MupdfMacro.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, -1);
                     isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
-                    MupdfMacro.backgroundColor = bundle.getInt(MupdfMacro.bundle_key_background_color, MupdfMacro.DEFAULT_BACKGROUND_COLOR);
-                    MupdfMacro.brightness = MupdfMacro.clampBrightness(
-                            bundle.getInt(MupdfMacro.bundle_key_brightness, 0));
+                    SharedPreferences displayPrefs = getDisplaySettingsPrefs();
+                    boolean backgroundConfigured = bundle.containsKey(MupdfMacro.bundle_key_background_color_configured)
+                            ? bundle.getBoolean(MupdfMacro.bundle_key_background_color_configured, false)
+                            : bundle.containsKey(MupdfMacro.bundle_key_background_color);
+                    boolean brightnessConfigured = bundle.containsKey(MupdfMacro.bundle_key_brightness_configured)
+                            ? bundle.getBoolean(MupdfMacro.bundle_key_brightness_configured, false)
+                            : bundle.containsKey(MupdfMacro.bundle_key_brightness);
+                    boolean zoomConfigured = bundle.containsKey(MupdfMacro.bundle_key_zoom_percent_configured)
+                            ? bundle.getBoolean(MupdfMacro.bundle_key_zoom_percent_configured, false)
+                            : bundle.containsKey(MupdfMacro.bundle_key_zoom_percent);
+
+                    MupdfMacro.backgroundColor = backgroundConfigured
+                            ? bundle.getInt(MupdfMacro.bundle_key_background_color, MupdfMacro.DEFAULT_BACKGROUND_COLOR)
+                            : displayPrefs.getInt(PREF_BACKGROUND_COLOR, MupdfMacro.DEFAULT_BACKGROUND_COLOR);
+                    MupdfMacro.brightness = MupdfMacro.clampBrightness(brightnessConfigured
+                            ? bundle.getInt(MupdfMacro.bundle_key_brightness, 0)
+                            : displayPrefs.getInt(PREF_BRIGHTNESS, 0));
+                    configuredZoomPercent = zoomConfigured
+                            ? bundle.getInt(MupdfMacro.bundle_key_zoom_percent, MupdfMacro.ZOOM_PERCENT_UNSET)
+                            : displayPrefs.getInt(PREF_ZOOM_PERCENT, MupdfMacro.ZOOM_PERCENT_UNSET);
                     Uri uri;
                     if (!srcFilePath.isEmpty()) {
                         uri = Uri.parse(new File(srcFilePath).toURI().toString());
@@ -419,29 +482,31 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             return;
         }
 
+        applyWindowBrightness();
         createUI(savedInstanceState);
         registerEventBus();
         ActUtil.addActivity(this);
     }
 
-    float fullWidthScale = 1.0f;
     /**
-     * 当前缩放百分比（相对于适宽缩放 {@link #fullWidthScale}），100 表示适宽。
+     * ReaderView 在测量页面时已经按容器宽度做了适宽，mScale=1 即页宽与屏幕宽度对齐。
      */
-    private int currentZoomPercent = 100;
+    float fullWidthScale = 1.0f;
+    private static final int ABSOLUTE_MIN_ZOOM_PERCENT = 1;
+    private static final int FIT_WIDTH_ZOOM_PERCENT = 100;
+    private static final int MAX_ZOOM_PERCENT = FIT_WIDTH_ZOOM_PERCENT;
+    /**
+     * 当前缩放百分比，100 表示 PDF 页宽与屏幕宽度对齐。
+     */
+    private int currentZoomPercent = FIT_WIDTH_ZOOM_PERCENT;
 
     public void createUI(Bundle savedInstanceState) {
         if (core == null)
             return;
+        fullWidthScale = 1.0f;
         if (isFullScreen) {
-            // 计算宽度占满时的缩放比例
             PointF size = core.getPageSize(0);
-            int screenWidth = ScreenUtils.getScreenWidth(this);
-            int screenHeight = ScreenUtils.getScreenHeight(this);
-            float mSourceScale = Math.min(screenWidth / size.x, screenHeight / size.y);
-            android.graphics.Point newSize = new android.graphics.Point((int) (size.x * mSourceScale), (int) (size.y * mSourceScale));
-            fullWidthScale = screenWidth * 1.0f / (newSize.x * 1.0f);
-            Debugger.i(TAG, "createUI: size=" + size + ",newSize=" + newSize + ",fullWidthScale=" + fullWidthScale);
+            Debugger.i(TAG, "createUI: size=" + size + ",fullWidthScale=" + fullWidthScale);
         }
         mDocView = new ReaderView(this, fullWidthScale) {
             @Override
@@ -486,6 +551,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
             }
         };
+        mDocView.setScaleBoundsProvider(new ReaderView.ScaleBoundsProvider() {
+            @Override
+            public float getMinScale() {
+                return fullWidthScale * getFitPageZoomPercent() / 100f;
+            }
+
+            @Override
+            public float getMaxScale() {
+                return fullWidthScale * MAX_ZOOM_PERCENT / 100f;
+            }
+        });
         PageAdapter pageAdapter = new PageAdapter(this, core, fullWidthScale, "");
         mDocView.setAdapter(pageAdapter);
 
@@ -519,11 +595,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
         setContentView(mRootLayout);
 
-        mainHandler.postDelayed(() -> {
+        postToMainDelayed(() -> {
             if (srcPageIndex != 0) {
                 mDocView.setDisplayedViewIndex(srcPageIndex);
             }
-            mDocView.defaultScale(fullWidthScale);
+            applyZoomPercent(resolveInitialZoomPercent(), false);
             mDocView.requestLayout();
             mDocView.run();
         }, 500L);
@@ -716,7 +792,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             isSigning = false;
             mDocView.setSigning(false);
             mDocView.afterAnnotation();
-            mDocView.restorePosition();
         });
         //取消签名
         tv_cancel_signature.setOnClickListener(v -> {
@@ -748,7 +823,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //截图批注
         viewTopScreenshot.setOnClickListener(v -> {
             hideButtons();
-            mainHandler.postDelayed(() -> {
+            postToMainDelayed(() -> {
                 EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_screenshot).objects(mDocTitle, 0).build());
             }, 250);
         });
@@ -863,11 +938,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH, new AnnotationArtBoard.DrawExitListener() {
                 @Override
                 public void onDrawAnnotations(List<AnnotationBean> inkAnnotations) {
-                    // 即时保存模式下笔画已逐个提交，这里仅做退出后的刷新和位置恢复
+                    // 即时保存模式下笔画已逐个提交，这里仅做退出后的刷新
                     Debugger.i(TAG, "onDrawAnnotations 退出批注，hadAnnotation=" + hadAnnotation);
                     if (hadAnnotation) {
                         mDocView.afterAnnotation();
-                        mDocView.restorePosition();
                     }
                 }
             });
@@ -875,24 +949,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             artBoard.setPaintWidth(default_ink_size);
             // 即时保存：每笔松开即提交到 PDF，避免滚动时标注视觉偏移
             artBoard.setStrokeListener(bean -> {
-                Point[] docPts = bean.getPoints();
-                if (docPts.length == 0) return;
-                float ps = bean.getPaintSize() / 3.0f;
-                int type = bean.getType();
-                int pageIdx = mDocView.findPageAtY((int) docPts[0].y);
-                int pageTop = mDocView.getPageDocTop(pageIdx);
-                int pageW = mDocView.getWidth();
-                int pageH = mDocView.getPageDisplayHeight(pageIdx);
-                if (pageH <= 0) pageH = artH;
-                Point[] localPts = new Point[docPts.length];
-                for (int i = 0; i < docPts.length; i++)
-                    localPts[i] = new Point(docPts[i].x, docPts[i].y - pageTop);
-                core.addAnnotation(pageIdx, pageW, pageH, type, ps, bean.getPaintColor(), localPts);
-                savedAnnotationPages.add(pageIdx);  // 记录用于撤销
+                List<Integer> changedPages = addStrokeAnnotation(bean, artH);
+                if (changedPages.isEmpty()) return;
+                savedAnnotationPages.add(changedPages);  // 记录用于撤销
                 hadAnnotation = true;
-                // 更新页面渲染显示已保存的标注
-                PageView pv = (PageView) mDocView.getView(pageIdx);
-                if (pv != null) schedulePageUpdate(() -> pv.update());
+                scheduleAnnotationPagesUpdate(changedPages);
             });
             artBoard.setFreeTextListener(pos -> {
                 showFreeTextDialog(pos);
@@ -902,11 +963,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 // 点已在文档空间
                 int pageIdx = mDocView.findPageAtY((int) start.y);
                 int pageTop = mDocView.getPageDocTop(pageIdx);
-                int pageW = mDocView.getWidth();
+                int pageLeft = mDocView.getPageScreenLeft(pageIdx);
+                int pageW = getAnnotationPageWidth(pageIdx);
                 int pageH = mDocView.getPageDisplayHeight(pageIdx);
                 if (pageH <= 0) pageH = artH;
-                Point localStart = new Point(start.x, start.y - pageTop);
-                Point localEnd = new Point(end.x, end.y - pageTop);
+                Point localStart = new Point(start.x - pageLeft, start.y - pageTop);
+                Point localEnd = new Point(end.x - pageLeft, end.y - pageTop);
                 float[] c = core.parseColor(color);
                 core.addTextMarkupAnnotation(pageIdx, pageW, pageH,
                         type, localStart, localEnd, c, mDisplayDPI, mDisplayDPI);
@@ -965,10 +1027,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewArtRevoke.setOnClickListener(v -> {
             // 即时保存模式：从 PDF 内容层删除最后一笔标注
             if (!savedAnnotationPages.isEmpty()) {
-                int lastPage = savedAnnotationPages.remove(savedAnnotationPages.size() - 1);
-                core.deleteLastAnnotation(lastPage);
-                PageView pv = (PageView) mDocView.getView(lastPage);
-                if (pv != null) schedulePageUpdate(() -> pv.update());
+                List<Integer> lastPages = savedAnnotationPages.remove(savedAnnotationPages.size() - 1);
+                for (int i = lastPages.size() - 1; i >= 0; i--) {
+                    core.deleteLastAnnotation(lastPages.get(i));
+                }
+                scheduleAnnotationPagesUpdate(lastPages);
             }
             // 同时清理画板残留（橡皮擦后可能遗留）
             if (artBoard != null) {
@@ -1052,11 +1115,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewArtClose.setOnClickListener(v -> {
             // 即时保存模式：取消时删除所有本次已保存的标注
             artBoard.setCancelAnnotation();
-            for (int pageIdx : savedAnnotationPages) {
-                core.deleteLastAnnotation(pageIdx);
+            List<Integer> changedPages = new ArrayList<>();
+            for (int i = savedAnnotationPages.size() - 1; i >= 0; i--) {
+                List<Integer> pages = savedAnnotationPages.get(i);
+                for (int j = pages.size() - 1; j >= 0; j--) {
+                    int pageIdx = pages.get(j);
+                    core.deleteLastAnnotation(pageIdx);
+                    changedPages.add(pageIdx);
+                }
             }
             savedAnnotationPages.clear();
             hadAnnotation = false;
+            if (!changedPages.isEmpty()) scheduleAnnotationPagesUpdate(changedPages);
             hideAnnotationViews();
         });
         //</editor-fold>
@@ -1404,27 +1474,24 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         super.onResume();
         Debugger.i("onResume inkAnnotations:" + inkAnnotations.size());
         //退出批注画板时，如果批注过则inkAnnotations就不为空
-        if (!inkAnnotations.isEmpty()) {
-            PageView pageView = (PageView) mDocView.getDisplayedView();
-            int width = pageView.getWidth();
-            int height = pageView.getHeight();
+        if (!inkAnnotations.isEmpty() && core != null && mDocView != null) {
+            View displayedView = mDocView.getDisplayedView();
+            int fallbackHeight = displayedView != null ? displayedView.getHeight() : mDocView.getHeight();
+            List<Integer> changedPages = new ArrayList<>();
             for (AnnotationBean inkAnnotation : inkAnnotations) {
-                Point[] points = inkAnnotation.getPoints();
-                float paintSize = inkAnnotation.getPaintSize();
-                int paintColor = inkAnnotation.getPaintColor();
-                int type = inkAnnotation.getType();
-                paintSize = paintSize / 3.0f;
-                core.addAnnotation(mDocView.mCurrent, width, height, type, paintSize, paintColor, points);
+                for (int pageIdx : addStrokeAnnotation(inkAnnotation, fallbackHeight)) {
+                    if (!changedPages.contains(pageIdx)) changedPages.add(pageIdx);
+                }
             }
             //绘制到pdf文件后清空
             inkAnnotations.clear();
-            mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+            scheduleAnnotationPagesUpdate(changedPages);
         }
     }
 
     private void toast(String msg) {
         try {
-            mainHandler.post(() -> {
+            postToMain(() -> {
                 Context applicationContext = getApplicationContext();
                 Debugger.e("当前正在签名中 applicationContext=" + applicationContext);
                 Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show();
@@ -1762,7 +1829,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 String savePath = core.save(srcFilePath, annotationSavePath);
                 Debugger.i(TAG, "保存用时：" + (System.currentTimeMillis() - l) + ",savePath=" + savePath);
                 EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_upload).objects(savePath, uploadDirId).build());
-                mainHandler.postDelayed(() -> {
+                postToMainDelayed(() -> {
                     Debugger.i(TAG, "hideLoading ---progressDialog---");
                     progressDialog.dismiss();
                     MuPdfDocumentActivity.this.finish();
@@ -1772,6 +1839,198 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private List<Integer> addStrokeAnnotation(AnnotationBean bean, int fallbackHeight) {
+        List<Integer> changedPages = new ArrayList<>();
+        if (bean == null || core == null || mDocView == null) return changedPages;
+        Point[] docPts = bean.getPoints();
+        if (docPts == null || docPts.length == 0) return changedPages;
+
+        int type = bean.getType();
+        float paintSize = bean.getPaintSize() / 3.0f;
+        int paintColor = bean.getPaintColor();
+        if (type == PDFAnnotation.TYPE_LINE && docPts.length >= 2) {
+            addLineAnnotationByPages(docPts[0], docPts[1], paintSize, paintColor, fallbackHeight, changedPages);
+        } else if (type == PDFAnnotation.TYPE_INK) {
+            addInkAnnotationByPages(docPts, paintSize, paintColor, fallbackHeight, changedPages);
+        } else {
+            addSinglePageAnnotation(type, docPts, paintSize, paintColor, fallbackHeight, changedPages);
+        }
+        return changedPages;
+    }
+
+    private void addSinglePageAnnotation(int type, Point[] docPts, float paintSize, int paintColor,
+                                         int fallbackHeight, List<Integer> changedPages) {
+        int pageIdx = mDocView.findPageAtY((int) docPts[0].y);
+        Point[] localPts = new Point[docPts.length];
+        for (int i = 0; i < docPts.length; i++) {
+            localPts[i] = toPageLocalPoint(docPts[i], pageIdx);
+        }
+        addAnnotationOnPage(pageIdx, type, localPts, paintSize, paintColor, fallbackHeight, changedPages);
+    }
+
+    private void addLineAnnotationByPages(Point start, Point end, float paintSize, int paintColor,
+                                          int fallbackHeight, List<Integer> changedPages) {
+        int count = core.countPages();
+        float dy = end.y - start.y;
+        for (int pageIdx = 0; pageIdx < count; pageIdx++) {
+            int pageTop = mDocView.getPageDocTop(pageIdx);
+            int pageBottom = pageTop + getAnnotationPageHeight(pageIdx, fallbackHeight);
+            float t0;
+            float t1;
+            if (Math.abs(dy) < 0.001f) {
+                if (start.y < pageTop || start.y > pageBottom) continue;
+                t0 = 0f;
+                t1 = 1f;
+            } else {
+                float topT = (pageTop - start.y) / dy;
+                float bottomT = (pageBottom - start.y) / dy;
+                t0 = Math.max(0f, Math.min(topT, bottomT));
+                t1 = Math.min(1f, Math.max(topT, bottomT));
+            }
+            if (t1 <= t0) continue;
+            Point localStart = toPageLocalPoint(interpolate(start, end, t0), pageIdx);
+            Point localEnd = toPageLocalPoint(interpolate(start, end, t1), pageIdx);
+            addAnnotationOnPage(pageIdx, PDFAnnotation.TYPE_LINE, new Point[]{localStart, localEnd},
+                    paintSize, paintColor, fallbackHeight, changedPages);
+        }
+    }
+
+    private void addInkAnnotationByPages(Point[] docPts, float paintSize, int paintColor,
+                                         int fallbackHeight, List<Integer> changedPages) {
+        if (docPts.length == 1) {
+            addSinglePageAnnotation(PDFAnnotation.TYPE_INK, docPts, paintSize, paintColor, fallbackHeight, changedPages);
+            return;
+        }
+
+        List<PagePointSegment> segments = splitInkByPages(docPts, fallbackHeight);
+        for (PagePointSegment segment : segments) {
+            if (segment.points.size() < 2) continue;
+            Point[] localPts = new Point[segment.points.size()];
+            for (int i = 0; i < segment.points.size(); i++) {
+                localPts[i] = toPageLocalPoint(segment.points.get(i), segment.pageIdx);
+            }
+            addAnnotationOnPage(segment.pageIdx, PDFAnnotation.TYPE_INK, localPts,
+                    paintSize, paintColor, fallbackHeight, changedPages);
+        }
+    }
+
+    private List<PagePointSegment> splitInkByPages(Point[] docPts, int fallbackHeight) {
+        List<PagePointSegment> segments = new ArrayList<>();
+        PagePointSegment current = null;
+        for (int i = 1; i < docPts.length; i++) {
+            List<PageLinePart> parts = clipLineToPages(docPts[i - 1], docPts[i], fallbackHeight);
+            for (PageLinePart part : parts) {
+                if (current == null || current.pageIdx != part.pageIdx
+                        || !samePoint(current.points.get(current.points.size() - 1), part.start)) {
+                    if (current != null && current.points.size() >= 2) {
+                        segments.add(current);
+                    }
+                    current = new PagePointSegment(part.pageIdx);
+                    current.points.add(part.start);
+                }
+                if (!samePoint(current.points.get(current.points.size() - 1), part.end)) {
+                    current.points.add(part.end);
+                }
+            }
+        }
+        if (current != null && current.points.size() >= 2) {
+            segments.add(current);
+        }
+        return segments;
+    }
+
+    private List<PageLinePart> clipLineToPages(Point start, Point end, int fallbackHeight) {
+        List<PageLinePart> parts = new ArrayList<>();
+        int count = core.countPages();
+        float dy = end.y - start.y;
+        for (int pageIdx = 0; pageIdx < count; pageIdx++) {
+            int pageTop = mDocView.getPageDocTop(pageIdx);
+            int pageBottom = pageTop + getAnnotationPageHeight(pageIdx, fallbackHeight);
+            float t0;
+            float t1;
+            if (Math.abs(dy) < 0.001f) {
+                if (start.y < pageTop || start.y > pageBottom) continue;
+                t0 = 0f;
+                t1 = 1f;
+            } else {
+                float topT = (pageTop - start.y) / dy;
+                float bottomT = (pageBottom - start.y) / dy;
+                t0 = Math.max(0f, Math.min(topT, bottomT));
+                t1 = Math.min(1f, Math.max(topT, bottomT));
+            }
+            if (t1 <= t0) continue;
+            parts.add(new PageLinePart(pageIdx, interpolate(start, end, t0), interpolate(start, end, t1), t0));
+        }
+        for (int i = 0; i < parts.size() - 1; i++) {
+            for (int j = i + 1; j < parts.size(); j++) {
+                if (parts.get(i).startT > parts.get(j).startT) {
+                    PageLinePart tmp = parts.get(i);
+                    parts.set(i, parts.get(j));
+                    parts.set(j, tmp);
+                }
+            }
+        }
+        return parts;
+    }
+
+    private void addAnnotationOnPage(int pageIdx, int type, Point[] localPts, float paintSize, int paintColor,
+                                     int fallbackHeight, List<Integer> changedPages) {
+        int pageW = getAnnotationPageWidth(pageIdx);
+        int pageH = getAnnotationPageHeight(pageIdx, fallbackHeight);
+        if (pageW <= 0 || pageH <= 0) return;
+        core.addAnnotation(pageIdx, pageW, pageH, type, paintSize, paintColor, localPts);
+        changedPages.add(pageIdx);
+    }
+
+    private int getAnnotationPageWidth(int pageIdx) {
+        int pageW = mDocView.getPageDisplayWidth(pageIdx);
+        if (pageW <= 0) pageW = mDocView.getWidth();
+        return pageW;
+    }
+
+    private int getAnnotationPageHeight(int pageIdx, int fallbackHeight) {
+        int pageH = mDocView.getPageDisplayHeight(pageIdx);
+        if (pageH <= 0) pageH = fallbackHeight;
+        return pageH;
+    }
+
+    private Point toPageLocalPoint(Point docPoint, int pageIdx) {
+        return new Point(docPoint.x - mDocView.getPageScreenLeft(pageIdx),
+                docPoint.y - mDocView.getPageDocTop(pageIdx));
+    }
+
+    private Point interpolate(Point start, Point end, float t) {
+        return new Point(start.x + (end.x - start.x) * t,
+                start.y + (end.y - start.y) * t);
+    }
+
+    private boolean samePoint(Point a, Point b) {
+        return Math.abs(a.x - b.x) < 0.01f && Math.abs(a.y - b.y) < 0.01f;
+    }
+
+    private static class PagePointSegment {
+        final int pageIdx;
+        final List<Point> points = new ArrayList<>();
+
+        PagePointSegment(int pageIdx) {
+            this.pageIdx = pageIdx;
+        }
+    }
+
+    private static class PageLinePart {
+        final int pageIdx;
+        final Point start;
+        final Point end;
+        final float startT;
+
+        PageLinePart(int pageIdx, Point start, Point end, float startT) {
+            this.pageIdx = pageIdx;
+            this.start = start;
+            this.end = end;
+            this.startT = startT;
+        }
     }
 
     private void showFreeTextDialog(final Point position) {
@@ -1786,15 +2045,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_ensure), (dialog, which) -> {
             String text = editText.getText().toString().trim();
             if (!text.isEmpty() && core != null) {
-                PageView pageView = (PageView) mDocView.getDisplayedView();
-                if (pageView == null) return;
-                int width = pageView.getWidth();
-                int height = pageView.getHeight();
+                int pageIdx = mDocView.findPageAtY((int) position.y);
+                int pageTop = mDocView.getPageDocTop(pageIdx);
+                int pageLeft = mDocView.getPageScreenLeft(pageIdx);
+                PageView pageView = (PageView) mDocView.getView(pageIdx);
+                int width = getAnnotationPageWidth(pageIdx);
+                int height = mDocView.getPageDisplayHeight(pageIdx);
+                if (height <= 0 && pageView != null) height = pageView.getHeight();
+                if (width <= 0 || height <= 0) return;
                 float[] color = core.parseColor(artBoard != null ? artBoard.getPaintColor() : Color.RED);
-                core.addFreeTextAnnotation(mDocView.mCurrent, width, height,
-                        position, text, "Helv", 16f, color);
+                Point localPosition = new Point(position.x - pageLeft, position.y - pageTop);
+                core.addFreeTextAnnotation(pageIdx, width, height,
+                        localPosition, text, "Helv", 16f, color);
                 hadAnnotation = true;
-                schedulePageUpdate(() -> pageView.update());
+                if (pageView != null) schedulePageUpdate(() -> pageView.update());
             }
             dialog.dismiss();
         });
@@ -1804,7 +2068,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     /**
-     * 对所有已缓存/可见的页面应用最新的颜色滤镜（背景颜色 + 亮度）。
+     * 对所有已缓存/可见的页面应用最新的背景颜色滤镜。
      */
     private void refreshAllPageColorFilter() {
         if (mDocView != null) {
@@ -1817,6 +2081,22 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
             });
         }
+    }
+
+    private void applyWindowBrightness() {
+        Window window = getWindow();
+        if (window == null) return;
+
+        int brightness = MupdfMacro.clampBrightness(MupdfMacro.brightness);
+        WindowManager.LayoutParams attrs = window.getAttributes();
+        if (brightness == 0) {
+            attrs.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        } else {
+            float percent = (brightness - MupdfMacro.MIN_BRIGHTNESS)
+                    / (float) (MupdfMacro.MAX_BRIGHTNESS - MupdfMacro.MIN_BRIGHTNESS);
+            attrs.screenBrightness = Math.max(0.01f, Math.min(1f, percent));
+        }
+        window.setAttributes(attrs);
     }
 
     /**
@@ -1847,17 +2127,72 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
     }
 
+    private int getFitPageZoomPercent() {
+        if (core == null || mDocView == null || fullWidthScale <= 0) {
+            return FIT_WIDTH_ZOOM_PERCENT;
+        }
+        int pageCount = core.countPages();
+        if (pageCount <= 0) return FIT_WIDTH_ZOOM_PERCENT;
+        int pageIndex = Math.max(0, Math.min(pageCount - 1, mDocView.getDisplayedViewIndex()));
+        PointF pageSize = core.getPageSize(pageIndex);
+        int viewWidth = mDocView.getWidth() > 0 ? mDocView.getWidth() : ScreenUtils.getScreenWidth(this);
+        int viewHeight = mDocView.getHeight() > 0 ? mDocView.getHeight() : ScreenUtils.getScreenHeight(this);
+        if (pageSize == null || pageSize.x <= 0 || pageSize.y <= 0 || viewWidth <= 0 || viewHeight <= 0) {
+            return FIT_WIDTH_ZOOM_PERCENT;
+        }
+
+        float pageHeightAtFitWidth = viewWidth * (pageSize.y / pageSize.x);
+        float fitPageScale = Math.min(1f, viewHeight / pageHeightAtFitWidth);
+        int percent = Math.round(fitPageScale * 100f);
+        return Math.max(ABSOLUTE_MIN_ZOOM_PERCENT, Math.min(FIT_WIDTH_ZOOM_PERCENT, percent));
+    }
+
+    private SharedPreferences getDisplaySettingsPrefs() {
+        return getSharedPreferences(DISPLAY_SETTINGS_PREFS, Context.MODE_PRIVATE);
+    }
+
+    private int clampZoomPercent(int zoomPercent) {
+        int minZoomPercent = getFitPageZoomPercent();
+        return Math.max(minZoomPercent, Math.min(MAX_ZOOM_PERCENT, zoomPercent));
+    }
+
+    private int resolveInitialZoomPercent() {
+        if (configuredZoomPercent >= 0) {
+            return clampZoomPercent(configuredZoomPercent);
+        }
+        return getFitPageZoomPercent();
+    }
+
+    private void applyZoomPercent(int zoomPercent, boolean persist) {
+        currentZoomPercent = clampZoomPercent(zoomPercent);
+        if (mDocView != null) {
+            mDocView.defaultScale(fullWidthScale * currentZoomPercent / 100f);
+        }
+        if (persist) {
+            saveDisplaySettings();
+        }
+    }
+
+    private void saveDisplaySettings() {
+        getDisplaySettingsPrefs().edit()
+                .putInt(PREF_BACKGROUND_COLOR, MupdfMacro.backgroundColor)
+                .putInt(PREF_BRIGHTNESS, MupdfMacro.brightness)
+                .putInt(PREF_ZOOM_PERCENT, currentZoomPercent)
+                .apply();
+    }
+
     /**
      * 显示设置页：亮度、背景颜色、缩放。修改即时生效。
      */
     private void showSettingsDialog() {
         if (core == null) return;
         final float density = getResources().getDisplayMetrics().density;
+        final int minZoomPercent = getFitPageZoomPercent();
 
         // 同步实际缩放（可能被双指缩放改变过），保证滑块与当前画面一致
         if (mDocView != null && fullWidthScale > 0) {
             int actual = Math.round(mDocView.getScale() / fullWidthScale * 100f);
-            currentZoomPercent = Math.max(100, Math.min(300, actual));
+            currentZoomPercent = Math.max(minZoomPercent, Math.min(MAX_ZOOM_PERCENT, actual));
         }
 
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
@@ -1888,7 +2223,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 MupdfMacro.brightness = progress + MupdfMacro.MIN_BRIGHTNESS;
                 brightnessValue.setText(String.valueOf(MupdfMacro.brightness));
-                refreshAllPageColorFilter();
+                applyWindowBrightness();
+                saveDisplaySettings();
             }
 
             public void onStartTrackingTouch(SeekBar sb) {
@@ -1921,6 +2257,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 MupdfMacro.backgroundColor = color;
                 refreshAllPageColorFilter();
                 updateSwatchSelection(swatches, density);
+                saveDisplaySettings();
             });
             swatches[i] = sw;
             swatchRow.addView(sw);
@@ -1939,6 +2276,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         MupdfMacro.backgroundColor = 0xFF000000 | (color & 0x00FFFFFF);
                         refreshAllPageColorFilter();
                         updateSwatchSelection(swatches, density);
+                        saveDisplaySettings();
                     }
                 }, MupdfMacro.backgroundColor).show());
         swatchRow.addView(customColor);
@@ -1953,8 +2291,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         zoomRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
 
         final SeekBar zoomBar = new SeekBar(this);
-        zoomBar.setMax(200); // 缩放 [100%,300%] 映射到 [0,200]
-        zoomBar.setProgress(Math.max(0, Math.min(200, currentZoomPercent - 100)));
+        int zoomRange = MAX_ZOOM_PERCENT - minZoomPercent;
+        zoomBar.setMax(zoomRange);
+        zoomBar.setProgress(Math.max(0, Math.min(zoomRange, currentZoomPercent - minZoomPercent)));
         zoomBar.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         final TextView zoomValue = new TextView(this);
@@ -1964,10 +2303,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
         zoomBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                currentZoomPercent = progress + 100;
+                currentZoomPercent = progress + minZoomPercent;
                 zoomValue.setText(currentZoomPercent + "%");
                 if (fromUser && mDocView != null) {
-                    mDocView.defaultScale(fullWidthScale * currentZoomPercent / 100f);
+                    applyZoomPercent(currentZoomPercent, true);
                 }
             }
 
@@ -1994,15 +2333,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         resetBtn.setLayoutParams(resetLp);
         resetBtn.setOnClickListener(v -> {
             brightnessBar.setProgress(255); // 亮度归零
-            zoomBar.setProgress(0);         // 100%
+            zoomBar.setProgress(FIT_WIDTH_ZOOM_PERCENT - minZoomPercent); // 100%
             MupdfMacro.backgroundColor = MupdfMacro.DEFAULT_BACKGROUND_COLOR;
-            currentZoomPercent = 100;
+            currentZoomPercent = FIT_WIDTH_ZOOM_PERCENT;
             if (mDocView != null) {
                 mDocView.defaultScale(fullWidthScale);
             }
+            applyWindowBrightness();
             refreshAllPageColorFilter();
             updateSwatchSelection(swatches, density);
-            zoomValue.setText("100%");
+            zoomValue.setText(FIT_WIDTH_ZOOM_PERCENT + "%");
+            saveDisplaySettings();
         });
         root.addView(resetBtn);
 
@@ -2198,16 +2539,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         MupdfMacro.launchSrcmemid = 0;
         MupdfMacro.launchSrcwbid = 0;
         MupdfMacro.sharingIds.clear();
-        mainHandler.removeCallbacksAndMessages(null);
+        if (mainHandler != null) mainHandler.removeCallbacksAndMessages(null);
+        pendingPageUpdate = null;
         mainHandler = null;
         if (mDocView != null) {
-            mDocView.applyToChildren(new ReaderView.ViewMapper() {
-                @Override
-                public void applyToView(View view) {
-                    Debugger.i(TAG, "---onDestroy---PageView");
-                    ((PageView) view).releaseBitmaps();
-                }
-            });
+            Debugger.i(TAG, "---onDestroy---ReaderView releaseAllBitmaps");
+            mDocView.releaseAllBitmaps();
         }
         if (core != null) {
             Debugger.i(TAG, "---onDestroy---MuPDFCore");

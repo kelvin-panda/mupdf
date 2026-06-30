@@ -300,8 +300,7 @@ public class AnnotationArtBoard extends View {
                 // dy 取反：手指上滑(cy减小→dy为负)文档前进(mScrollY增大)
                 if ((Math.abs(dx) > MULTI_SCROLL_THRESHOLD || Math.abs(dy) > MULTI_SCROLL_THRESHOLD)
                         && docView != null) {
-                    docView.scrollBy(dx, -dy);
-                    if (docView != null) documentScrollY = docView.getDocumentScrollY();
+                    documentScrollY = docView.scrollBy(dx, -dy);
                     multiTouchLastCX = cx;
                     multiTouchLastCY = cy;
                 }
@@ -313,7 +312,10 @@ public class AnnotationArtBoard extends View {
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 isMultiTouching = false;
-                if (docView != null) docView.setAnnotationMultiTouch(false);
+                if (docView != null) {
+                    docView.setAnnotationMultiTouch(false);
+                    documentScrollY = docView.getDocumentScrollY();
+                }
                 break;
         }
         return true;
@@ -416,6 +418,7 @@ public class AnnotationArtBoard extends View {
         float y = event.getY();
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
+                if (docView != null) documentScrollY = docView.getDocumentScrollY();
                 startX = event.getX();
                 startY = event.getY();
                 // 即时保存模式：上次笔画已提交到 PDF，清空画板开始新笔画
@@ -492,11 +495,12 @@ public class AnnotationArtBoard extends View {
                             int docY = docView.getDocumentScrollY() + (int) y;
                             int pageIdx = docView.findPageAtY(docY);
                             int pageTop = docView.getPageDocTop(pageIdx);
-                            int pageW = docView.getWidth();
+                            int pageLeft = docView.getPageScreenLeft(pageIdx);
+                            int pageW = docView.getPageDisplayWidth(pageIdx);
                             int pageH = docView.getPageDisplayHeight(pageIdx);
                             if (pageH <= 0) pageH = screenHeight;
                             float localY = y + docView.getDocumentScrollY() - pageTop;
-                            boolean deleted = core.deleteAnnotation(pageIdx, pageW, pageH, x, localY);
+                            boolean deleted = core.deleteAnnotation(pageIdx, pageW, pageH, x - pageLeft, localY);
                             if (deleted) {
                                 View pv = docView.getView(pageIdx);
                                 if (pv instanceof PageView) ((PageView) pv).update();
@@ -511,6 +515,7 @@ public class AnnotationArtBoard extends View {
                 invalidate();
                 break;
             case MotionEvent.ACTION_UP: {
+                if (docView != null) documentScrollY = docView.getDocumentScrollY();
                 long utcstamp = System.currentTimeMillis();
                 int operid = (int) (utcstamp / 10);
                 // 屏幕坐标 → 文档坐标（画板固定在屏幕，需加滚动偏移）
@@ -721,6 +726,7 @@ public class AnnotationArtBoard extends View {
      */
     private void eraserPath(float x, float y) {
         boolean isChanged = false;
+        List<DrawPath> deletedPaths = new ArrayList<>();
         for (int i = 0; i < pathList.size(); i++) {
             DrawPath drawPath = pathList.get(i);
             if (drawPath.isDelete) continue;//已经设置成删除状态的进行过滤掉
@@ -738,14 +744,15 @@ public class AnnotationArtBoard extends View {
                     isChanged = true;
                     initCanvas();
                     drawPath.setDeleted(true, i);
-                    pathList.remove(drawPath);//删除指定drawpath
                     //也要进行删除待绘制集合中的数据
                     deleteAnnotationBean(drawPath.operid);
-                    pathList.add(drawPath);
+                    deletedPaths.add(drawPath);
                 }
             }
         }
         if (isChanged) {
+            pathList.removeAll(deletedPaths);
+            pathList.addAll(deletedPaths);
             drawAgain(pathList);
         }
     }

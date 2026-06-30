@@ -161,11 +161,18 @@ public class MuPDFCore {
                                       int patchX, int patchY,
                                       int patchW, int patchH,
                                       Cookie cookie) {
+        if (bm == null || bm.isRecycled() || pageW <= 0 || pageH <= 0 || patchW <= 0 || patchH <= 0) {
+            Debugger.e(TAG, "drawPage invalid args pageNum:" + pageNum
+                    + ", pageW:" + pageW + ", pageH:" + pageH
+                    + ", patchW:" + patchW + ", patchH:" + patchH
+                    + ", bm:" + bm);
+            return;
+        }
+        DisplayList localDL = null;
         try {
             Debugger.d(TAG, "---drawPage start pageNum:" + pageNum);
             gotoPage(pageNum);
 
-            DisplayList localDL = null;
             if (page != null)
                 try {
                     localDL = page.toDisplayList();
@@ -203,9 +210,17 @@ public class MuPDFCore {
             } finally {
                 dev.destroy();
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             String fullStackTrace = Debugger.getFullStackTrace(e);
-            Debugger.e(TAG, "drawPage Exception:" + fullStackTrace);
+            Debugger.e(TAG, "drawPage Throwable:" + fullStackTrace);
+        } finally {
+            if (localDL != null) {
+                try {
+                    localDL.destroy();
+                } catch (Throwable e) {
+                    Debugger.e(TAG, "drawPage displayList destroy failed:" + Debugger.getFullStackTrace(e));
+                }
+            }
         }
         Debugger.i(TAG, "drawPage end--- pageNum:" + pageNum);
     }

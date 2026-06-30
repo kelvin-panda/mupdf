@@ -29,6 +29,10 @@ public class MupdfConfig {
     private final boolean fullScreenEnable;
     private final int backgroundColor;
     private final int brightness;
+    private final int zoomPercent;
+    private final boolean backgroundColorConfigured;
+    private final boolean brightnessConfigured;
+    private final boolean zoomPercentConfigured;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -51,6 +55,10 @@ public class MupdfConfig {
         this.fullScreenEnable = builder.fullScreenEnable;
         this.backgroundColor = builder.backgroundColor;
         this.brightness = builder.brightness;
+        this.zoomPercent = builder.zoomPercent;
+        this.backgroundColorConfigured = builder.backgroundColorConfigured;
+        this.brightnessConfigured = builder.brightnessConfigured;
+        this.zoomPercentConfigured = builder.zoomPercentConfigured;
     }
 
     public String getFilePath() {
@@ -133,6 +141,22 @@ public class MupdfConfig {
         return brightness;
     }
 
+    public int getZoomPercent() {
+        return zoomPercent;
+    }
+
+    public boolean isBackgroundColorConfigured() {
+        return backgroundColorConfigured;
+    }
+
+    public boolean isBrightnessConfigured() {
+        return brightnessConfigured;
+    }
+
+    public boolean isZoomPercentConfigured() {
+        return zoomPercentConfigured;
+    }
+
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -154,6 +178,7 @@ public class MupdfConfig {
                 ", fullScreenEnable=" + fullScreenEnable +
                 ", backgroundColor=" + backgroundColor +
                 ", brightness=" + brightness +
+                ", zoomPercent=" + zoomPercent +
                 '}';
     }
 
@@ -178,6 +203,10 @@ public class MupdfConfig {
         private boolean fullScreenEnable = true;
         private int backgroundColor = MupdfMacro.DEFAULT_BACKGROUND_COLOR;
         private int brightness = 0;
+        private int zoomPercent = MupdfMacro.ZOOM_PERCENT_UNSET;
+        private boolean backgroundColorConfigured = false;
+        private boolean brightnessConfigured = false;
+        private boolean zoomPercentConfigured = false;
 
         public Builder filePath(String filePath) {
             this.filePath = filePath;
@@ -277,17 +306,30 @@ public class MupdfConfig {
          */
         public Builder backgroundColor(int backgroundColor) {
             this.backgroundColor = backgroundColor;
+            this.backgroundColorConfigured = true;
             return this;
         }
 
         /**
-         * 设置亮度偏移，取值范围 [-255, 255]，{@code 0} 表示不改变。
-         * 正值变亮、负值变暗。
+         * 设置阅读器窗口亮度，取值范围 [-255, 255]，{@code 0} 表示跟随系统亮度。
+         * 正值变亮、负值变暗，不修改 PDF 页面位图颜色。
          *
-         * @param brightness 亮度偏移
+         * @param brightness 亮度值
          */
         public Builder brightness(int brightness) {
             this.brightness = MupdfMacro.clampBrightness(brightness);
+            this.brightnessConfigured = true;
+            return this;
+        }
+
+        /**
+         * 设置初始缩放百分比。100 表示适宽；传入小于 0 表示不指定，由阅读器使用上次设置或默认单页完整显示。
+         *
+         * @param zoomPercent 缩放百分比
+         */
+        public Builder zoomPercent(int zoomPercent) {
+            this.zoomPercent = zoomPercent;
+            this.zoomPercentConfigured = zoomPercent >= 0;
             return this;
         }
 

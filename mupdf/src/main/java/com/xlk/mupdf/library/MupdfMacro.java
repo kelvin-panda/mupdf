@@ -85,27 +85,27 @@ public class MupdfMacro {
     public static final int MIN_BRIGHTNESS = -255;
     public static final int MAX_BRIGHTNESS = 255;
     /**
-     * <p>亮度偏移，取值范围 [-255, 255]，{@code 0} 表示不改变。</p>
-     * <p>正值变亮、负值变暗，作为加法偏移叠加到每个颜色通道上。</p>
-     * {@link #buildColorFilter()}
+     * <p>窗口亮度，取值范围 [-255, 255]，{@code 0} 表示跟随系统亮度。</p>
+     * <p>正值变亮、负值变暗。亮度由 Activity 窗口亮度实现，不参与页面颜色滤镜，避免 PDF 画面偏色失真。</p>
      */
     public static int brightness = 0;
+    public static final int ZOOM_PERCENT_UNSET = -1;
 
     /**
-     * 根据 {@link #backgroundColor} 与 {@link #brightness} 构建颜色滤镜。
-     * <p>浅色背景按通道做乘法着色，深色背景同时反转前景，亮度做加法偏移；
-     * 当背景和亮度均为默认值时返回 {@code null}（即不做处理）。</p>
+     * 根据 {@link #backgroundColor} 构建纸张颜色滤镜。
+     * <p>浅色背景按通道做乘法着色，深色背景同时反转前景；
+     * 当背景为默认值时返回 {@code null}（即不做处理）。</p>
      *
      * @return {@link ColorMatrixColorFilter}，或在默认状态下返回 {@code null}
      */
     public static ColorMatrixColorFilter buildColorFilter() {
-        if (backgroundColor == DEFAULT_BACKGROUND_COLOR && brightness == 0) {
+        if (backgroundColor == DEFAULT_BACKGROUND_COLOR) {
             return null;
         }
         float r = Color.red(backgroundColor) / 255f;
         float g = Color.green(backgroundColor) / 255f;
         float b = Color.blue(backgroundColor) / 255f;
-        float t = clampBrightness(brightness);
+        float t = 0f;
         // 深色纸张需要同时反转前景，否则黑色文字在深色背景上不可见。
         // 映射关系为：原始白色 -> 纸张色，原始黑色 -> 白色。
         boolean darkBackground = Color.red(backgroundColor) * 299
@@ -115,7 +115,7 @@ public class MupdfMacro {
             r -= 1f;
             g -= 1f;
             b -= 1f;
-            t += 255f;
+            t = 255f;
         }
         float[] matrix = {
                 r, 0, 0, 0, t,
@@ -198,10 +198,14 @@ public class MupdfMacro {
      * 页面背景颜色（纸张色）
      */
     public static final String bundle_key_background_color = "background_color";
+    public static final String bundle_key_background_color_configured = "background_color_configured";
     /**
-     * 亮度偏移
+     * 窗口亮度
      */
     public static final String bundle_key_brightness = "brightness";
+    public static final String bundle_key_brightness_configured = "brightness_configured";
+    public static final String bundle_key_zoom_percent = "zoom_percent";
+    public static final String bundle_key_zoom_percent_configured = "zoom_percent_configured";
     //</editor-fold>
 
     //<editor-fold desc="共享批注相关">

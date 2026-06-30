@@ -98,7 +98,7 @@ public class ReaderView
      */
     private boolean isInAnnotation;
     /**
-     * 批注画板正在双指滑动中，阻止 settle 及 HQ 渲染
+     * 批注画板正在双指滑动中，阻止 settle
      */
     private boolean mAnnotationMultiTouch;
     /**
@@ -181,6 +181,14 @@ public class ReaderView
         public abstract void applyToView(View view);
     }
 
+    public interface ScaleBoundsProvider {
+        float getMinScale();
+
+        float getMaxScale();
+    }
+
+    private ScaleBoundsProvider scaleBoundsProvider;
+
     public ReaderView(Context context) {
         super(context);
         setup(context);
@@ -204,12 +212,28 @@ public class ReaderView
     }
 
     public void setScale(float scale) {
-        mScale = scale;
-        mDefaultScale = scale;
+        mScale = clampScale(scale);
+        mDefaultScale = mScale;
     }
 
     public float getScale() {
         return mScale;
+    }
+
+    public void setScaleBoundsProvider(ScaleBoundsProvider provider) {
+        scaleBoundsProvider = provider;
+    }
+
+    private float clampScale(float scale) {
+        float min = MIN_SCALE;
+        float max = MAX_SCALE;
+        if (scaleBoundsProvider != null) {
+            min = scaleBoundsProvider.getMinScale();
+            max = scaleBoundsProvider.getMaxScale();
+        }
+        min = Math.max(0.01f, min);
+        max = Math.max(min, max);
+        return Math.min(Math.max(scale, min), max);
     }
 
     /** 获取文档绝对滚动偏移（供外部标注确定操作页用） */
@@ -219,22 +243,44 @@ public class ReaderView
 
     /** 根据屏幕 Y 坐标查找所在的页面索引 */
     public int findPageAtScreenY(float screenY) {
+        recalculatePagePositions();
         return findPageAtY(mScrollY + (int) screenY);
     }
 
     /** 获取指定页在屏幕上的 Y 坐标 */
     public int getPageScreenTop(int pageIndex) {
+        recalculatePagePositions();
         return mPagePositions.get(pageIndex, 0) - mScrollY;
     }
 
     /** 获取指定页在文档坐标系中的 Y 坐标 */
     public int getPageDocTop(int pageIndex) {
+        recalculatePagePositions();
         return mPagePositions.get(pageIndex, 0);
     }
 
     /** 获取指定页缩放后像素高度 */
     public int getPageDisplayHeight(int pageIndex) {
+        recalculatePagePositions();
         return getPageHeight(pageIndex);
+    }
+
+    /** 获取指定页缩放后像素宽度 */
+    public int getPageDisplayWidth(int pageIndex) {
+        View child = mChildViews.get(pageIndex);
+        if (child != null && child.getMeasuredWidth() > 0) {
+            return child.getMeasuredWidth();
+        }
+        return Math.max(1, (int) (getWidth() * mScale));
+    }
+
+    /** 获取指定页在屏幕上的 X 坐标 */
+    public int getPageScreenLeft(int pageIndex) {
+        View child = mChildViews.get(pageIndex);
+        if (child != null) {
+            return child.getLeft();
+        }
+        return (getWidth() - getPageDisplayWidth(pageIndex)) / 2;
     }
 
     private void setup(Context context) {
@@ -278,7 +324,7 @@ public class ReaderView
     }
 
     public void setDisplayedViewIndex(int i) {
-        if (0 <= i && i < mAdapter.getCount()) {
+        if (mAdapter != null && 0 <= i && i < mAdapter.getCount()) {
             onMoveOffChild(mCurrent);
             mCurrent = i;
             onMoveToChild(i);
@@ -353,6 +399,22 @@ public class ReaderView
             mapper.applyToView(mChildViews.valueAt(i));
     }
 
+    public void releaseAllBitmaps() {
+        for (int i = 0; i < mChildViews.size(); i++) {
+            View v = mChildViews.valueAt(i);
+            if (v instanceof PageView) {
+                ((PageView) v).releaseBitmaps();
+            }
+        }
+        for (View v : mViewCache) {
+            if (v instanceof PageView) {
+                ((PageView) v).releaseBitmaps();
+            }
+        }
+        mChildViews.clear();
+        mViewCache.clear();
+    }
+
     /**
      * 批注后调用
      */
@@ -360,16 +422,20 @@ public class ReaderView
         Debugger.i("afterAnnotation：start");
 
         mResetLayout = true;
+        if (mAdapter == null) {
+            Debugger.i("afterAnnotation：adapter is null");
+            return;
+        }
 
         //由于页面和屏幕的大小都发生了变化，导致大小和位图无效，因此所有页面视图都需要重新创建。
         mAdapter.refresh();
-        for (int i = 0; i < mChildViews.size(); i++) {
-            if (mCurrent == i) {
-                View v = mChildViews.valueAt(i);
-                onNotInUse(v);
-                removeViewInLayout(v);
-            }
+        int numChildren = mChildViews.size();
+        for (int i = 0; i < numChildren; i++) {
+            View v = mChildViews.valueAt(i);
+            onNotInUse(v);
+            removeViewInLayout(v);
         }
+        mChildViews.clear();
         //需要清理缓存，不然会在加载存在批注的页面时闪烁
         mViewCache.clear();
 
@@ -443,6 +509,7 @@ public class ReaderView
         if (isSimulating) return true;
 
         // 连续拼页：Fling 直接以全局坐标滚动
+        recalculatePagePositions();
         Rect bounds = getGlobalScrollBounds();
         mScrollerLastX = mScrollerLastY = 0;
         mScroller.fling(0, 0, (int)velocityX, (int)velocityY, bounds.left, bounds.right, bounds.top, bounds.bottom);
@@ -475,7 +542,7 @@ public class ReaderView
     public void defaultScale(float scale) {
         Debugger.i(TAG, "ReaderView.defaultScale: " + scale);
         float previousScale = mScale;
-        mScale = scale;
+        mScale = clampScale(scale);
 
         // 连续拼页：缩放后页面高度变化，需重算位置
         mPageHeights.clear();
@@ -491,7 +558,7 @@ public class ReaderView
         if (isSigning) return false;
         float previousScale = mScale;
         float scaleFactor = detector.getScaleFactor();
-        mScale = Math.min(Math.max(mScale * scaleFactor, MIN_SCALE), MAX_SCALE);
+        mScale = clampScale(mScale * scaleFactor);
 
         // 连续拼页：缩放后页面高度变化，需重算位置
         mPageHeights.clear();
@@ -534,7 +601,7 @@ public class ReaderView
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if ((event.getAction() & event.getActionMasked()) == MotionEvent.ACTION_DOWN) {
+        if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_DOWN) {
             tapDisabled = false;
         }
 
@@ -549,6 +616,11 @@ public class ReaderView
             // 连续拼页：抬指后触发一次 layout，由 onLayout2 统一处理 mCurrent 更新和 settle
             if (mScroller.isFinished()) requestLayout();
         }
+        if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_CANCEL) {
+            mUserInteracting = false;
+            mScaling = false;
+            if (mScroller.isFinished()) requestLayout();
+        }
 
         requestLayout();
         return !isInAnnotation;
@@ -558,7 +630,7 @@ public class ReaderView
         this.isInAnnotation = isInAnnotation;
     }
 
-    /** 告知 ReaderView 批注画板正在双指手势中，期间阻止 settle/HQ 渲染 */
+    /** 告知 ReaderView 批注画板正在双指手势中，期间阻止 settle */
     public void setAnnotationMultiTouch(boolean multiTouching) {
         this.mAnnotationMultiTouch = multiTouching;
     }
@@ -567,10 +639,16 @@ public class ReaderView
      * 批注画板双指平移 PDF 上下文（由 AnnotationArtBoard 调用）。
      * dx,dy: 手指双指中心在屏幕上的位移量（像素）
      */
-    public void scrollBy(float dx, float dy) {
-        mXScroll -= (int) dx;
-        mYScroll -= (int) dy;
+    public int scrollBy(float dx, float dy) {
+        recalculatePagePositions();
+        mXScroll = 0;
+        mYScroll = 0;
+        mScrollY += (int) dy;
+        int maxScroll = Math.max(0, mTotalDocumentHeight - getHeight());
+        if (mScrollY < 0) mScrollY = 0;
+        if (mScrollY > maxScroll) mScrollY = maxScroll;
         requestLayout();
+        return mScrollY;
     }
 
     /**
@@ -579,7 +657,7 @@ public class ReaderView
     public void zoomBy(float scaleFactor, float focusX, float focusY) {
         if (isSigning) return;
         float prev = mScale;
-        mScale = Math.min(Math.max(mScale * scaleFactor, MIN_SCALE), MAX_SCALE);
+        mScale = clampScale(mScale * scaleFactor);
         float factor = mScale / prev;
         int docFocusY = mScrollY + (int) focusY;
         mScrollY = (int) (docFocusY * factor - focusY);
@@ -616,6 +694,10 @@ public class ReaderView
         int screenWidth = right - left;
         int screenHeight = bottom - top;
         int count = mAdapter != null ? mAdapter.getCount() : 0;
+        if (screenWidth <= 0 || screenHeight <= 0 || count <= 0) {
+            Debugger.i(TAG, "onLayout2: skip invalid size/count width=" + screenWidth + ",height=" + screenHeight + ",count=" + count);
+            return;
+        }
 
         // --- 1. 确保位置计算最新 ---
         recalculatePagePositions();
@@ -676,7 +758,7 @@ public class ReaderView
             child.layout(cx, cy, cx + childW, cy + childH);
         }
 
-        // --- 7. 滚动停止时更新 mCurrent 并触发 HQ 渲染 ---
+        // --- 7. 滚动停止时更新 mCurrent ---
         boolean settled = !mUserInteracting && mScroller.isFinished() && !mAnnotationMultiTouch;
         if (settled) {
             int newCurrent = findMostVisiblePage();
@@ -685,9 +767,6 @@ public class ReaderView
                 mCurrent = newCurrent;
                 onMoveToChild(mCurrent);
             }
-            // 仅对当前页触发 HQ settle——多页并发渲染会导致 native 设备栈异常
-            View cv = mChildViews.get(mCurrent);
-            if (cv != null) postSettle(cv);
         }
 
         Debugger.i(TAG, "onLayout2: invalidate mCurrent=" + mCurrent + " mScrollY=" + mScrollY);
@@ -754,10 +833,15 @@ public class ReaderView
         // 查看视图所需的尺寸
         v.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         // 连续拼页：所有页面按统一宽度缩放，不再限制高度
-        float scale = (float) getWidth() / (float) v.getMeasuredWidth();
+        int measuredWidth = Math.max(1, v.getMeasuredWidth());
+        int measuredHeight = Math.max(1, v.getMeasuredHeight());
+        int parentWidth = Math.max(1, getWidth());
+        float scale = (float) parentWidth / (float) measuredWidth;
         // 使用按当前比例因子缩放的拟合值
-        v.measure(View.MeasureSpec.EXACTLY | (int) (v.getMeasuredWidth() * scale * mScale),
-                View.MeasureSpec.EXACTLY | (int) (v.getMeasuredHeight() * scale * mScale));
+        int targetWidth = Math.max(1, (int) (measuredWidth * scale * mScale));
+        int targetHeight = Math.max(1, (int) (measuredHeight * scale * mScale));
+        v.measure(View.MeasureSpec.makeMeasureSpec(targetWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(targetHeight, View.MeasureSpec.EXACTLY));
     }
 
     // ====== 连续拼页辅助方法 ======
@@ -801,10 +885,16 @@ public class ReaderView
 
     /** 查找文档 Y 坐标落在哪一页 */
     public int findPageAtY(int y) {
+        recalculatePagePositions();
         int count = mAdapter != null ? mAdapter.getCount() : 0;
         for (int i = 0; i < count; i++) {
             int top = mPagePositions.get(i, 0);
             int bottom = top + getPageHeight(i);
+            if (y < top) {
+                if (i == 0) return 0;
+                int prevBottom = mPagePositions.get(i - 1, 0) + getPageHeight(i - 1);
+                return (y - prevBottom <= top - y) ? i - 1 : i;
+            }
             if (y >= top && y < bottom) return i;
         }
         // y 落在文档末尾之后 → 返回最后一页
@@ -1002,15 +1092,9 @@ public class ReaderView
     }
 
     protected void onSettle(View v) {
-        // When the layout has settled ask the page to render
-        // in HQ
-        ((PageView) v).updateHq(false);
     }
 
     protected void onUnsettle(View v) {
-        // When something changes making the previous settled view
-        // no longer appropriate, tell the page to remove HQ
-        ((PageView) v).removeHq();
     }
 
     protected void onNotInUse(View v) {

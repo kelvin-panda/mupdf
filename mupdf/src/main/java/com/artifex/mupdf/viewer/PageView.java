@@ -12,7 +12,6 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Point;
 import android.graphics.PointF;
-import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.AsyncTask;
@@ -84,6 +83,8 @@ public class PageView extends ViewGroup {
     private static final int BOX_COLOR = 0xFF4444FF;
     private static final int BACKGROUND_COLOR = 0xFFFFFFFF;
     private static final int PROGRESS_DIALOG_DELAY = 200;
+    private static final int MAX_BITMAP_DIMENSION = 4096;
+    private static final long MAX_BITMAP_BYTES = 64L * 1024L * 1024L;
 
     protected final Context mContext;
     private final String mWaterMark;
@@ -108,11 +109,6 @@ public class PageView extends ViewGroup {
     private AsyncTask<Void, Void, Link[]> mGetLinkInfo;
     private CancellableAsyncTask<Void, Boolean> mDrawEntire;
 
-    private Point mPatchViewSize; // View size on the basis of which the patch was created
-    private Rect mPatchArea;//pdf内容展示区域，比如：放大时的拖动
-    private ImageView mPatch;
-    private Bitmap mPatchBm;
-    private CancellableAsyncTask<Void, Boolean> mDrawPatch;
     private Quad mSearchBoxes[][];
     protected Link mLinks[];
     private View mSearchView;
@@ -123,21 +119,95 @@ public class PageView extends ViewGroup {
 
     private ProgressBar mBusyIndicator;
     private final Handler mHandler = new Handler();
+    private int mRenderedWidth;
+    private int mRenderedHeight;
+    private int mRenderedPage = -1;
 
-    public PageView(Context c, MuPDFCore core, Point parentSize, Bitmap sharedHqBm, String watermark) {
+    public PageView(Context c, MuPDFCore core, Point parentSize, String watermark) {
         super(c);
         mContext = c;
         mCore = core;
-        mParentSize = parentSize;
+        mParentSize = safePoint(parentSize);
         setBackgroundColor(MupdfMacro.backgroundColor);
-        mEntireBm = Bitmap.createBitmap((int) parentSize.x, (int) parentSize.y, Config.ARGB_8888);
-        mPatchBm = sharedHqBm;
+        mEntireBm = createBitmapSafely(mParentSize.x, mParentSize.y);
         mEntireMat = new Matrix();
         mWaterMark = watermark;
     }
 
     public Bitmap getEntireBm() {
+        if (mEntireBm == null || mEntireBm.isRecycled())
+            return null;
         return Bitmap.createBitmap(mEntireBm);
+    }
+
+    private Point safePoint(Point point) {
+        if (point == null) {
+            return new Point(1, 1);
+        }
+        return new Point(Math.max(1, point.x), Math.max(1, point.y));
+    }
+
+    private Bitmap createBitmapSafely(int width, int height) {
+        int safeWidth = Math.max(1, width);
+        int safeHeight = Math.max(1, height);
+        try {
+            return Bitmap.createBitmap(safeWidth, safeHeight, Config.ARGB_8888);
+        } catch (OutOfMemoryError e) {
+            Debugger.e(TAG, Debugger.getFullStackTrace(e));
+            return null;
+        } catch (IllegalArgumentException e) {
+            Debugger.e(TAG, e);
+            return null;
+        }
+    }
+
+    private void clearEntireBitmap(boolean clearImage) {
+        if (clearImage && mEntire != null) {
+            mEntire.setImageBitmap(null);
+            mEntire.invalidate();
+        }
+        if (mEntireBm != null && !mEntireBm.isRecycled()) {
+            mEntireBm.recycle();
+        }
+        mEntireBm = null;
+        mRenderedWidth = 0;
+        mRenderedHeight = 0;
+        mRenderedPage = -1;
+    }
+
+    private boolean ensureEntireBitmap() {
+        if (mEntireBm != null && !mEntireBm.isRecycled())
+            return true;
+        mEntireBm = createBitmapSafely(mParentSize.x, mParentSize.y);
+        return mEntireBm != null && !mEntireBm.isRecycled();
+    }
+
+    private boolean ensureEntireBitmap(int width, int height) {
+        int safeWidth = Math.max(1, width);
+        int safeHeight = Math.max(1, height);
+        if (mEntireBm != null && !mEntireBm.isRecycled()
+                && mEntireBm.getWidth() == safeWidth && mEntireBm.getHeight() == safeHeight)
+            return true;
+        clearEntireBitmap(true);
+        mEntireBm = createBitmapSafely(safeWidth, safeHeight);
+        return mEntireBm != null && !mEntireBm.isRecycled();
+    }
+
+    private Point limitBitmapSize(int width, int height) {
+        int safeWidth = Math.max(1, width);
+        int safeHeight = Math.max(1, height);
+        double scale = 1.0;
+        scale = Math.min(scale, (double) MAX_BITMAP_DIMENSION / safeWidth);
+        scale = Math.min(scale, (double) MAX_BITMAP_DIMENSION / safeHeight);
+        long bytes = (long) safeWidth * (long) safeHeight * 4L;
+        if (bytes > MAX_BITMAP_BYTES) {
+            scale = Math.min(scale, Math.sqrt((double) MAX_BITMAP_BYTES / bytes));
+        }
+        if (scale < 1.0) {
+            safeWidth = Math.max(1, (int) Math.floor(safeWidth * scale));
+            safeHeight = Math.max(1, (int) Math.floor(safeHeight * scale));
+        }
+        return new Point(safeWidth, safeHeight);
     }
 
     private void reinit() {
@@ -145,11 +215,6 @@ public class PageView extends ViewGroup {
         if (mDrawEntire != null) {
             mDrawEntire.cancel();
             mDrawEntire = null;
-        }
-
-        if (mDrawPatch != null) {
-            mDrawPatch.cancel();
-            mDrawPatch = null;
         }
 
         if (mGetLinkInfo != null) {
@@ -163,20 +228,7 @@ public class PageView extends ViewGroup {
         if (mSize == null)
             mSize = mParentSize;
 
-        if (mEntire != null) {
-            // reinit 中不设 null，保留旧图作为渲染完成前的占位，
-            // 消除页面回收后再入视口的白闪。需真正清空时由调用方自行处理。
-            // mEntire.setImageBitmap(null);
-            mEntire.invalidate();
-        }
-
-        if (mPatch != null) {
-            // mPatch.setImageBitmap(null);
-            mPatch.invalidate();
-        }
-
-        mPatchViewSize = null;
-        mPatchArea = null;
+        if (mEntire != null) mEntire.invalidate();
 
         mSearchBoxes = null;
         mLinks = null;
@@ -202,20 +254,9 @@ public class PageView extends ViewGroup {
             mEntire.setImageBitmap(null);
             mEntire.invalidate();
         }
-        if (mPatch != null) {
-            mPatch.setImageBitmap(null);
-            mPatch.invalidate();
-        }
-
         // recycle bitmaps before releasing them.
 
-        if (mEntireBm != null)
-            mEntireBm.recycle();
-        mEntireBm = null;
-
-        if (mPatchBm != null)
-            mPatchBm.recycle();
-        mPatchBm = null;
+        clearEntireBitmap(true);
     }
 
     public void blank(int page) {
@@ -227,11 +268,9 @@ public class PageView extends ViewGroup {
             mEntire.setImageBitmap(null);
             mEntire.invalidate();
         }
-        if (mPatch != null) {
-            mPatch.setImageBitmap(null);
-            mPatch.invalidate();
-        }
-
+        mRenderedWidth = 0;
+        mRenderedHeight = 0;
+        mRenderedPage = -1;
         if (mBusyIndicator == null) {
             mBusyIndicator = new ProgressBar(mContext);
             mBusyIndicator.setIndeterminate(true);
@@ -294,7 +333,8 @@ public class PageView extends ViewGroup {
                     1280, 720   // 720p
             };
             // 选择要限制的分辨率级别（例如4K级别，索引2-3）
-            int limitIndex = MupdfMacro.clarityLimitMode * 2; // 0:8K, 2:4K, 4:2K, 6:1080p, 8:720p
+            int limitMode = Math.max(0, Math.min(MupdfMacro.clarityLimitMode, RESOLUTION_LIMITS.length / 2 - 1));
+            int limitIndex = limitMode * 2; // 0:8K, 2:4K, 4:2K, 6:1080p, 8:720p
 
             int maxWidth = RESOLUTION_LIMITS[limitIndex];
             int maxHeight = RESOLUTION_LIMITS[limitIndex + 1];
@@ -337,6 +377,11 @@ public class PageView extends ViewGroup {
         if (mErrorIndicator != null)
             return;
 
+        if (!ensureEntireBitmap(mSize.x, mSize.y)) {
+            setRenderError("Error allocating page bitmap");
+            return;
+        }
+
         if (mEntire == null) {
             mEntire = new OpaqueImageView(mContext, mWaterMark);
             mEntire.setScaleType(ImageView.ScaleType.MATRIX);
@@ -346,7 +391,9 @@ public class PageView extends ViewGroup {
         // filter whenever a cached view is assigned to another page.
         applyColorFilter(mEntire);
 
-        // 不设 null——渲染完成前保留旧内容，消除页面切换时的白闪。
+        if (mRenderedPage != page) {
+            mEntire.setImageBitmap(null);
+        }
         mEntire.invalidate();
 
         // 在后台获取链接信息
@@ -364,47 +411,8 @@ public class PageView extends ViewGroup {
 
         mGetLinkInfo.execute();*/
 
-        Debugger.d(TAG, "调用 getDrawPageTask setPage page=" + page);
-        // 在后台渲染页面
-        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(getDrawPageTask(mEntireBm, mSize.x, mSize.y, 0, 0, mSize.x, mSize.y)) {
-
-            @Override
-            public void onPreExecute() {
-                Debugger.i(TAG, "后台渲染页面 setPage onPreExecute page=" + page);
-                setBackgroundColor(MupdfMacro.backgroundColor);
-                mEntire.invalidate();
-
-                if (mBusyIndicator == null) {
-                    mBusyIndicator = new ProgressBar(mContext);
-                    mBusyIndicator.setIndeterminate(true);
-                    addView(mBusyIndicator);
-                    mBusyIndicator.setVisibility(INVISIBLE);
-                    mHandler.postDelayed(new Runnable() {
-                        public void run() {
-                            if (mBusyIndicator != null)
-                                mBusyIndicator.setVisibility(VISIBLE);
-                        }
-                    }, PROGRESS_DIALOG_DELAY);
-                }
-            }
-
-            @Override
-            public void onPostExecute(Boolean result) {
-                Debugger.i(TAG, "后台渲染页面 setPage onPostExecute: " + result + ",page=" + page);
-                removeView(mBusyIndicator);
-                mBusyIndicator = null;
-                if (result.booleanValue()) {
-                    clearRenderError();
-                    mEntire.setImageBitmap(mEntireBm);
-                    mEntire.invalidate();
-                } else {
-                    setRenderError("Error rendering page");
-                }
-                setBackgroundColor(Color.TRANSPARENT);
-            }
-        };
-
-        mDrawEntire.execute();
+        Debugger.d(TAG, "调用 renderEntirePage setPage page=" + page);
+        renderEntirePage(mSize.x, mSize.y, false);
 
         if (mSearchView == null) {
             mSearchView = new View(mContext) {
@@ -447,6 +455,84 @@ public class PageView extends ViewGroup {
 
         Debugger.d(TAG, "setPage 调用 requestLayout page=" + page);
         requestLayout();
+    }
+
+    private void renderEntirePage(final int width, final int height, final boolean update) {
+        if (mIsBlank || width <= 0 || height <= 0)
+            return;
+
+        if (mDrawEntire != null)
+            return;
+
+        Point renderSize = limitBitmapSize(width, height);
+        if (!ensureEntireBitmap(renderSize.x, renderSize.y)) {
+            setRenderError("Error allocating page bitmap");
+            return;
+        }
+
+        final int renderPage = mPageNumber;
+        final int targetW = width;
+        final int targetH = height;
+        final int renderW = renderSize.x;
+        final int renderH = renderSize.y;
+        CancellableTaskDefinition<Void, Boolean> task = update
+                ? getUpdatePageTask(mEntireBm, renderPage, renderW, renderH, 0, 0, renderW, renderH)
+                : getDrawPageTask(mEntireBm, renderPage, renderW, renderH, 0, 0, renderW, renderH);
+
+        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task) {
+            @Override
+            public void onPreExecute() {
+                setBackgroundColor(MupdfMacro.backgroundColor);
+                if (mEntire != null)
+                    mEntire.invalidate();
+
+                if (mBusyIndicator == null) {
+                    mBusyIndicator = new ProgressBar(mContext);
+                    mBusyIndicator.setIndeterminate(true);
+                    addView(mBusyIndicator);
+                    mBusyIndicator.setVisibility(INVISIBLE);
+                    mHandler.postDelayed(new Runnable() {
+                        public void run() {
+                            if (mBusyIndicator != null)
+                                mBusyIndicator.setVisibility(VISIBLE);
+                        }
+                    }, PROGRESS_DIALOG_DELAY);
+                }
+            }
+
+            @Override
+            public void onPostExecute(Boolean result) {
+                mDrawEntire = null;
+                if (mBusyIndicator != null)
+                    removeView(mBusyIndicator);
+                mBusyIndicator = null;
+
+                if (mPageNumber != renderPage)
+                    return;
+
+                if (result.booleanValue()) {
+                    clearRenderError();
+                    int viewW = getWidth();
+                    int viewH = getHeight();
+                    if (viewW > 0 && viewH > 0 && (viewW != targetW || viewH != targetH)) {
+                        renderEntirePage(viewW, viewH, false);
+                        return;
+                    }
+                    mRenderedWidth = targetW;
+                    mRenderedHeight = targetH;
+                    mRenderedPage = renderPage;
+                    if (mEntire != null && mEntireBm != null && !mEntireBm.isRecycled()) {
+                        mEntire.setImageBitmap(mEntireBm);
+                        mEntire.invalidate();
+                    }
+                } else {
+                    setRenderError(update ? "Error updating page" : "Error rendering page");
+                }
+                setBackgroundColor(Color.TRANSPARENT);
+            }
+        };
+
+        mDrawEntire.execute();
     }
 
     public void setSearchBoxes(Quad searchBoxes[][]) {
@@ -498,8 +584,10 @@ public class PageView extends ViewGroup {
         Debugger.i(TAG, "onLayout: changed:" + changed + ",left:" + left + ",top:" + top + ",right:" + right + ",bottom:" + bottom + ",w:" + w + ",h:" + h);
         if (mEntire != null) {
             Debugger.i(TAG, "onLayout: mEntire:" + mEntire.getWidth() + " x " + mEntire.getHeight() + ",mSize:" + mSize);
-            if (mEntire.getWidth() != w || mEntire.getHeight() != h) {
-                mEntireMat.setScale(w / (float) mSize.x, h / (float) mSize.y);
+            int bitmapW = mEntireBm != null && !mEntireBm.isRecycled() ? mEntireBm.getWidth() : mSize.x;
+            int bitmapH = mEntireBm != null && !mEntireBm.isRecycled() ? mEntireBm.getHeight() : mSize.y;
+            if (bitmapW > 0 && bitmapH > 0) {
+                mEntireMat.setScale(w / (float) bitmapW, h / (float) bitmapH);
                 mEntire.setImageMatrix(mEntireMat);
                 mEntire.invalidate();
             }
@@ -510,20 +598,9 @@ public class PageView extends ViewGroup {
             mSearchView.layout(0, 0, w, h);
         }
 
-        if (mPatchViewSize != null) {
-            if (mPatchViewSize.x != w || mPatchViewSize.y != h) {
-                // Zoomed since patch was created
-                Debugger.d(TAG, "onLayout Zoomed since patch was created mPatchViewSize:" + mPatchViewSize + ",mPatch!=null:" + (mPatch != null));
-                mPatchViewSize = null;
-                mPatchArea = null;
-                if (mPatch != null) {
-                    mPatch.setImageBitmap(null);
-                    mPatch.invalidate();
-                }
-            } else {
-                Debugger.d(TAG, "onLayout mPatch.layout mPatchArea:" + mPatchArea);
-                mPatch.layout(mPatchArea.left, mPatchArea.top, mPatchArea.right, mPatchArea.bottom);
-            }
+        if (!mIsBlank && mErrorIndicator == null && w > 0 && h > 0
+                && (mRenderedWidth != w || mRenderedHeight != h)) {
+            renderEntirePage(w, h, false);
         }
 
         if (mBusyIndicator != null) {
@@ -540,143 +617,11 @@ public class PageView extends ViewGroup {
         }
     }
 
-    public void updateHq(boolean update) {
-//        try {
-//            throw new Exception("哪里调用");
-//        } catch (Exception e) {
-//            Debugger.e(e);
-//        }
-        if (mErrorIndicator != null) {
-            if (mPatch != null) {
-                mPatch.setImageBitmap(null);
-                mPatch.invalidate();
-            }
-            return;
-        }
-
-        Rect viewArea = new Rect(getLeft(), getTop(), getRight(), getBottom());
-        Debugger.i(TAG, "updateHq: viewArea:" + viewArea + ",mSize:" + mSize);
-        final Point patchViewSize = new Point(viewArea.width(), viewArea.height());
-        final Rect patchArea = new Rect(0, 0, (int) mParentSize.x, (int) mParentSize.y);
-        Debugger.i(TAG, "updateHq: patchViewSize:" + patchViewSize + ",patchArea:" + patchArea);
-        // 相交并测试是否有交叉点
-        if (!patchArea.intersect(viewArea))
-            return;
-
-        // 相对于视图左上方的偏移贴片区域
-        patchArea.offset(-viewArea.left, -viewArea.top);
-        Debugger.i(TAG, "updateHq: mPatchArea:" + mPatchArea + ",mPatchViewSize:" + mPatchViewSize);
-
-        boolean area_unchanged = patchArea.equals(mPatchArea) && patchViewSize.equals(mPatchViewSize);
-
-        // 如果被要求的区域与上次相同，并且不是因为更新，则不需要做什么。
-        if (area_unchanged && !update)
-            return;
-
-        boolean completeRedraw = !(area_unchanged && update);
-
-        // 如果仍在进行，则停止绘制之前的补丁
-        if (mDrawPatch != null) {
-            Debugger.d(TAG, "updateHq mDrawPatch.cancel() 如果仍在进行，则停止绘制之前的补丁");
-            mDrawPatch.cancel();
-            mDrawPatch = null;
-        }
-
-        // 创建并添加图像视图（如果尚未完成）。
-        if (mPatch == null) {
-            Debugger.d(TAG, "updateHq new OpaqueImageView 创建并添加图像视图（如果尚未完成）。");
-            mPatch = new OpaqueImageView(mContext, mWaterMark);
-            mPatch.setScaleType(ImageView.ScaleType.MATRIX);
-            addView(mPatch);
-            if (mSearchView != null)
-                mSearchView.bringToFront();
-        }
-        applyColorFilter(mPatch);
-
-        CancellableTaskDefinition<Void, Boolean> task;
-        Debugger.i(TAG, "updateHq: completeRedraw:" + completeRedraw + ",update:" + update);
-        if (completeRedraw) {
-            Debugger.d(TAG, "updateHq 调用 getDrawPageTask updateHq");
-            task = getDrawPageTask(mPatchBm, patchViewSize.x, patchViewSize.y,
-                    patchArea.left, patchArea.top,
-                    patchArea.width(), patchArea.height());
-        } else {
-            task = getUpdatePageTask(mPatchBm, patchViewSize.x, patchViewSize.y,
-                    patchArea.left, patchArea.top,
-                    patchArea.width(), patchArea.height());
-        }
-        mDrawPatch = new CancellableAsyncTask<Void, Boolean>(task) {
-
-            public void onPostExecute(Boolean result) {
-                if (result.booleanValue()) {
-                    mPatchViewSize = patchViewSize;
-                    mPatchArea = patchArea;
-                    clearRenderError();
-                    mPatch.setImageBitmap(mPatchBm);
-                    mPatch.invalidate();
-                    Debugger.i(TAG, "onPostExecute: updateHq mDrawPatch");
-                    //requestLayout();
-                    // 在这里调用requestLayout并不会导致后来对layout的调用。
-                    // 不知道为什么，但显然其他人遇到了这个问题。
-                    mPatch.layout(mPatchArea.left, mPatchArea.top, mPatchArea.right, mPatchArea.bottom);
-                } else {
-                    setRenderError("Error rendering patch");
-                }
-            }
-        };
-
-        mDrawPatch.execute();
-        Debugger.i(TAG, "updateHq: end");
-    }
-
     public void update() {
         Debugger.d(TAG, "update: ");
-        // 取消待定的渲染任务
-        if (mDrawEntire != null) {
-            mDrawEntire.cancel();
-            mDrawEntire = null;
-        }
-
-        if (mDrawPatch != null) {
-            mDrawPatch.cancel();
-            mDrawPatch = null;
-        }
-
-        // 在后台渲染页面
-        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(getUpdatePageTask(mEntireBm, mSize.x, mSize.y, 0, 0, mSize.x, mSize.y)) {
-
-            public void onPostExecute(Boolean result) {
-                if (result.booleanValue()) {
-                    Debugger.i(TAG, "onPostExecute: update mDrawEntire");
-                    clearRenderError();
-                    mEntire.setImageBitmap(mEntireBm);
-                    mEntire.invalidate();
-                } else {
-                    setRenderError("Error updating page");
-                }
-            }
-        };
-
-        mDrawEntire.execute();
-        Debugger.d(TAG, "update 调用updateHq方法");
-        updateHq(true);
-    }
-
-    public void removeHq() {
-        Debugger.d(TAG, "removeHq");
-        // 如果仍在进行，则停止绘制补丁
-        if (mDrawPatch != null) {
-            mDrawPatch.cancel();
-            mDrawPatch = null;
-        }
-
-        // 并把它弄走
-        mPatchViewSize = null;
-        mPatchArea = null;
-        if (mPatch != null) {
-            mPatch.setImageBitmap(null);
-            mPatch.invalidate();
-        }
+        int width = getWidth() > 0 ? getWidth() : mSize.x;
+        int height = getHeight() > 0 ? getHeight() : mSize.y;
+        renderEntirePage(width, height, true);
     }
 
     public int getPage() {
@@ -684,8 +629,8 @@ public class PageView extends ViewGroup {
     }
 
     /**
-     * 将背景颜色（纸张色）与亮度作为颜色滤镜应用到渲染图像上。
-     * 默认（白底/亮度0）时 {@link MupdfMacro#buildColorFilter()} 返回 null，即不做处理。
+     * 将背景颜色（纸张色）作为颜色滤镜应用到渲染图像上。
+     * 默认白底时 {@link MupdfMacro#buildColorFilter()} 返回 null，即不做处理。
      */
     private void applyColorFilter(ImageView imageView) {
         if (imageView != null) {
@@ -694,15 +639,12 @@ public class PageView extends ViewGroup {
     }
 
     /**
-     * 运行时刷新背景颜色与亮度设置。修改 {@link MupdfMacro#backgroundColor}
-     * 或 {@link MupdfMacro#brightness} 后调用即可立即生效。
+     * 运行时刷新背景颜色设置。修改 {@link MupdfMacro#backgroundColor} 后调用即可立即生效。
      */
     public void refreshColorFilter() {
         applyColorFilter(mEntire);
-        applyColorFilter(mPatch);
         setBackgroundColor(MupdfMacro.backgroundColor);
         if (mEntire != null) mEntire.invalidate();
-        if (mPatch != null) mPatch.invalidate();
     }
 
     @Override
@@ -745,12 +687,14 @@ public class PageView extends ViewGroup {
         return 0;
     }
 
-    protected CancellableTaskDefinition<Void, Boolean> getDrawPageTask(final Bitmap bm, final int sizeX, final int sizeY,
+    protected CancellableTaskDefinition<Void, Boolean> getDrawPageTask(final Bitmap bm, final int pageNumber,
+                                                                       final int sizeX, final int sizeY,
                                                                        final int patchX, final int patchY, final int patchWidth, final int patchHeight) {
+        final int taskPageNumber = pageNumber;
         return new MuPDFCancellableTaskDefinition<Void, Boolean>() {
             @Override
             public Boolean doInBackground(Cookie cookie, Void... params) {
-                if (bm == null)
+                if (bm == null || bm.isRecycled() || sizeX <= 0 || sizeY <= 0 || patchWidth <= 0 || patchHeight <= 0)
                     return new Boolean(false);
                 // Workaround bug in Android Honeycomb 3.x, where the bitmap generation count
                 // is not incremented when drawing.
@@ -758,11 +702,12 @@ public class PageView extends ViewGroup {
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH)
                     bm.eraseColor(0);
                 try {
-                    Debugger.i(TAG, "getDrawPageTask doInBackground start mCore.drawPage mPageNumber:" + mPageNumber);
-                    mCore.drawPage(bm, mPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
-                    Debugger.i(TAG, "getDrawPageTask doInBackground end mCore.drawPage mPageNumber:" + mPageNumber);
+                    Debugger.i(TAG, "getDrawPageTask doInBackground start mCore.drawPage page:" + taskPageNumber);
+                    mCore.drawPage(bm, taskPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
+                    Debugger.i(TAG, "getDrawPageTask doInBackground end mCore.drawPage page:" + taskPageNumber);
                     return new Boolean(true);
-                } catch (RuntimeException e) {
+                } catch (Throwable e) {
+                    Debugger.e(TAG, Debugger.getFullStackTrace(e));
                     return new Boolean(false);
                 }
             }
@@ -770,12 +715,14 @@ public class PageView extends ViewGroup {
 
     }
 
-    protected CancellableTaskDefinition<Void, Boolean> getUpdatePageTask(final Bitmap bm, final int sizeX, final int sizeY,
+    protected CancellableTaskDefinition<Void, Boolean> getUpdatePageTask(final Bitmap bm, final int pageNumber,
+                                                                         final int sizeX, final int sizeY,
                                                                          final int patchX, final int patchY, final int patchWidth, final int patchHeight) {
+        final int taskPageNumber = pageNumber;
         return new MuPDFCancellableTaskDefinition<Void, Boolean>() {
             @Override
             public Boolean doInBackground(Cookie cookie, Void... params) {
-                if (bm == null)
+                if (bm == null || bm.isRecycled() || sizeX <= 0 || sizeY <= 0 || patchWidth <= 0 || patchHeight <= 0)
                     return new Boolean(false);
                 // Workaround bug in Android Honeycomb 3.x, where the bitmap generation count
                 // is not incremented when drawing.
@@ -784,10 +731,11 @@ public class PageView extends ViewGroup {
                     bm.eraseColor(0);
                 try {
                     Debugger.i(TAG, "getUpdatePageTask doInBackground updatePage start");
-                    mCore.updatePage(bm, mPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
+                    mCore.updatePage(bm, taskPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
                     Debugger.i(TAG, "getUpdatePageTask doInBackground updatePage end");
                     return new Boolean(true);
-                } catch (RuntimeException e) {
+                } catch (Throwable e) {
+                    Debugger.e(TAG, Debugger.getFullStackTrace(e));
                     return new Boolean(false);
                 }
             }

@@ -1,23 +1,20 @@
 package com.artifex.mupdf.viewer;
 
 import android.content.Context;
-import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.PointF;
 import android.os.AsyncTask;
+import android.util.DisplayMetrics;
 import android.util.SparseArray;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 
 import com.artifex.mupdf.util.Debugger;
-import com.xlk.mupdf.library.MupdfMacro;
-
 public class PageAdapter extends BaseAdapter {
     private static final String TAG = "PageAdapter";
     private final Context mContext;
     private String mWaterMark = "";
-    private float mScale = 1.0f;
     private final MuPDFCore mCore;
     private final SparseArray<PointF> mPageSizes = new SparseArray<PointF>();
 
@@ -29,7 +26,6 @@ public class PageAdapter extends BaseAdapter {
     public PageAdapter(Context c, MuPDFCore core, float fullWidthScale, String watermark) {
         mContext = c;
         mCore = core;
-        mScale = fullWidthScale;
         mWaterMark = watermark;
     }
 
@@ -51,7 +47,6 @@ public class PageAdapter extends BaseAdapter {
     }
 
     public void releaseBitmaps() {
-        // 连续拼页：每个 PageView 独立持有 HQ 位图，由 PageView.releaseBitmaps() 各自回收
     }
 
     public void refresh() {
@@ -61,17 +56,12 @@ public class PageAdapter extends BaseAdapter {
     public View getView(final int position, View convertView, ViewGroup parent) {
         final PageView pageView;
         if (convertView == null) {
-            Point point = new Point(parent.getWidth(), parent.getHeight());
+            Point point = resolveParentSize(parent);
             int parentWidth = point.x;
             int parentHeight = point.y;
-            // 连续拼页：每个 PageView 独立创建 HQ 位图，避免多页渲染时共享位图互相覆盖
-            Bitmap hqBm = null;
-            if (parentWidth > 0 && parentHeight > 0)
-                hqBm = Bitmap.createBitmap(parentWidth, parentHeight, Bitmap.Config.ARGB_8888);
-
             Point parentSize = new Point(parentWidth, parentHeight);
             Debugger.i(TAG, "getView: parentSize=" + parentSize);
-            pageView = new PageView(mContext, mCore, parentSize, hqBm, mWaterMark);
+            pageView = new PageView(mContext, mCore, parentSize, mWaterMark);
         } else {
             pageView = (PageView) convertView;
         }
@@ -106,7 +96,9 @@ public class PageAdapter extends BaseAdapter {
                     // 页面默认撑满全宽由 ReaderView.measureView 的 mScale 独立负责，无需在此提前缩放。
                     super.onPostExecute(result);
                     // We now know the page size
-                    mPageSizes.put(position, result);
+                    if (result != null) {
+                        mPageSizes.put(position, result);
+                    }
                     // 检查自我们开始以来，此视图尚未被其他页面重复使用
                     if (page == position)
                         pageView.setPage(position, result);
@@ -116,6 +108,17 @@ public class PageAdapter extends BaseAdapter {
             sizingTask.execute((Void) null);
         }
         return pageView;
+    }
+
+    private Point resolveParentSize(ViewGroup parent) {
+        int parentWidth = parent != null ? parent.getWidth() : 0;
+        int parentHeight = parent != null ? parent.getHeight() : 0;
+        if (parentWidth <= 0 || parentHeight <= 0) {
+            DisplayMetrics dm = mContext.getResources().getDisplayMetrics();
+            if (parentWidth <= 0) parentWidth = dm.widthPixels;
+            if (parentHeight <= 0) parentHeight = dm.heightPixels;
+        }
+        return new Point(Math.max(1, parentWidth), Math.max(1, parentHeight));
     }
 
     /** 同步获取页面原始尺寸(72dpi)，用于连续拼页位置估算。已在 mPageSizes 缓存则直接返回。 */
