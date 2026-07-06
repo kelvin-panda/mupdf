@@ -11,7 +11,9 @@ import android.widget.ListView;
 import java.io.Serializable;
 import java.util.ArrayList;
 
-public class OutlineActivity extends ListActivity
+import me.jessyan.autosize.internal.CancelAdapt;
+
+public class OutlineActivity extends ListActivity implements CancelAdapt
 {
 	public static class Item implements Serializable {
 		public String title;

@@ -1,869 +1,918 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.xlk.mupdf.library.view.FixedDrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/rootView"
+    android:id="@+id/drawer_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:keepScreenOn="true"
     tools:ignore="MissingDefaultResource">
 
-    <ViewAnimator
-        android:id="@+id/switcher"
+    <RelativeLayout
+        android:id="@+id/rootView"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:layout_centerHorizontal="true"
-        tools:visibility="gone">
+        android:layout_height="match_parent">
 
-        <LinearLayout
-            android:id="@+id/mainBar"
+        <ViewAnimator
+            android:id="@+id/switcher"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:background="@color/toolbar"
-            android:gravity="center"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/docNameText"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:paddingLeft="16dp"
-                android:paddingRight="8dp"
-                android:singleLine="true"
-                android:textColor="@android:color/white"
-                android:textSize="16sp"
-                tools:text="文件名称文件名称文件名称文件.pdf" />
+            android:layout_alignParentTop="true"
+            android:layout_centerHorizontal="true"
+            tools:visibility="visible">
 
             <LinearLayout
-                android:id="@+id/viewTopAnnotation"
-                android:layout_width="wrap_content"
+                android:id="@+id/mainBar"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
+                android:background="@color/toolbar"
                 android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_brush_white" />
+                android:orientation="horizontal">
 
                 <TextView
+                    android:id="@+id/docNameText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="8dp"
+                    android:singleLine="true"
+                    android:textColor="@android:color/white"
+                    android:textSize="16sp"
+                    tools:text="文件名称文件名称文件名称文件.pdf" />
+
+                <LinearLayout
+                    android:id="@+id/viewTopThumbnail"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_annotation"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
 
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_thumbnail" />
 
-            <LinearLayout
-                android:id="@+id/viewTopSignature"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_thumbnail"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_signature_white" />
-
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopAnnotation"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_signature"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_brush_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_annotation"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
 
-            <LinearLayout
-                android:id="@+id/viewTopScreenshot"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_screenshot" />
-
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopSignature"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_screenshot"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
 
-            <LinearLayout
-                android:id="@+id/viewTopRefresh"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_signature_white" />
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_refresh" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_signature"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <TextView
+
+                <LinearLayout
+                    android:id="@+id/viewTopScreenshot"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_refresh"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
 
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_screenshot" />
 
-            <LinearLayout
-                android:id="@+id/viewTopJump"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_screenshot"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_out" />
-
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopRefresh"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_jump"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_refresh" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_refresh"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
 
-            <LinearLayout
-                android:id="@+id/viewTopSave"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_upload" />
-
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopJump"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_save"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_out" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_jump"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
 
-            <LinearLayout
-                android:id="@+id/viewTopWatermark"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_watermark_white" />
-
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopSave"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_watermark"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
 
-            <LinearLayout
-                android:id="@+id/viewTopSignTable"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone">
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_upload" />
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_signature_white" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_save"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <TextView
+
+                <LinearLayout
+                    android:id="@+id/viewTopWatermark"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_sign_table"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
 
-            <LinearLayout
-                android:id="@+id/viewTopSignRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone">
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_watermark_white" />
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_pen_white" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_watermark"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopSignTable"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_sign_row"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
 
-            <LinearLayout
-                android:id="@+id/viewTopBookmark"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_signature_white" />
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_toc_white_24dp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_sign_table"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopSignRow"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_bookmark"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
 
-            <LinearLayout
-                android:id="@+id/viewTopSearch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_pen_white" />
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_search_white_24dp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_sign_row"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopBookmark"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/search"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                    android:orientation="vertical">
 
-            <LinearLayout
-                android:id="@+id/viewTopSetting"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_toc_white_24dp" />
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_mupdf_setting_white" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_bookmark"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
 
-                <TextView
+                <LinearLayout
+                    android:id="@+id/viewTopSearch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
                     android:gravity="center"
-                    android:text="@string/mupdf_setting"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_search_white_24dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/search"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewTopSetting"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_setting_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_setting"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewTopClose"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_close_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_close"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
             </LinearLayout>
 
             <LinearLayout
-                android:id="@+id/viewTopClose"
-                android:layout_width="wrap_content"
+                android:id="@+id/searchBar"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
+                android:background="@color/toolbar"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
+                <ImageButton
+                    android:id="@+id/searchClose"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/button"
                     android:src="@drawable/ic_mupdf_close_white" />
 
-                <TextView
+                <EditText
+                    android:id="@+id/searchText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@android:color/transparent"
+                    android:hint="@string/search"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:singleLine="true"
+                    android:textColor="@android:color/white"
+                    android:textColorHint="#a0a0a0"
+                    android:textSize="16sp" />
+
+                <ImageButton
+                    android:id="@+id/searchBack"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:gravity="center"
-                    android:text="@string/mupdf_close"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
+                    android:background="@drawable/button"
+                    android:src="@drawable/ic_chevron_left_white_24dp" />
+
+                <ImageButton
+                    android:id="@+id/searchForward"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/button"
+                    android:src="@drawable/ic_chevron_right_white_24dp" />
             </LinearLayout>
 
-        </LinearLayout>
+        </ViewAnimator>
 
-        <LinearLayout
-            android:id="@+id/searchBar"
+        <ViewAnimator
+            android:id="@+id/inkOperationSwitcher"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/toolbar"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:visibility="invisible"
+            tools:visibility="gone">
 
-            <ImageButton
-                android:id="@+id/searchClose"
+            <LinearLayout
+                android:id="@+id/inkOperationLayout"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_mupdf_close_white" />
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="horizontal">
 
-            <EditText
-                android:id="@+id/searchText"
-                android:layout_width="0dp"
+                <LinearLayout
+                    android:id="@+id/viewArtSize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_line_weight_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_size"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/viewArtSizeTv"
+                    android:layout_width="30dp"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical|end"
+                    android:textColor="@color/white"
+                    tools:text="3" />
+
+                <SeekBar
+                    android:id="@+id/viewArtSeekBar"
+                    android:layout_width="100dp"
+                    android:layout_height="wrap_content"
+                    android:max="100"
+                    android:progress="50"
+                    android:progressTint="@color/white"
+                    android:thumbTint="@color/white" />
+
+                <LinearLayout
+                    android:id="@+id/viewArtPen"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_pen_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_brush"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtLine"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_line_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_line"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtBrush"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_delete_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_delete"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtColor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_color_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_color"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtHighlight"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/vector_highlight" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_highlight"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtUnderline"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_underline_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_underline"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtStrikeout"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_strikeout_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_strikeout"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtFreeText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_freetext_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_freetext"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtInvite"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/vector_invite" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_invite"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtRevoke"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_revoke_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_revoke"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtDone"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_done_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_art_done"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewArtClose"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:src="@drawable/ic_mupdf_close_white" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mupdf_exit"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </ViewAnimator>
+
+        <LinearLayout
+            android:id="@+id/ll_page_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_centerHorizontal="true"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingBottom="16dp">
+
+            <TextView
+                android:id="@+id/prePage"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="@android:color/transparent"
-                android:hint="@string/search"
-                android:imeOptions="actionSearch"
-                android:inputType="text"
-                android:singleLine="true"
+                android:background="@drawable/page_indicator"
+                android:text="@string/mupdf_previous_page"
                 android:textColor="@android:color/white"
-                android:textColorHint="#a0a0a0"
                 android:textSize="16sp" />
 
-            <ImageButton
-                android:id="@+id/searchBack"
+            <TextView
+                android:id="@+id/pageNumber"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_chevron_left_white_24dp" />
-
-            <ImageButton
-                android:id="@+id/searchForward"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/button"
-                android:src="@drawable/ic_chevron_right_white_24dp" />
-        </LinearLayout>
-
-    </ViewAnimator>
-
-    <ViewAnimator
-        android:id="@+id/inkOperationSwitcher"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/toolbar"
-        android:visibility="invisible"
-        tools:visibility="visible">
-
-        <LinearLayout
-            android:id="@+id/inkOperationLayout"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:gravity="center"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:id="@+id/viewArtSize"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_line_weight_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_size"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/page_indicator"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                tools:text="1 / 94" />
 
             <TextView
-                android:id="@+id/viewArtSizeTv"
-                android:layout_width="30dp"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_vertical|end"
-                android:textColor="@color/white"
-                tools:text="3" />
-
-            <SeekBar
-                android:id="@+id/viewArtSeekBar"
-                android:layout_width="100dp"
-                android:layout_height="wrap_content"
-                android:max="100"
-                android:progress="50"
-                android:progressTint="@color/white"
-                android:thumbTint="@color/white" />
-
-            <LinearLayout
-                android:id="@+id/viewArtPen"
+                android:id="@+id/nextPage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_pen_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_brush"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtLine"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_line_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_line"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtBrush"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_delete_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_delete"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtColor"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_color_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_color"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtHighlight"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/vector_highlight" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_highlight"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtUnderline"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_underline_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_underline"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtStrikeout"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_strikeout_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_strikeout"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtFreeText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_freetext_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_freetext"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtInvite"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/vector_invite" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_invite"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtRevoke"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_revoke_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_revoke"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtDone"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_done_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_art_done"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/viewArtClose"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/view_click_bg"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:src="@drawable/ic_mupdf_close_white" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mupdf_exit"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-            </LinearLayout>
-
+                android:background="@drawable/page_indicator"
+                android:text="@string/mupdf_next_page"
+                android:textColor="@android:color/white"
+                android:textSize="16sp" />
         </LinearLayout>
-    </ViewAnimator>
+
+        <LinearLayout
+            android:id="@+id/ll_signature_layout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_submit_signature"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:background="@drawable/shape_mupdf_bg"
+                android:drawableLeft="@drawable/ic_mupdf_ensure"
+                android:drawablePadding="5dp"
+                android:gravity="center"
+                android:padding="5dp"
+                android:text="@string/mupdf_signature_submission"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tv_cancel_signature"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/shape_mupdf_bg"
+                android:drawableLeft="@drawable/ic_mupdf_close"
+                android:drawablePadding="5dp"
+                android:gravity="center"
+                android:padding="5dp"
+                android:text="@string/mupdf_cancel_signature"
+                android:textColor="@color/white"
+                android:textSize="18sp" />
+        </LinearLayout>
+    </RelativeLayout>
+
+<!--    ==================== 左侧缩略图侧滑面板 ====================-->
 
     <LinearLayout
-        android:id="@+id/ll_page_view"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:gravity="center"
-        android:orientation="horizontal"
-        android:paddingBottom="16dp">
-
-        <TextView
-            android:id="@+id/prePage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/page_indicator"
-            android:text="@string/mupdf_previous_page"
-            android:textColor="@android:color/white"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/pageNumber"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
-            android:background="@drawable/page_indicator"
-            android:textColor="@android:color/white"
-            android:textSize="16sp"
-            tools:text="1 / 94" />
-
-        <TextView
-            android:id="@+id/nextPage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/page_indicator"
-            android:text="@string/mupdf_next_page"
-            android:textColor="@android:color/white"
-            android:textSize="16sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/tv_mark"
-        android:layout_width="match_parent"
+        android:layout_width="150dp"
         android:layout_height="match_parent"
-        android:layout_centerInParent="true"
-        android:autoSizeMaxTextSize="500sp"
-        android:autoSizeMinTextSize="10sp"
-        android:autoSizeStepGranularity="1sp"
-        android:autoSizeTextType="uniform"
-        android:clickable="false"
-        android:enabled="false"
-        android:focusable="false"
-        android:focusableInTouchMode="false"
-        android:gravity="center"
-        android:letterSpacing="1"
-        android:textColor="#66FFAB00"
-        android:visibility="gone"
-        tools:text="保密文件限制外露"
-        tools:visibility="visible" />
-
-    <LinearLayout
-        android:id="@+id/ll_signature_layout"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentEnd="true"
-        android:layout_centerVertical="true"
-        android:orientation="vertical"
-        android:visibility="gone"
-        tools:visibility="gone">
+        android:layout_gravity="start"
+        android:background="@android:color/white"
+        android:elevation="8dp"
+        android:orientation="vertical">
 
         <TextView
-            android:id="@+id/tv_submit_signature"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:background="@drawable/shape_mupdf_bg"
-            android:drawableLeft="@drawable/ic_mupdf_ensure"
-            android:drawablePadding="5dp"
+            android:background="#f5f5f5"
             android:gravity="center"
-            android:padding="5dp"
-            android:text="@string/mupdf_signature_submission"
-            android:textColor="@color/white"
-            android:textSize="18sp" />
+            android:padding="16dp"
+            android:text="@string/mupdf_thumbnail"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/tv_cancel_signature"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/shape_mupdf_bg"
-            android:drawableLeft="@drawable/ic_mupdf_close"
-            android:drawablePadding="5dp"
-            android:gravity="center"
-            android:padding="5dp"
-            android:text="@string/mupdf_cancel_signature"
-            android:textColor="@color/white"
-            android:textSize="18sp" />
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_thumbnails"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingBottom="16dp"
+            app:fastScrollEnabled="true"
+            app:fastScrollHorizontalThumbDrawable="@drawable/thumb_horizontal"
+            app:fastScrollHorizontalTrackDrawable="@drawable/track_horizontal"
+            app:fastScrollVerticalThumbDrawable="@drawable/thumb_drawable"
+            app:fastScrollVerticalTrackDrawable="@drawable/track_drawable"
+            tools:listitem="@layout/item_thumbnail" />
     </LinearLayout>
-</RelativeLayout>
+</com.xlk.mupdf.library.view.FixedDrawerLayout>

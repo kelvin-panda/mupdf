@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
+
 import com.xlk.mupdf.library.view.WindowWatermarkView;
+
 import android.text.TextUtils;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -52,6 +54,10 @@ import android.widget.ViewAnimator;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.artifex.mupdf.annotation.AnnotationArtBoard;
 import com.artifex.mupdf.annotation.AnnotationBean;
@@ -110,7 +116,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
             viewArtInvite, viewArtUnderline, viewArtStrikeout, viewArtFreeText,
             viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch, viewTopSetting;
-    private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;;
+    private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;
+    ;
     private int mWatermarkColor, mWindowWatermarkColor;
     private int mediaId;
     private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,
@@ -118,7 +125,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private AnnotationArtBoard artBoard;
     private TextView viewArtSizeTv;
     private SeekBar viewArtSeekBar;
-    private RelativeLayout mRootLayout;
     private final int default_ink_size = 3;
     /**
      * 提交和取消签名布局
@@ -154,9 +160,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private String mDocKey;
     private ReaderView mDocView;
     private RelativeLayout rootView;
-    private TextView mTvMark;
     private WindowWatermarkView mWindowWatermarkView;
-    private View mButtonsView;
+    private View mButtonsView, viewTopThumbnail;
     private boolean mButtonsVisible;
     private EditText mPasswordView;
     private TextView mDocNameView;
@@ -176,6 +181,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private int mLayoutW = 312;
     private int mLayoutH = 504;
 
+
+    //<editor-fold desc="缩略图相关">
+    private DrawerLayout drawerLayout;
+    private RecyclerView rvThumbnails;
+    private ThumbnailAdapter thumbnailAdapter;
+    //</editor-fold>
+
     protected View mLayoutButton;
     protected PopupMenu mLayoutPopupMenu;
     public static List<AnnotationBean> inkAnnotations = new ArrayList<>();
@@ -189,9 +201,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private boolean hadAnnotation;
     private boolean hadAnnotationBeforeCurrentSession;
 
-    /** 即时保存模式：记录每笔保存的 pageIndex 列表，用于撤销时删除 PDF 注解 */
+    /**
+     * 即时保存模式：记录每笔保存的 pageIndex 列表，用于撤销时删除 PDF 注解
+     */
     private final List<List<Integer>> savedAnnotationPages = new ArrayList<>();
-    /** 当前批注会话开始时的撤销栈位置；取消时只回滚本会话新增批注 */
+    /**
+     * 当前批注会话开始时的撤销栈位置；取消时只回滚本会话新增批注
+     */
     private int annotationSessionStartIndex = 0;
 
     /**
@@ -592,6 +608,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     return;
                 currentPageIndex = i;
                 mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", i + 1, core.countPages()));
+
+                if (thumbnailAdapter != null) {
+                    thumbnailAdapter.setCurrentPage(i);
+                    if (rvThumbnails != null) {
+                        rvThumbnails.smoothScrollToPosition(i);
+                    }
+                }
                 Debugger.i(TAG, "onMoveToChild: currentPageIndex=" + currentPageIndex);
                 super.onMoveToChild(i);
             }
@@ -654,25 +677,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             }
         };
 
+        initViews();
+        viewConfig();
+
         extracted(savedInstanceState);
 
-        // Stick the document view and the buttons overlay into a parent view
-        mRootLayout = new RelativeLayout(this);
-        mRootLayout.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mRootLayout.setBackgroundColor(Color.DKGRAY);
-        mRootLayout.addView(mDocView);
-        mRootLayout.addView(mButtonsView);
-        applyWindowWatermark(mWindowWatermark);
-        if (mWatermark != null && !mWatermark.isEmpty()) {
-            mTvMark.setVisibility(View.VISIBLE);
-            mTvMark.setText(mWatermark);
-            mTvMark.setTextColor(mWatermarkColor);
-            mTvMark.invalidate();
-        } else {
-            mTvMark.setVisibility(View.GONE);
-        }
-        setContentView(mRootLayout);
+        RelativeLayout.LayoutParams docLp = new RelativeLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        // 插入到最底层（索引0），使顶部栏和底部页码覆盖在文档之上
+        rootView.addView(mDocView, 0, docLp);
 
+        applyWindowWatermark(mWindowWatermark);
+        setContentView(mButtonsView);
         postToMainDelayed(() -> {
             if (srcPageIndex != 0) {
                 mDocView.setDisplayedViewIndex(srcPageIndex);
@@ -680,17 +697,36 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             applyZoomPercent(resolveInitialZoomPercent(), false);
             mDocView.requestLayout();
             mDocView.run();
+
+            // 缩略图
+            initThumbnailDrawer();
         }, 500L);
 
         Debugger.i(TAG, "createUI: end");
     }
 
+    private void initThumbnailDrawer() {
+        if (rvThumbnails == null) return;
+        rvThumbnails.setLayoutManager(new LinearLayoutManager(this));
+        thumbnailAdapter = new ThumbnailAdapter(this, core, 128, 128);
+        rvThumbnails.setAdapter(thumbnailAdapter);
+        thumbnailAdapter.setOnThumbnailClickListener(new ThumbnailAdapter.OnThumbnailClickListener() {
+            @Override
+            public void onThumbnailClick(int position) {
+                if (mDocView != null) {
+                    mDocView.setDisplayedViewIndex(position);
+                    if (thumbnailAdapter != null) thumbnailAdapter.setCurrentPage(position);
+                    if (drawerLayout != null) drawerLayout.closeDrawer(GravityCompat.START);
+                }
+            }
+        });
+    }
+
     long lastClickTime = 0L;
 
     private void extracted(Bundle savedInstanceState) {
-        makeButtonsView();
 
-        // 文本查找：搜索栏切换与搜索按钮
+        //<editor-fold desc="文本查找：搜索栏切换与搜索按钮">
         mSearchClose.setOnClickListener(v -> searchModeOff());
         mSearchBack.setEnabled(false);
         mSearchFwd.setEnabled(false);
@@ -746,12 +782,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             viewTopSetting.setOnClickListener(v -> showSettingsDialog());
         }
 
+        //</editor-fold>
+
         if (MupdfMacro.shareAnnotationEnable) {
             //有文件id才显示
             viewArtInvite.setVisibility(mediaId != 0 ? View.VISIBLE : View.GONE);
         }
-        //文件名称
-        mDocNameView.setText(mDocTitle);
 
         //退出pdf预览
         viewTopClose.setOnClickListener(v -> {
@@ -956,6 +992,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             }
         });
 
+        //缩略图
+        if (viewTopThumbnail != null) {
+            viewTopThumbnail.setOnClickListener(v -> {
+                if (drawerLayout != null) {
+                    if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                        drawerLayout.closeDrawer(GravityCompat.START);
+                    } else {
+                        drawerLayout.openDrawer(GravityCompat.START);
+                    }
+                }
+            });
+        }
+
         if (core.isReflowable()) {
             mLayoutButton.setVisibility(View.VISIBLE);
             mLayoutPopupMenu = new PopupMenu(this, mLayoutButton);
@@ -1013,7 +1062,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             hideButtons();
             showAnnotationViews();
             if (artBoard != null) {
-                mRootLayout.removeView(artBoard);
+                rootView.removeView(artBoard);
                 artBoard.recycleBitmapOnly();
                 artBoard = null;
             }
@@ -1064,7 +1113,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 PageView pv = (PageView) mDocView.getView(pageIdx);
                 if (pv != null) schedulePageUpdate(() -> pv.update());
             });
-            mRootLayout.addView(artBoard, 1); // index=1：在 mDocView(0) 之上，mButtonsView(2) 之下
+            rootView.addView(artBoard, 1); // index=1：在 mDocView(0) 之上，mButtonsView(2) 之下
             artBoard.layout(0, 0, artW, artH);
         });
         viewTopAnnotation.setVisibility(annotationEnable ? View.VISIBLE : View.GONE);
@@ -1439,7 +1488,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
     }
 
-
     public void requestPassword(final Bundle savedInstanceState) {
         mPasswordView = new EditText(this);
         mPasswordView.setInputType(EditorInfo.TYPE_TEXT_VARIATION_PASSWORD);
@@ -1682,6 +1730,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private void showAnnotationViews() {
         if (!mAnnotationVisible) {
+            //签名开始，关闭缩略图面板
+            if (drawerLayout != null && drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                drawerLayout.closeDrawer(GravityCompat.START);
+            }
             mAnnotationVisible = true;
             Animation anim = new TranslateAnimation(0, 0, -inkOperationSwitcher.getHeight(), 0);
             anim.setDuration(200);
@@ -1747,7 +1799,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     inkOperationSwitcher.setVisibility(View.INVISIBLE);
                     viewArtSeekBar.setProgress(default_ink_size);
                     if (artBoard != null) {
-                        mRootLayout.removeView(artBoard);
+                        rootView.removeView(artBoard);
                         if (releaseArtBoard) {
                             artBoard.clear();
                             artBoard.release();
@@ -1784,11 +1836,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", index + 1, core.countPages()));
     }
 
-    private void makeButtonsView() {
+    private void initViews() {
         int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hx : R.layout.mupdf_document_activity;
         mButtonsView = getLayoutInflater().inflate(layoutResId, null);
         rootView = (RelativeLayout) mButtonsView.findViewById(R.id.rootView);
-        mTvMark = (TextView) mButtonsView.findViewById(R.id.tv_mark);
         mDocNameView = (TextView) mButtonsView.findViewById(R.id.docNameText);
         mLlPageView = (LinearLayout) mButtonsView.findViewById(R.id.ll_page_view);
         mPageNumberView = (TextView) mButtonsView.findViewById(R.id.pageNumber);//页码
@@ -1800,13 +1851,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         tv_submit_signature = mButtonsView.findViewById(R.id.tv_submit_signature);
         tv_cancel_signature = mButtonsView.findViewById(R.id.tv_cancel_signature);
 
-
         //<editor-fold desc="顶部默认组件">
         mTopBarSwitcher = mButtonsView.findViewById(R.id.switcher);
         mSearchBack = mButtonsView.findViewById(R.id.searchBack);
         mSearchFwd = mButtonsView.findViewById(R.id.searchForward);
         mSearchClose = mButtonsView.findViewById(R.id.searchClose);
         mSearchText = mButtonsView.findViewById(R.id.searchText);
+        viewTopThumbnail = mButtonsView.findViewById(R.id.viewTopThumbnail);
         viewTopSave = mButtonsView.findViewById(R.id.viewTopSave);
         viewTopRefresh = mButtonsView.findViewById(R.id.viewTopRefresh);
         viewTopJump = mButtonsView.findViewById(R.id.viewTopJump);
@@ -1853,9 +1904,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewArtDone = mButtonsView.findViewById(R.id.viewArtDone);
         //</editor-fold>
 
+        //<editor-fold desc="缩略图控件">
+        drawerLayout = (DrawerLayout) mButtonsView.findViewById(R.id.drawer_layout);
+        rvThumbnails = (RecyclerView) mButtonsView.findViewById(R.id.rv_thumbnails);
+        //</editor-fold>
+
         mTopBarSwitcher.setVisibility(View.INVISIBLE);
         mLlPageView.setVisibility(View.INVISIBLE);
+    }
 
+    private void viewConfig() {
+        //文件名称
+        mDocNameView.setText(mDocTitle);
         if (isOnlyPreview) {
             viewTopScreenshot.setVisibility(View.GONE);
             viewTopSave.setVisibility(View.GONE);
@@ -2297,12 +2357,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 .putInt(PREF_ZOOM_PERCENT, currentZoomPercent)
                 .apply();
     }
+
     private void applyWindowWatermark(String text) {
         mWindowWatermark = text == null ? "" : text.trim();
-        if (mRootLayout == null) return;
         if (mWindowWatermark.isEmpty()) {
             if (mWindowWatermarkView != null) {
-                mRootLayout.removeView(mWindowWatermarkView);
+                rootView.removeView(mWindowWatermarkView);
                 mWindowWatermarkView = null;
             }
             return;
@@ -2315,7 +2375,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             mWindowWatermarkView.setLayoutParams(new RelativeLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
-            mRootLayout.addView(mWindowWatermarkView);
+            rootView.addView(mWindowWatermarkView);
         }
         mWindowWatermarkView.setWatermark(mWindowWatermark, mWindowWatermarkColor);
         mWindowWatermarkView.bringToFront();
@@ -2519,7 +2579,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             String text = watermarkInput.getText() == null ? "" : watermarkInput.getText().toString().trim();
             if (watermarkMode[0] == WATERMARK_MODE_NONE) {
                 applyWindowWatermark("");
-                if (mTvMark != null) mTvMark.setVisibility(View.GONE);
                 mWatermark = "";
                 Toast.makeText(this, getString(R.string.mupdf_watermark_none), Toast.LENGTH_SHORT).show();
             } else if (watermarkMode[0] == WATERMARK_MODE_WINDOW) {
@@ -2527,7 +2586,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                if (mTvMark != null) mTvMark.setVisibility(View.GONE);
                 mWatermark = "";
                 applyWindowWatermark(text);
                 Toast.makeText(this, getString(R.string.mupdf_watermark_window) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
@@ -2755,6 +2813,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         Debugger.i(TAG, "---onDestroy---start");
         if (MupdfMacro.isSharing) {
             EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_exit_annotation).objects(mediaId).build());
+        }
+        if (thumbnailAdapter != null) {
+            thumbnailAdapter.clearCache();
+            thumbnailAdapter.shutdownExecutor();
+            thumbnailAdapter = null;
         }
         ActUtil.removeActivity(this);
         unregisterEventBus();

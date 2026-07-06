@@ -74,4 +74,15 @@
 	<string name="mupdf_watermark_pdf">PDF watermark</string>
 	<string name="mupdf_watermark_window">Screen watermark</string>
 	<string name="mupdf_watermark_apply">Apply watermark</string>
+	<string name="mupdf_sign_table">签名表</string>
+	<string name="mupdf_sign_table_title">创建签名表格</string>
+	<string name="mupdf_sign_table_hint">输入姓名，每行一个或用逗号分隔</string>
+	<string name="mupdf_sign_table_create">生成表格</string>
+	<string name="mupdf_sign_row">填写签名</string>
+	<string name="mupdf_sign_row_title">填写签名信息</string>
+	<string name="mupdf_sign_row_hint">请输入序号 (0开始)</string>
+	<string name="mupdf_sign_row_hint2">请输入签名时间</string>
+	<string name="mupdf_sign_row_draw">选取签名图片</string>
+	<string name="mupdf_thumbnail">缩略图</string>
+	<string name="mupdf_art_drag">拖动</string>
 </resources>

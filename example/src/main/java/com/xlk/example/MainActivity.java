@@ -34,7 +34,9 @@ import org.greenrobot.eventbus.ThreadMode;
 
 import java.io.File;
 
-public class MainActivity extends AppCompatActivity {
+import me.jessyan.autosize.internal.CancelAdapt;
+
+public class MainActivity extends AppCompatActivity implements CancelAdapt {
     private static final String TAG = "MainActivity";
     private int mode = MupdfClarityMode.UNRESTRICTED;
     private CheckBox cb_full;
@@ -43,7 +45,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        MupdfMacro.isHengXunVersion = true;
+        MupdfMacro.isHengXunVersion = false;
         EventBus.getDefault().register(this);
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());

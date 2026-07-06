@@ -83,5 +83,7 @@
     <string name="mupdf_sign_row_hint">请输入序号 (0开始)</string>
     <string name="mupdf_sign_row_hint2">请输入签名时间</string>
     <string name="mupdf_sign_row_draw">选取签名图片</string>
+	<string name="mupdf_thumbnail">缩略图</string>
+	<string name="mupdf_art_drag">拖动</string>
 
 </resources>

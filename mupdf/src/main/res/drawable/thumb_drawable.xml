@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 按下状态（可选，但建议保留） -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#B3000000" />   <!-- 深色表示按下 -->
+            <corners android:radius="10dp" />
+            <size android:width="10dp" android:height="60dp" />
+        </shape>
+    </item>
+    <!-- 默认状态 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#80000000" />   <!-- 半透明黑色 -->
+            <corners android:radius="10dp" />
+            <size android:width="10dp" android:height="60dp" />
+        </shape>
+    </item>
+</selector>

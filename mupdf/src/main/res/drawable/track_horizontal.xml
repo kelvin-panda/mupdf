@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#20000000" />          <!-- 浅色半透明轨道 -->
+            <corners android:radius="4dp" />
+            <size android:height="8dp" />                <!-- 只需固定高度，宽度自适应 -->
+        </shape>
+    </item>
+</selector>
