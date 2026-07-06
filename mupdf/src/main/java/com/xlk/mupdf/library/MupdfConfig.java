@@ -30,6 +30,9 @@ public class MupdfConfig {
     private final int backgroundColor;
     private final int brightness;
     private final int zoomPercent;
+    private final boolean windowWatermarkEnable;
+    private final String windowWatermarkContent;
+    private final int windowWatermarkColor;
     private final boolean backgroundColorConfigured;
     private final boolean brightnessConfigured;
     private final boolean zoomPercentConfigured;
@@ -56,6 +59,9 @@ public class MupdfConfig {
         this.backgroundColor = builder.backgroundColor;
         this.brightness = builder.brightness;
         this.zoomPercent = builder.zoomPercent;
+        this.windowWatermarkEnable = builder.windowWatermarkEnable;
+        this.windowWatermarkContent = builder.windowWatermarkContent;
+        this.windowWatermarkColor = builder.windowWatermarkColor;
         this.backgroundColorConfigured = builder.backgroundColorConfigured;
         this.brightnessConfigured = builder.brightnessConfigured;
         this.zoomPercentConfigured = builder.zoomPercentConfigured;
@@ -157,6 +163,17 @@ public class MupdfConfig {
         return zoomPercentConfigured;
     }
 
+    public boolean isWindowWatermarkEnable() {
+        return windowWatermarkEnable;
+    }
+
+    public String getWindowWatermarkContent() {
+        return windowWatermarkContent;
+    }
+
+    public int getWindowWatermarkColor() {
+        return windowWatermarkColor;
+    }
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -179,6 +196,8 @@ public class MupdfConfig {
                 ", backgroundColor=" + backgroundColor +
                 ", brightness=" + brightness +
                 ", zoomPercent=" + zoomPercent +
+                ", windowWatermarkEnable=" + windowWatermarkEnable +
+                ", windowWatermarkContent='" + windowWatermarkContent + '\'' +
                 '}';
     }
 
@@ -204,6 +223,9 @@ public class MupdfConfig {
         private int backgroundColor = MupdfMacro.DEFAULT_BACKGROUND_COLOR;
         private int brightness = 0;
         private int zoomPercent = MupdfMacro.ZOOM_PERCENT_UNSET;
+        private boolean windowWatermarkEnable = false;
+        private String windowWatermarkContent = "";
+        private int windowWatermarkColor = Color.parseColor("#33FFAB00");
         private boolean backgroundColorConfigured = false;
         private boolean brightnessConfigured = false;
         private boolean zoomPercentConfigured = false;
@@ -330,6 +352,36 @@ public class MupdfConfig {
         public Builder zoomPercent(int zoomPercent) {
             this.zoomPercent = zoomPercent;
             this.zoomPercentConfigured = zoomPercent >= 0;
+            return this;
+        }
+
+        /**
+         * 设置仅显示在阅读窗口上的水印，不写入 PDF 内容，也不会随保存导出。
+         *
+         * @param enable 是否显示窗口水印
+         */
+        public Builder windowWatermarkEnable(boolean enable) {
+            this.windowWatermarkEnable = enable;
+            return this;
+        }
+
+        /**
+         * 设置窗口水印文字，仅在阅读器界面显示。
+         *
+         * @param content 水印文字
+         */
+        public Builder windowWatermarkContent(String content) {
+            this.windowWatermarkContent = content == null ? "" : content;
+            return this;
+        }
+
+        /**
+         * 设置窗口水印颜色，建议使用带透明度的 ARGB 颜色。
+         *
+         * @param color ARGB 颜色值
+         */
+        public Builder windowWatermarkColor(int color) {
+            this.windowWatermarkColor = color;
             return this;
         }
 

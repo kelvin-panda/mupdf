@@ -70,6 +70,10 @@
     <string name="mupdf_freetext_hint">请输入标注文字</string>
     <string name="mupdf_watermark_title">水印设置</string>
     <string name="mupdf_watermark_text_hint">请输入水印文字</string>
+	<string name="mupdf_watermark_none">无水印</string>
+	<string name="mupdf_watermark_pdf">PDF水印</string>
+	<string name="mupdf_watermark_window">界面水印</string>
+	<string name="mupdf_watermark_apply">应用水印</string>
     <string name="mupdf_sign_table">签名表</string>
     <string name="mupdf_sign_table_title">创建签名表格</string>
     <string name="mupdf_sign_table_hint">输入姓名，每行一个或用逗号分隔</string>

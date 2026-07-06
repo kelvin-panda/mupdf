@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
+import com.xlk.mupdf.library.view.WindowWatermarkView;
+import android.text.TextUtils;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -108,8 +110,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
             viewArtInvite, viewArtUnderline, viewArtStrikeout, viewArtFreeText,
             viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch, viewTopSetting;
-    private String srcFilePath, annotationSavePath, srcUri, mWatermark;
-    private int mWatermarkColor;
+    private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;;
+    private int mWatermarkColor, mWindowWatermarkColor;
     private int mediaId;
     private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,
             mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
@@ -153,6 +155,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private ReaderView mDocView;
     private RelativeLayout rootView;
     private TextView mTvMark;
+    private WindowWatermarkView mWindowWatermarkView;
     private View mButtonsView;
     private boolean mButtonsVisible;
     private EditText mPasswordView;
@@ -202,6 +205,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private static final String PREF_BACKGROUND_COLOR = "background_color";
     private static final String PREF_BRIGHTNESS = "brightness";
     private static final String PREF_ZOOM_PERCENT = "zoom_percent";
+    private static final int WATERMARK_MODE_NONE = 0;
+    private static final int WATERMARK_MODE_PDF = 1;
+    private static final int WATERMARK_MODE_WINDOW = 2;
     private int configuredZoomPercent = MupdfMacro.ZOOM_PERCENT_UNSET;
 
     private boolean isActivityAlive() {
@@ -334,6 +340,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putBoolean(MupdfMacro.bundle_key_brightness_configured, config.isBrightnessConfigured());
         bundle.putInt(MupdfMacro.bundle_key_zoom_percent, config.getZoomPercent());
         bundle.putBoolean(MupdfMacro.bundle_key_zoom_percent_configured, config.isZoomPercentConfigured());
+        bundle.putBoolean(MupdfMacro.bundle_key_window_watermark_enable, config.isWindowWatermarkEnable());
+        bundle.putString(MupdfMacro.bundle_key_window_watermark_content, config.getWindowWatermarkContent());
+        bundle.putInt(MupdfMacro.bundle_key_window_watermark_color, config.getWindowWatermarkColor());
         jump(context, bundle);
     }
 
@@ -443,6 +452,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         mWatermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
                         mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, Color.parseColor("#66FF6D00"));
                     }
+                    boolean windowWatermark = bundle.getBoolean(MupdfMacro.bundle_key_window_watermark_enable, false);
+                    if (windowWatermark) {
+                        mWindowWatermark = bundle.getString(MupdfMacro.bundle_key_window_watermark_content, "");
+                        mWindowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, Color.parseColor("#33FFAB00"));
+                    }
                     Debugger.i(TAG, "c bundle："
                             + "\nsrcFilePath=" + srcFilePath
                             + "\nsrcUri=" + srcUri
@@ -453,6 +467,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                             + "\nuploadDirId=" + uploadDirId
                             + "\nwatermark=" + watermark
                             + "\nmWatermark=" + mWatermark
+                            + "\nwindowWatermark=" + windowWatermark
+                            + "\nmWindowWatermark=" + mWindowWatermark
                             + "\nMupdfMacro.clarityLimitMode=" + MupdfMacro.clarityLimitMode
                             + "\nisFullScreen=" + isFullScreen
                     );
@@ -646,6 +662,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         mRootLayout.setBackgroundColor(Color.DKGRAY);
         mRootLayout.addView(mDocView);
         mRootLayout.addView(mButtonsView);
+        applyWindowWatermark(mWindowWatermark);
         if (mWatermark != null && !mWatermark.isEmpty()) {
             mTvMark.setVisibility(View.VISIBLE);
             mTvMark.setText(mWatermark);
@@ -2280,6 +2297,29 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 .putInt(PREF_ZOOM_PERCENT, currentZoomPercent)
                 .apply();
     }
+    private void applyWindowWatermark(String text) {
+        mWindowWatermark = text == null ? "" : text.trim();
+        if (mRootLayout == null) return;
+        if (mWindowWatermark.isEmpty()) {
+            if (mWindowWatermarkView != null) {
+                mRootLayout.removeView(mWindowWatermarkView);
+                mWindowWatermarkView = null;
+            }
+            return;
+        }
+        if (mWindowWatermarkColor == 0) {
+            mWindowWatermarkColor = Color.parseColor("#33FFAB00");
+        }
+        if (mWindowWatermarkView == null) {
+            mWindowWatermarkView = new WindowWatermarkView(this);
+            mWindowWatermarkView.setLayoutParams(new RelativeLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            mRootLayout.addView(mWindowWatermarkView);
+        }
+        mWindowWatermarkView.setWatermark(mWindowWatermark, mWindowWatermarkColor);
+        mWindowWatermarkView.bringToFront();
+    }
 
     /**
      * 显示设置页：亮度、背景颜色、缩放。修改即时生效。
@@ -2419,6 +2459,91 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         zoomRow.addView(zoomBar);
         zoomRow.addView(zoomValue);
         root.addView(zoomRow);
+        //</editor-fold>
+
+        //<editor-fold desc="水印">
+        root.addView(makeSectionLabel(getString(R.string.mupdf_watermark), density, true));
+
+        android.widget.RadioGroup watermarkModeGroup = new android.widget.RadioGroup(this);
+        watermarkModeGroup.setOrientation(android.widget.RadioGroup.HORIZONTAL);
+        watermarkModeGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        android.widget.RadioButton noWatermark = new android.widget.RadioButton(this);
+        noWatermark.setId(View.generateViewId());
+        noWatermark.setText(R.string.mupdf_watermark_none);
+
+        android.widget.RadioButton pdfWatermark = new android.widget.RadioButton(this);
+        pdfWatermark.setId(View.generateViewId());
+        pdfWatermark.setText(R.string.mupdf_watermark_pdf);
+
+        android.widget.RadioButton windowWatermark = new android.widget.RadioButton(this);
+        windowWatermark.setId(View.generateViewId());
+        windowWatermark.setText(R.string.mupdf_watermark_window);
+
+        watermarkModeGroup.addView(noWatermark);
+        watermarkModeGroup.addView(pdfWatermark);
+        watermarkModeGroup.addView(windowWatermark);
+        root.addView(watermarkModeGroup);
+
+        final EditText watermarkInput = new EditText(this);
+        watermarkInput.setSingleLine();
+        watermarkInput.setHint(R.string.mupdf_watermark_text_hint);
+        watermarkInput.setText(!TextUtils.isEmpty(mWindowWatermark) ? mWindowWatermark : (!TextUtils.isEmpty(mWatermark) ? mWatermark : ""));
+        watermarkInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        root.addView(watermarkInput);
+
+        final int[] watermarkMode = {
+                !TextUtils.isEmpty(mWindowWatermark) || !TextUtils.isEmpty(mWatermark) ? WATERMARK_MODE_WINDOW : WATERMARK_MODE_NONE
+        };
+        watermarkModeGroup.check(watermarkMode[0] == WATERMARK_MODE_WINDOW
+                ? windowWatermark.getId()
+                : noWatermark.getId());
+        watermarkInput.setEnabled(watermarkMode[0] != WATERMARK_MODE_NONE);
+        watermarkModeGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            if (checkedId == pdfWatermark.getId()) {
+                watermarkMode[0] = WATERMARK_MODE_PDF;
+            } else if (checkedId == windowWatermark.getId()) {
+                watermarkMode[0] = WATERMARK_MODE_WINDOW;
+            } else {
+                watermarkMode[0] = WATERMARK_MODE_NONE;
+            }
+            watermarkInput.setEnabled(watermarkMode[0] != WATERMARK_MODE_NONE);
+        });
+
+        TextView applyWatermarkBtn = new TextView(this);
+        applyWatermarkBtn.setText(getString(R.string.mupdf_watermark_apply));
+        applyWatermarkBtn.setTextColor(0xFF2196F3);
+        applyWatermarkBtn.setGravity(android.view.Gravity.CENTER);
+        applyWatermarkBtn.setPadding(0, (int) (12 * density), 0, 0);
+        applyWatermarkBtn.setOnClickListener(v -> {
+            String text = watermarkInput.getText() == null ? "" : watermarkInput.getText().toString().trim();
+            if (watermarkMode[0] == WATERMARK_MODE_NONE) {
+                applyWindowWatermark("");
+                if (mTvMark != null) mTvMark.setVisibility(View.GONE);
+                mWatermark = "";
+                Toast.makeText(this, getString(R.string.mupdf_watermark_none), Toast.LENGTH_SHORT).show();
+            } else if (watermarkMode[0] == WATERMARK_MODE_WINDOW) {
+                if (text.isEmpty()) {
+                    Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (mTvMark != null) mTvMark.setVisibility(View.GONE);
+                mWatermark = "";
+                applyWindowWatermark(text);
+                Toast.makeText(this, getString(R.string.mupdf_watermark_window) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
+            } else {
+                if (text.isEmpty()) {
+                    Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                float[] color = new float[]{0.82f, 0.20f, 0.18f};
+                core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
+                hadAnnotation = true;
+                afterAnnotationPreservingScroll();
+                Toast.makeText(this, getString(R.string.mupdf_watermark_pdf) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
+            }
+        });
+        root.addView(applyWatermarkBtn);
         //</editor-fold>
 
         // 重置按钮（不关闭弹窗，直接复位三项）

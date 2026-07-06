@@ -207,6 +207,12 @@ public class MupdfMacro {
     public static final String bundle_key_zoom_percent = "zoom_percent";
     public static final String bundle_key_zoom_percent_configured = "zoom_percent_configured";
     //</editor-fold>
+    /**
+     * 仅显示在阅读窗口上的水印，不写入 PDF 内容。
+     */
+    public static final String bundle_key_window_watermark_enable = "window_watermark_enable";
+    public static final String bundle_key_window_watermark_content = "window_watermark_content";
+    public static final String bundle_key_window_watermark_color = "window_watermark_color";
 
     //<editor-fold desc="共享批注相关">
 
