@@ -4,10 +4,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
-
-import com.xlk.mupdf.library.view.WindowWatermarkView;
-
-import android.text.TextUtils;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -15,9 +11,7 @@ import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.PointF;
 import android.graphics.RectF;
 import android.net.Uri;
@@ -26,22 +20,23 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
-import android.text.InputType;
 import android.text.Editable;
+import android.text.InputType;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.method.PasswordTransformationMethod;
 import android.util.DisplayMetrics;
-import android.view.Menu;
 import android.view.KeyEvent;
+import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.animation.Animation;
-import android.view.inputmethod.InputMethodManager;
 import android.view.animation.TranslateAnimation;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -86,6 +81,7 @@ import com.xlk.mupdf.library.view.MupdfColorPickerDialog;
 import com.xlk.mupdf.library.view.MupdfColorPickerView;
 import com.xlk.mupdf.library.view.ScalableView;
 import com.xlk.mupdf.library.view.SignatureBoard;
+import com.xlk.mupdf.library.view.WindowWatermarkView;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -110,18 +106,33 @@ import me.jessyan.autosize.internal.CancelAdapt;
 public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAdapt {
     private static final String TAG = "MuPdfDocumentActivity";
 
+    //<editor-fold desc="功能开关与接收参数">
+    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,deleteFileWhenExit;
+    private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;
+    private boolean isFullScreen = true;
+    private int mWatermarkColor, mWindowWatermarkColor;
+    private int mediaId;
+    /**
+     * 只预览不可操作
+     */
+    private boolean isOnlyPreview;
+    /**
+     * 批注后上传的目录id
+     */
+    private int uploadDirId = 2;
+    /**
+     * 打开时所在的页码
+     */
+    private int srcPageIndex = 0;
+    //</editor-fold>
+
     //<editor-fold desc="成员变量">
 
-    private View viewTopAnnotation, viewTopSignature, viewTopScreenshot, viewTopRefresh, viewTopJump, viewTopSave, viewTopBookmark, viewTopClose,//顶部控件
+    private View viewTopAnnotation, viewTopSignature, viewTopScreenshot, viewTopRefresh, viewTopJump, viewTopBookmark, viewTopClose,//顶部控件
             viewArtClose, viewArtPen, viewArtLine, viewArtBrush, viewArtColor, viewArtHighlight, viewArtRevoke, viewArtDone,//画板控件
             viewArtInvite, viewArtUnderline, viewArtStrikeout, viewArtFreeText,
             viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch, viewTopSetting;
-    private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;
-    ;
-    private int mWatermarkColor, mWindowWatermarkColor;
-    private int mediaId;
-    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,
-            mAnnotationVisible, mInkSizeViewVisible, afterAnnotationRefresh;
+    private boolean mAnnotationVisible, afterAnnotationRefresh;
     private AnnotationArtBoard artBoard;
     private TextView viewArtSizeTv;
     private SeekBar viewArtSeekBar;
@@ -141,14 +152,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 是否正在手写签名，正在签名时需要进行拦截翻页、缩放、顶部功能菜单显示
      */
     private boolean isSigning;
-    private boolean deleteFileWhenExit;
-    private boolean isOnlyPreview;
-    /**
-     * 批注后上传的目录id
-     */
-    private int uploadDirId = 2;
-    private int srcPageIndex = 0;
-    private boolean isFullScreen = true;
 
     /* The core rendering instance */
     enum TopBarMode {Main, Search, More}
@@ -191,10 +194,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     protected View mLayoutButton;
     protected PopupMenu mLayoutPopupMenu;
     public static List<AnnotationBean> inkAnnotations = new ArrayList<>();
-    /**
-     * 点击了保存按钮
-     */
-    private boolean saveWhenExit;
     /**
      * 有进行批注
      */
@@ -473,7 +472,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         mWindowWatermark = bundle.getString(MupdfMacro.bundle_key_window_watermark_content, "");
                         mWindowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, Color.parseColor("#33FFAB00"));
                     }
-                    Debugger.i(TAG, "c bundle："
+                    Debugger.i(TAG, "bundle config："
                             + "\nsrcFilePath=" + srcFilePath
                             + "\nsrcUri=" + srcUri
                             + "\nuri=" + uri
@@ -705,6 +704,95 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         Debugger.i(TAG, "createUI: end");
     }
 
+    private void initViews() {
+        int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hengxun : R.layout.mupdf_document_activity;
+        mButtonsView = getLayoutInflater().inflate(layoutResId, null);
+        rootView = (RelativeLayout) mButtonsView.findViewById(R.id.rootView);
+        mDocNameView = (TextView) mButtonsView.findViewById(R.id.docNameText);
+        mLlPageView = (LinearLayout) mButtonsView.findViewById(R.id.ll_page_view);
+        mPageNumberView = (TextView) mButtonsView.findViewById(R.id.pageNumber);//页码
+        mPrePageView = (TextView) mButtonsView.findViewById(R.id.prePage);//上一页
+        mNextPageView = (TextView) mButtonsView.findViewById(R.id.nextPage);//下一页
+        mLayoutButton = mButtonsView.findViewById(R.id.layoutButton);
+        //提交签名、取消签名
+        ll_signature_layout = mButtonsView.findViewById(R.id.ll_signature_layout);
+        tv_submit_signature = mButtonsView.findViewById(R.id.tv_submit_signature);
+        tv_cancel_signature = mButtonsView.findViewById(R.id.tv_cancel_signature);
+
+        //<editor-fold desc="顶部默认组件">
+        mTopBarSwitcher = mButtonsView.findViewById(R.id.switcher);
+        mSearchBack = mButtonsView.findViewById(R.id.searchBack);
+        mSearchFwd = mButtonsView.findViewById(R.id.searchForward);
+        mSearchClose = mButtonsView.findViewById(R.id.searchClose);
+        mSearchText = mButtonsView.findViewById(R.id.searchText);
+        viewTopThumbnail = mButtonsView.findViewById(R.id.viewTopThumbnail);
+        viewTopRefresh = mButtonsView.findViewById(R.id.viewTopRefresh);
+        viewTopJump = mButtonsView.findViewById(R.id.viewTopJump);
+        viewTopScreenshot = mButtonsView.findViewById(R.id.viewTopScreenshot);
+        viewTopSignature = mButtonsView.findViewById(R.id.viewTopSignature);
+        viewTopAnnotation = mButtonsView.findViewById(R.id.viewTopAnnotation);
+        viewTopBookmark = mButtonsView.findViewById(R.id.viewTopBookmark);
+        viewTopWatermark = mButtonsView.findViewById(R.id.viewTopWatermark);
+        viewTopSignTable = mButtonsView.findViewById(R.id.viewTopSignTable);
+        viewTopSignRow = mButtonsView.findViewById(R.id.viewTopSignRow);
+        viewTopClose = mButtonsView.findViewById(R.id.viewTopClose);
+        viewTopSearch = mButtonsView.findViewById(R.id.viewTopSearch);
+        viewTopSetting = mButtonsView.findViewById(R.id.viewTopSetting);
+        //</editor-fold>
+
+        //<editor-fold desc="批注控件">
+        inkOperationSwitcher = mButtonsView.findViewById(R.id.inkOperationSwitcher);
+        //关闭
+        viewArtClose = mButtonsView.findViewById(R.id.viewArtClose);
+        //画笔粗细
+        viewArtSizeTv = mButtonsView.findViewById(R.id.viewArtSizeTv);
+        viewArtSeekBar = mButtonsView.findViewById(R.id.viewArtSeekBar);
+        //画笔
+        viewArtPen = mButtonsView.findViewById(R.id.viewArtPen);
+        //直线
+        viewArtLine = mButtonsView.findViewById(R.id.viewArtLine);
+        //删除
+        viewArtBrush = mButtonsView.findViewById(R.id.viewArtBrush);
+        //颜色
+        viewArtColor = mButtonsView.findViewById(R.id.viewArtColor);
+        //共享
+        viewArtInvite = mButtonsView.findViewById(R.id.viewArtInvite);
+        //高亮
+        viewArtHighlight = mButtonsView.findViewById(R.id.viewArtHighlight);
+        //撤销
+        viewArtRevoke = mButtonsView.findViewById(R.id.viewArtRevoke);
+        //下划线
+        viewArtUnderline = mButtonsView.findViewById(R.id.viewArtUnderline);
+        //删除线
+        viewArtStrikeout = mButtonsView.findViewById(R.id.viewArtStrikeout);
+        //自由文本
+        viewArtFreeText = mButtonsView.findViewById(R.id.viewArtFreeText);
+        //确定
+        viewArtDone = mButtonsView.findViewById(R.id.viewArtDone);
+        //</editor-fold>
+
+        //<editor-fold desc="缩略图控件">
+        drawerLayout = (DrawerLayout) mButtonsView.findViewById(R.id.drawer_layout);
+        rvThumbnails = (RecyclerView) mButtonsView.findViewById(R.id.rv_thumbnails);
+        //</editor-fold>
+
+        mTopBarSwitcher.setVisibility(View.INVISIBLE);
+        mLlPageView.setVisibility(View.INVISIBLE);
+    }
+
+    private void viewConfig() {
+        //文件名称
+        mDocNameView.setText(mDocTitle);
+        if (isOnlyPreview) {
+            viewTopScreenshot.setVisibility(View.GONE);
+            viewTopSignature.setVisibility(View.GONE);
+            viewTopAnnotation.setVisibility(View.GONE);
+            viewTopWatermark.setVisibility(View.GONE);
+            if (viewTopSignTable != null) viewTopSignTable.setVisibility(View.GONE);
+            if (viewTopSearch != null) viewTopSearch.setVisibility(View.GONE);
+        }
+    }
+
     private void initThumbnailDrawer() {
         if (rvThumbnails == null) return;
         rvThumbnails.setLayoutManager(new LinearLayoutManager(this));
@@ -801,12 +889,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 core.logAnnotations(mDocView.mCurrent);
             }
         });
-        //退出文档批注上传开关
-        viewTopSave.setOnClickListener(v -> {
-            saveWhenExit = !saveWhenExit;
-            toast(saveWhenExit ? getString(R.string.save_to_annotation_directory_upon_exit) : getString(R.string.cancel_exit_and_save_to_annotation_directory));
-        });
-        viewTopSave.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
         //内容流水印
         viewTopWatermark.setOnClickListener(v -> {
             showWatermarkDialog();
@@ -1836,96 +1918,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", index + 1, core.countPages()));
     }
 
-    private void initViews() {
-        int layoutResId = MupdfMacro.isHengXunVersion ? R.layout.mupdf_document_activity_hx : R.layout.mupdf_document_activity;
-        mButtonsView = getLayoutInflater().inflate(layoutResId, null);
-        rootView = (RelativeLayout) mButtonsView.findViewById(R.id.rootView);
-        mDocNameView = (TextView) mButtonsView.findViewById(R.id.docNameText);
-        mLlPageView = (LinearLayout) mButtonsView.findViewById(R.id.ll_page_view);
-        mPageNumberView = (TextView) mButtonsView.findViewById(R.id.pageNumber);//页码
-        mPrePageView = (TextView) mButtonsView.findViewById(R.id.prePage);//上一页
-        mNextPageView = (TextView) mButtonsView.findViewById(R.id.nextPage);//下一页
-        mLayoutButton = mButtonsView.findViewById(R.id.layoutButton);
-        //提交签名、取消签名
-        ll_signature_layout = mButtonsView.findViewById(R.id.ll_signature_layout);
-        tv_submit_signature = mButtonsView.findViewById(R.id.tv_submit_signature);
-        tv_cancel_signature = mButtonsView.findViewById(R.id.tv_cancel_signature);
-
-        //<editor-fold desc="顶部默认组件">
-        mTopBarSwitcher = mButtonsView.findViewById(R.id.switcher);
-        mSearchBack = mButtonsView.findViewById(R.id.searchBack);
-        mSearchFwd = mButtonsView.findViewById(R.id.searchForward);
-        mSearchClose = mButtonsView.findViewById(R.id.searchClose);
-        mSearchText = mButtonsView.findViewById(R.id.searchText);
-        viewTopThumbnail = mButtonsView.findViewById(R.id.viewTopThumbnail);
-        viewTopSave = mButtonsView.findViewById(R.id.viewTopSave);
-        viewTopRefresh = mButtonsView.findViewById(R.id.viewTopRefresh);
-        viewTopJump = mButtonsView.findViewById(R.id.viewTopJump);
-        viewTopScreenshot = mButtonsView.findViewById(R.id.viewTopScreenshot);
-        viewTopSignature = mButtonsView.findViewById(R.id.viewTopSignature);
-        viewTopAnnotation = mButtonsView.findViewById(R.id.viewTopAnnotation);
-        viewTopBookmark = mButtonsView.findViewById(R.id.viewTopBookmark);
-        viewTopWatermark = mButtonsView.findViewById(R.id.viewTopWatermark);
-        viewTopSignTable = mButtonsView.findViewById(R.id.viewTopSignTable);
-        viewTopSignRow = mButtonsView.findViewById(R.id.viewTopSignRow);
-        viewTopClose = mButtonsView.findViewById(R.id.viewTopClose);
-        viewTopSearch = mButtonsView.findViewById(R.id.viewTopSearch);
-        viewTopSetting = mButtonsView.findViewById(R.id.viewTopSetting);
-        //</editor-fold>
-
-        //<editor-fold desc="批注控件">
-        inkOperationSwitcher = mButtonsView.findViewById(R.id.inkOperationSwitcher);
-        //关闭
-        viewArtClose = mButtonsView.findViewById(R.id.viewArtClose);
-        //画笔粗细
-        viewArtSizeTv = mButtonsView.findViewById(R.id.viewArtSizeTv);
-        viewArtSeekBar = mButtonsView.findViewById(R.id.viewArtSeekBar);
-        //画笔
-        viewArtPen = mButtonsView.findViewById(R.id.viewArtPen);
-        //直线
-        viewArtLine = mButtonsView.findViewById(R.id.viewArtLine);
-        //删除
-        viewArtBrush = mButtonsView.findViewById(R.id.viewArtBrush);
-        //颜色
-        viewArtColor = mButtonsView.findViewById(R.id.viewArtColor);
-        //共享
-        viewArtInvite = mButtonsView.findViewById(R.id.viewArtInvite);
-        //高亮
-        viewArtHighlight = mButtonsView.findViewById(R.id.viewArtHighlight);
-        //撤销
-        viewArtRevoke = mButtonsView.findViewById(R.id.viewArtRevoke);
-        //下划线
-        viewArtUnderline = mButtonsView.findViewById(R.id.viewArtUnderline);
-        //删除线
-        viewArtStrikeout = mButtonsView.findViewById(R.id.viewArtStrikeout);
-        //自由文本
-        viewArtFreeText = mButtonsView.findViewById(R.id.viewArtFreeText);
-        //确定
-        viewArtDone = mButtonsView.findViewById(R.id.viewArtDone);
-        //</editor-fold>
-
-        //<editor-fold desc="缩略图控件">
-        drawerLayout = (DrawerLayout) mButtonsView.findViewById(R.id.drawer_layout);
-        rvThumbnails = (RecyclerView) mButtonsView.findViewById(R.id.rv_thumbnails);
-        //</editor-fold>
-
-        mTopBarSwitcher.setVisibility(View.INVISIBLE);
-        mLlPageView.setVisibility(View.INVISIBLE);
-    }
-
-    private void viewConfig() {
-        //文件名称
-        mDocNameView.setText(mDocTitle);
-        if (isOnlyPreview) {
-            viewTopScreenshot.setVisibility(View.GONE);
-            viewTopSave.setVisibility(View.GONE);
-            viewTopSignature.setVisibility(View.GONE);
-            viewTopAnnotation.setVisibility(View.GONE);
-            viewTopWatermark.setVisibility(View.GONE);
-            if (viewTopSignTable != null) viewTopSignTable.setVisibility(View.GONE);
-            if (viewTopSearch != null) viewTopSearch.setVisibility(View.GONE);
-        }
-    }
 
     @Override
     public boolean onSearchRequested() {
@@ -1951,24 +1943,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     @Override
     public void onBackPressed() {
-        if (hadAnnotation) {
-            tipSavePop();
-        } else {
-            finish();
-        }
-//        if (mDocView == null || (mDocView != null && !mDocView.popHistory())) {
-//            super.onBackPressed();
-//            if (mReturnToLibraryActivity) {
-//                Intent intent = getPackageManager().getLaunchIntentForPackage(getComponentName().getPackageName());
-//                startActivity(intent);
-//            }
-//        }
+        exit();
     }
 
     private void exit() {
         Debugger.i(TAG, "---exit---");
-        if (saveWhenExit && hadAnnotation) {
-            saveAndExit();
+        if (hadAnnotation) {
+            tipSavePop();
         } else {
             finish();
         }
@@ -2320,7 +2301,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
         float pageHeightAtFitWidth = viewWidth * (pageSize.y / pageSize.x);
         float fitPageScale = Math.min(1f, viewHeight / pageHeightAtFitWidth);
-        int percent = Math.round(fitPageScale * 100f);
+        int percent = Math.round(fitPageScale * 100f);//返回最接近参数的整数，并将关系四舍五入到正无穷大。
         return Math.max(ABSOLUTE_MIN_ZOOM_PERCENT, Math.min(FIT_WIDTH_ZOOM_PERCENT, percent));
     }
 

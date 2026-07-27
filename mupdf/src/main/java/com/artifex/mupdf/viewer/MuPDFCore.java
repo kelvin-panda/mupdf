@@ -760,9 +760,8 @@ public class MuPDFCore {
     }
 
     public String save(String srcPath, String saveDirPath) throws Exception {
-//        PDFDocument pdfDocument = new PDFDocument(doc.pointer);
         String fileNameNoExtension = Util.getFileNameNoExtension(srcPath);
-        String destPath = saveDirPath + File.separator + fileNameNoExtension + "-" + Util.nowDate() + "-批注.pdf";
+        String destPath = saveDirPath + File.separator + fileNameNoExtension +".pdf";
         destPath = Util.getUniqueFilePath(destPath);
         boolean copy = Util.copyFile(new File(srcPath), new File(destPath), new Util.OnReplaceListener() {
             @Override
@@ -778,8 +777,6 @@ public class MuPDFCore {
         });
         Debugger.i(TAG, "srcPath:" + srcPath + ",destPath:" + destPath + ",copy:" + copy);
         doc.saveDoc(destPath, "incremental");
-//        pdfDocument.save(destPath, "incremental");
-//        pdfDocument.destroy();//fix: libc    : FORTIFY: pthread_mutex_lock called on a destroyed mutex (0xd4550a60)
         return destPath;
     }
 

@@ -212,6 +212,7 @@
                     android:layout_marginEnd="5dp"
                     android:background="@drawable/view_click_bg"
                     android:gravity="center"
+                    android:visibility="gone"
                     android:orientation="vertical">
 
                     <ImageView

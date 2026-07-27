@@ -39,13 +39,12 @@ import me.jessyan.autosize.internal.CancelAdapt;
 public class MainActivity extends AppCompatActivity implements CancelAdapt {
     private static final String TAG = "MainActivity";
     private int mode = MupdfClarityMode.UNRESTRICTED;
-    private CheckBox cb_full;
+    private CheckBox cb_full,cb_hengxun;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        MupdfMacro.isHengXunVersion = false;
         EventBus.getDefault().register(this);
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -54,7 +53,8 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
         });
         android11Permission();
         cb_full = findViewById(R.id.cb_full);
-        CheckBox cb_hengxun = findViewById(R.id.cb_hengxun);
+        cb_hengxun = findViewById(R.id.cb_hengxun);
+        cb_hengxun.setChecked(MupdfMacro.isHengXunVersion);
         cb_hengxun.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
@@ -151,7 +151,7 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
         Log.d(TAG, "mode=" + mode);
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
                 .fileUri(uri.toString())
-                .watermarkEnable(false)
+                .watermarkEnable(true)
                 .uploadEnable(true)
                 .signatureEnable(true)
                 .wpsOpenEnable(true)
