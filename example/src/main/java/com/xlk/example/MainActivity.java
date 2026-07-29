@@ -21,6 +21,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.blankj.utilcode.util.FileUtils;
+import com.xlk.example.databinding.ActivityMainBinding;
 import com.xlk.mupdf.library.MuPdfDocumentActivity;
 import com.xlk.mupdf.library.MupdfClarityMode;
 import com.xlk.mupdf.library.MupdfConfig;
@@ -39,35 +40,15 @@ import me.jessyan.autosize.internal.CancelAdapt;
 public class MainActivity extends AppCompatActivity implements CancelAdapt {
     private static final String TAG = "MainActivity";
     private int mode = MupdfClarityMode.UNRESTRICTED;
-    private CheckBox cb_full,cb_hengxun;
+    private ActivityMainBinding bd;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        bd = ActivityMainBinding.inflate(getLayoutInflater());
+        setContentView(bd.getRoot());
         EventBus.getDefault().register(this);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
-        android11Permission();
-        cb_full = findViewById(R.id.cb_full);
-        cb_hengxun = findViewById(R.id.cb_hengxun);
-        cb_hengxun.setChecked(MupdfMacro.isHengXunVersion);
-        cb_hengxun.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
-                MupdfMacro.isHengXunVersion = b;
-            }
-        });
-        CheckBox cb_delete = findViewById(R.id.cb_delete);
-        cb_delete.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
-                MupdfMacro.delete_history_annotation = b;
-            }
-        });
+        applyPermission();
         RadioGroup radioGroup = findViewById(R.id.radioGroup);
         radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override
@@ -97,21 +78,21 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
         });
     }
 
-    private final ActivityResultLauncher<Intent> android11Permission = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+    private final ActivityResultLauncher<Intent> applyPermission = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         int resultCode = result.getResultCode();
         if (Activity.RESULT_OK == resultCode) {
         } else {
-            android11Permission();
+            applyPermission();
         }
     });
 
-    private void android11Permission() {
+    private void applyPermission() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 //此手机是Android 11或更高的版本，且没有访问所有文件权限
                 Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                 intent.setData(Uri.parse("package:" + getPackageName()));
-                android11Permission.launch(intent);
+                applyPermission.launch(intent);
             }
         }
     }
@@ -148,18 +129,26 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
             });
 
     private void openMupdf(Uri uri) {
+        MupdfMacro.delete_history_annotation = bd.cbDeleteAnnotation.isChecked();//清理批注
+        MupdfMacro.isHengXunVersion = bd.cbHengxun.isChecked();
         Log.d(TAG, "mode=" + mode);
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
                 .fileUri(uri.toString())
-                .watermarkEnable(true)
-                .uploadEnable(true)
-                .signatureEnable(true)
-                .wpsOpenEnable(true)
-                .captureEnable(true)
-                .clarityLimitMode(mode)
-                .fullScreenEnable(cb_full.isChecked())
+                .clarityLimitMode(mode)                             //清晰度
+                .fullScreenEnable(bd.cbFull.isChecked())            //全屏
+                .annotationEnable(bd.cbAnnotation.isChecked())      //批注
+                .signatureEnable(bd.cbSignature.isChecked())        //签名
+                .captureEnable(bd.cbCapture.isChecked())            //截图
+                .wpsOpenEnable(bd.cbWps.isChecked())                //wps打开
+                .watermarkEnable(bd.cbWatermark.isChecked())        //水印
                 .watermarkContent("保密文件限制外露")
                 .watermarkColor(Color.parseColor("#66FFAB00"))
+                .signatureForm(bd.cbSignatureForm.isChecked()) //签名表
+                .fillInSignature(bd.cbSignatureTableSignature.isChecked()) //签名表签名
+                .fillInSignature(bd.cbText.isChecked()) //文本
+                //共享
+                .windowWatermarkEnable(bd.cbPdfWatermark.isChecked()) //界面水印
+                //界面水印
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);
     }

@@ -59,7 +59,7 @@ publishing {
         release(MavenPublication) {
             groupId = 'com.gitee.xlk_gitee'
             artifactId = 'mupdf-library'
-            version = '6.0.24'
+            version = '6.0.25'
 
             afterEvaluate {
                 from components.release

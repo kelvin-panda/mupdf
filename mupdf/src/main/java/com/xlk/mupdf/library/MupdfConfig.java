@@ -36,6 +36,9 @@ public class MupdfConfig {
     private final boolean backgroundColorConfigured;
     private final boolean brightnessConfigured;
     private final boolean zoomPercentConfigured;
+    private final boolean signatureFormEnabled;
+    private final boolean fillInSignatureEnabled;
+    private final boolean annotationInputTextEnabled;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -65,6 +68,9 @@ public class MupdfConfig {
         this.backgroundColorConfigured = builder.backgroundColorConfigured;
         this.brightnessConfigured = builder.brightnessConfigured;
         this.zoomPercentConfigured = builder.zoomPercentConfigured;
+        this.signatureFormEnabled = builder.signatureFormEnabled;
+        this.fillInSignatureEnabled = builder.fillInSignatureEnabled;
+        this.annotationInputTextEnabled = builder.annotationInputTextEnabled;
     }
 
     public String getFilePath() {
@@ -174,6 +180,19 @@ public class MupdfConfig {
     public int getWindowWatermarkColor() {
         return windowWatermarkColor;
     }
+
+    public boolean isSignatureFormEnabled() {
+        return signatureFormEnabled;
+    }
+
+    public boolean isFillInSignatureEnabled() {
+        return fillInSignatureEnabled;
+    }
+
+    public boolean isAnnotationInputTextEnabled() {
+        return annotationInputTextEnabled;
+    }
+
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -229,32 +248,63 @@ public class MupdfConfig {
         private boolean backgroundColorConfigured = false;
         private boolean brightnessConfigured = false;
         private boolean zoomPercentConfigured = false;
+        private boolean signatureFormEnabled = false;
+        private boolean fillInSignatureEnabled = false;
+        private boolean annotationInputTextEnabled = false;
 
+        /**
+         * 设置PDF预览文件
+         *
+         * @param filePath 文件全路径
+         */
         public Builder filePath(String filePath) {
             this.filePath = filePath;
             return this;
         }
 
-        public Builder annotationSaveDirPath(String annotationSaveDirPath) {
-            this.annotationSaveDirPath = annotationSaveDirPath;
-            return this;
-        }
-
+        /**
+         * 设置PDF预览文件
+         *
+         * @param fileUri 文件uri
+         */
         public Builder fileUri(String fileUri) {
             this.fileUri = fileUri;
             return this;
         }
 
+        /**
+         * 设置文件媒体ID，共享批注时使用
+         *
+         * @param mediaId 媒体文件id
+         */
         public Builder mediaId(int mediaId) {
             this.mediaId = mediaId;
             return this;
         }
 
+        /**
+         * 设置批注后保存的目录
+         *
+         * @param annotationSaveDirPath 目录路径
+         */
+        public Builder annotationSaveDirPath(String annotationSaveDirPath) {
+            this.annotationSaveDirPath = annotationSaveDirPath;
+            return this;
+        }
+
+        /**
+         * 设置pdf水印开关
+         *
+         * @param watermarkEnable true or false
+         */
         public Builder watermarkEnable(boolean watermarkEnable) {
             this.watermarkEnable = watermarkEnable;
             return this;
         }
 
+        /**
+         * 设置pdf水印内容
+         */
         public Builder watermarkContent(String watermark) {
             this.watermarkContent = watermark;
             return this;
@@ -265,6 +315,11 @@ public class MupdfConfig {
             return this;
         }
 
+        /**
+         * 设置退出预览后是否删除源文件
+         *
+         * @param deleteSourceFile true or false
+         */
         public Builder deleteSourceFile(boolean deleteSourceFile) {
             this.deleteSourceFile = deleteSourceFile;
             return this;
@@ -382,6 +437,35 @@ public class MupdfConfig {
          */
         public Builder windowWatermarkColor(int color) {
             this.windowWatermarkColor = color;
+            return this;
+        }
+
+        /**
+         * 签名表开关
+         *
+         * @param enable true or false
+         */
+        public Builder signatureForm(boolean enable) {
+            this.signatureFormEnabled = enable;
+            return this;
+        }
+
+        /**
+         * 填写签名
+         *
+         * @param enable true or false
+         */
+        public Builder fillInSignature(boolean enable) {
+            this.fillInSignatureEnabled = enable;
+            return this;
+        }
+        /**
+         * 批注输入文本开关
+         *
+         * @param enable true or false
+         */
+        public Builder annotationInputText(boolean enable) {
+            this.annotationInputTextEnabled = enable;
             return this;
         }
 

@@ -19,12 +19,12 @@
             android:layout_height="wrap_content"
             android:layout_alignParentTop="true"
             android:layout_centerHorizontal="true"
-            tools:visibility="visible">
+            tools:visibility="gone">
 
             <LinearLayout
                 android:id="@+id/mainBar"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_gravity="center"
                 android:background="@color/toolbar"
                 android:gravity="center"
@@ -58,7 +58,7 @@
                         android:layout_width="30dp"
                         android:layout_height="30dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/ic_mupdf_thumbnail" />
+                        android:src="@drawable/icon_mupdf_top_thumbnail" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -240,6 +240,7 @@
                     android:layout_marginEnd="5dp"
                     android:background="@drawable/view_click_bg"
                     android:gravity="center"
+                    tools:visibility="visible"
                     android:orientation="vertical"
                     android:visibility="gone">
 
@@ -267,6 +268,7 @@
                     android:layout_marginEnd="5dp"
                     android:background="@drawable/view_click_bg"
                     android:gravity="center"
+                    tools:visibility="visible"
                     android:orientation="vertical"
                     android:visibility="gone">
 
@@ -294,6 +296,7 @@
                     android:layout_marginEnd="5dp"
                     android:background="@drawable/view_click_bg"
                     android:gravity="center"
+                    tools:visibility="visible"
                     android:orientation="vertical"
                     android:visibility="gone">
 
@@ -470,7 +473,7 @@
             android:layout_height="wrap_content"
             android:background="@color/toolbar"
             android:visibility="invisible"
-            tools:visibility="gone">
+            tools:visibility="visible">
 
             <LinearLayout
                 android:id="@+id/inkOperationLayout"
@@ -841,26 +844,6 @@
                 android:textColor="@android:color/white"
                 android:textSize="16sp" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/tv_mark"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:layout_centerInParent="true"
-            android:autoSizeMaxTextSize="500sp"
-            android:autoSizeMinTextSize="10sp"
-            android:autoSizeStepGranularity="1sp"
-            android:autoSizeTextType="uniform"
-            android:clickable="false"
-            android:enabled="false"
-            android:focusable="false"
-            android:focusableInTouchMode="false"
-            android:gravity="center"
-            android:letterSpacing="1"
-            android:textColor="#66FFAB00"
-            android:visibility="gone"
-            tools:text="保密文件限制外露"
-            tools:visibility="visible" />
 
         <LinearLayout
             android:id="@+id/ll_signature_layout"

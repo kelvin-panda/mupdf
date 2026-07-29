@@ -207,6 +207,7 @@ public class MupdfMacro {
     public static final String bundle_key_zoom_percent = "zoom_percent";
     public static final String bundle_key_zoom_percent_configured = "zoom_percent_configured";
     //</editor-fold>
+
     /**
      * 仅显示在阅读窗口上的水印，不写入 PDF 内容。
      */
@@ -214,7 +215,14 @@ public class MupdfMacro {
     public static final String bundle_key_window_watermark_content = "window_watermark_content";
     public static final String bundle_key_window_watermark_color = "window_watermark_color";
 
+    //<editor-fold desc="签名表相关">
+    public static final String bundle_key_signature_form_enabled = "signature_form_enabled";
+    public static final String bundle_key_fill_signature_form_enabled = "fill_signature_form_enabled";
+    //</editor-fold>
+    public static final String bundle_key_annotation_input_text_enabled = "annotation_input_text";
+
     //<editor-fold desc="共享批注相关">
+
 
     /**
      * 所有正在参与共享绘制的设备id

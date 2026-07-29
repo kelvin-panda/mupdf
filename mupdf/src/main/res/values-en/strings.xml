@@ -85,4 +85,6 @@
 	<string name="mupdf_sign_row_draw">选取签名图片</string>
 	<string name="mupdf_thumbnail">缩略图</string>
 	<string name="mupdf_art_drag">拖动</string>
+    <string name="mupdf_not_save">不保存</string>
+	<string name="mupdf_tip">提示</string>
 </resources>

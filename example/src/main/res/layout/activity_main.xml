@@ -5,45 +5,28 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:padding="20dp"
     tools:context=".MainActivity">
 
-    <CheckBox
-        android:id="@+id/cb_full"
-        android:layout_width="wrap_content"
+    <Button
+        android:id="@+id/button"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="全屏缩放"
-        android:checked="true"
+        android:onClick="openPdfFile"
+        android:text="打开文件"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
-
-    <CheckBox
-        android:id="@+id/cb_delete"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="清理批注"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/cb_full" />
-
-    <CheckBox
-        android:id="@+id/cb_hengxun"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="恒迅版本"
-        android:checked="true"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/cb_delete" />
 
     <TextView
         android:id="@+id/tv_tip"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
         android:text="限制清晰度（提升加载速度）"
-        app:layout_constraintTop_toBottomOf="@+id/cb_hengxun"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/button" />
 
     <RadioGroup
         android:id="@+id/radioGroup"
@@ -92,16 +75,138 @@
             android:text="720P" />
     </RadioGroup>
 
-
-    <Button
-        android:id="@+id/button"
+    <TextView
+        android:id="@+id/tvTopFunction"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:onClick="openPdfFile"
-        android:text="打开文件"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:text="功能开关"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toBottomOf="@+id/radioGroup" />
+
+    <GridLayout
+        android:id="@+id/glTop"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:columnCount="4"
+        android:useDefaultMargins="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/tvTopFunction">
+
+        <CheckBox
+            android:id="@+id/cbHengxun"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="恒迅版本" />
+
+        <CheckBox
+            android:id="@+id/cbFull"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="全屏缩放" />
+
+        <CheckBox
+            android:id="@+id/cbDeleteAnnotation"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="清理批注" />
+
+        <CheckBox
+            android:id="@+id/cbAnnotation"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="批注" />
+
+        <CheckBox
+            android:id="@+id/cbSignature"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="签名" />
+
+        <CheckBox
+            android:id="@+id/cbCapture"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="截图" />
+
+        <CheckBox
+            android:id="@+id/cbWps"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="wps" />
+
+        <CheckBox
+            android:id="@+id/cbWatermark"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="true"
+            android:text="水印" />
+
+<!--        <CheckBox-->
+<!--            android:id="@+id/cbSearch"-->
+<!--            android:layout_rowWeight="1"-->
+<!--            android:layout_columnWeight="1"-->
+<!--            android:checked="true"-->
+<!--            android:text="搜索" />-->
+
+        <CheckBox
+            android:id="@+id/cbSignatureForm"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="签名表" />
+
+        <CheckBox
+            android:id="@+id/cbSignatureTableSignature"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="签名表签名" />
+
+<!--        <CheckBox-->
+<!--            android:id="@+id/cbUnderline"-->
+<!--            android:layout_rowWeight="1"-->
+<!--            android:layout_columnWeight="1"-->
+<!--            android:checked="true"-->
+<!--            android:text="下划线" />-->
+
+<!--        <CheckBox-->
+<!--            android:id="@+id/cbStrikethrough"-->
+<!--            android:layout_rowWeight="1"-->
+<!--            android:layout_columnWeight="1"-->
+<!--            android:checked="true"-->
+<!--            android:text="删除线" />-->
+
+        <CheckBox
+            android:id="@+id/cbShare"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="共享" />
+
+        <CheckBox
+            android:id="@+id/cbText"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="文本" />
+
+        <CheckBox
+            android:id="@+id/cbPdfWatermark"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="PDF水印" />
+
+        <CheckBox
+            android:id="@+id/cbFaceWatermark"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="界面水印" />
+    </GridLayout>
+
 
 </androidx.constraintlayout.widget.ConstraintLayout>

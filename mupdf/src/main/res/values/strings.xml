@@ -58,7 +58,7 @@
 	<string name="cannot_exceed_the_maximum_page_size">不能大于最大页</string>
 	<string name="save_to_annotation_directory_upon_exit">将在退出时保存到批注目录</string>
 	<string name="cancel_exit_and_save_to_annotation_directory">已取消退出时保存到批注目录</string>
-	<string name="title_save_pop">文件已修改，是否保存到批注目录？</string>
+	<string name="title_save_pop">是否保存批注并退出？</string>
 	<string name="save_and_exit">保存并退出</string>
 	<string name="exit_directly">直接退出</string>
 	<string name="please_wait">请稍等</string>
@@ -85,5 +85,7 @@
     <string name="mupdf_sign_row_draw">选取签名图片</string>
 	<string name="mupdf_thumbnail">缩略图</string>
 	<string name="mupdf_art_drag">拖动</string>
+    <string name="mupdf_not_save">不保存</string>
+	<string name="mupdf_tip">提示</string>
 
 </resources>

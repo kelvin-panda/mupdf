@@ -26,7 +26,9 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.method.PasswordTransformationMethod;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -37,6 +39,7 @@ import android.view.animation.Animation;
 import android.view.animation.TranslateAnimation;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -49,6 +52,7 @@ import android.widget.ViewAnimator;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -107,7 +111,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private static final String TAG = "MuPdfDocumentActivity";
 
     //<editor-fold desc="功能开关与接收参数">
-    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable,deleteFileWhenExit;
+    private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable, deleteFileWhenExit,
+            mWindowWatermarkEnabled, watermarkEnable, mSignatureFormEnabled, mfillSignatureFormEnabled, mAnnotationInputTextEnabled;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;
     private boolean isFullScreen = true;
     private int mWatermarkColor, mWindowWatermarkColor;
@@ -358,6 +363,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putBoolean(MupdfMacro.bundle_key_window_watermark_enable, config.isWindowWatermarkEnable());
         bundle.putString(MupdfMacro.bundle_key_window_watermark_content, config.getWindowWatermarkContent());
         bundle.putInt(MupdfMacro.bundle_key_window_watermark_color, config.getWindowWatermarkColor());
+        bundle.putBoolean(MupdfMacro.bundle_key_signature_form_enabled, config.isSignatureFormEnabled());
+        bundle.putBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, config.isFillInSignatureEnabled());
+        bundle.putBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, config.isAnnotationInputTextEnabled());
         jump(context, bundle);
     }
 
@@ -462,16 +470,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         uri = Uri.parse(srcUri);
                     }
 
-                    boolean watermark = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
-                    if (watermark) {
+                    watermarkEnable = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
+                    if (watermarkEnable) {
                         mWatermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
                         mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, Color.parseColor("#66FF6D00"));
                     }
-                    boolean windowWatermark = bundle.getBoolean(MupdfMacro.bundle_key_window_watermark_enable, false);
-                    if (windowWatermark) {
+                    mWindowWatermarkEnabled = bundle.getBoolean(MupdfMacro.bundle_key_window_watermark_enable, false);
+                    if (mWindowWatermarkEnabled) {
                         mWindowWatermark = bundle.getString(MupdfMacro.bundle_key_window_watermark_content, "");
                         mWindowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, Color.parseColor("#33FFAB00"));
                     }
+                    mSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_signature_form_enabled, false);
+                    mfillSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, false);
+                    mAnnotationInputTextEnabled = bundle.getBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, false);
                     Debugger.i(TAG, "bundle config："
                             + "\nsrcFilePath=" + srcFilePath
                             + "\nsrcUri=" + srcUri
@@ -480,12 +491,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                             + "\ndeleteFileWhenExit=" + deleteFileWhenExit
                             + "\nisOnlyPreview=" + isOnlyPreview
                             + "\nuploadDirId=" + uploadDirId
-                            + "\nwatermark=" + watermark
+                            + "\nwatermarkEnable=" + watermarkEnable
                             + "\nmWatermark=" + mWatermark
-                            + "\nwindowWatermark=" + windowWatermark
+                            + "\nmWindowWatermarkEnabled=" + mWindowWatermarkEnabled
                             + "\nmWindowWatermark=" + mWindowWatermark
                             + "\nMupdfMacro.clarityLimitMode=" + MupdfMacro.clarityLimitMode
                             + "\nisFullScreen=" + isFullScreen
+                            + "\nmSignatureFormEnabled=" + mSignatureFormEnabled
+                            + "\nmfillSignatureFormEnabled=" + mfillSignatureFormEnabled
+                            + "\nmAnnotationInputTextEnabled=" + mAnnotationInputTextEnabled
                     );
 
                     if (uri == null) {
@@ -677,9 +691,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         };
 
         initViews();
-        viewConfig();
-
         extracted(savedInstanceState);
+        viewConfig();
 
         RelativeLayout.LayoutParams docLp = new RelativeLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -689,6 +702,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
         applyWindowWatermark(mWindowWatermark);
         setContentView(mButtonsView);
+        if (watermarkEnable) {
+            float[] color = core.parseColor(mWatermarkColor);
+            core.addContentWatermark(mWatermark, 0f, 45f, 0.15f, color, 1.5f);
+        }
         postToMainDelayed(() -> {
             if (srcPageIndex != 0) {
                 mDocView.setDisplayedViewIndex(srcPageIndex);
@@ -696,6 +713,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             applyZoomPercent(resolveInitialZoomPercent(), false);
             mDocView.requestLayout();
             mDocView.run();
+
 
             // 缩略图
             initThumbnailDrawer();
@@ -783,13 +801,25 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private void viewConfig() {
         //文件名称
         mDocNameView.setText(mDocTitle);
+        setViewShowState(viewTopWatermark, mWindowWatermarkEnabled); //水印
+        setViewShowState(viewTopSignTable, mSignatureFormEnabled);//签名表
+        setViewShowState(viewTopSignRow, mfillSignatureFormEnabled);//填写签名
+        setViewShowState(viewTopSignature, signatureEnable);        //签名
+        if (MupdfMacro.shareAnnotationEnable) {
+            // 有文件id才显示
+            setViewShowState(viewArtInvite, mediaId != 0);   //批注中的邀请
+        }
+        setViewShowState(viewTopJump, wpsOpenEnable);               //外部打开
+        setViewShowState(viewTopScreenshot, captureEnable);         //截图批注
+        setViewShowState(viewTopAnnotation, annotationEnable);      //批注
+        setViewShowState(viewArtFreeText, mAnnotationInputTextEnabled);      //批注输入文本
         if (isOnlyPreview) {
-            viewTopScreenshot.setVisibility(View.GONE);
-            viewTopSignature.setVisibility(View.GONE);
-            viewTopAnnotation.setVisibility(View.GONE);
-            viewTopWatermark.setVisibility(View.GONE);
-            if (viewTopSignTable != null) viewTopSignTable.setVisibility(View.GONE);
-            if (viewTopSearch != null) viewTopSearch.setVisibility(View.GONE);
+            setViewShowState(viewTopScreenshot, false);
+            setViewShowState(viewTopSignature, false);
+            setViewShowState(viewTopAnnotation, false);
+            setViewShowState(viewTopWatermark, false);
+            setViewShowState(viewTopSignTable, false);
+            setViewShowState(viewTopSearch, false);
         }
     }
 
@@ -872,11 +902,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
         //</editor-fold>
 
-        if (MupdfMacro.shareAnnotationEnable) {
-            //有文件id才显示
-            viewArtInvite.setVisibility(mediaId != 0 ? View.VISIBLE : View.GONE);
-        }
-
         //退出pdf预览
         viewTopClose.setOnClickListener(v -> {
             exit();
@@ -893,20 +918,17 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewTopWatermark.setOnClickListener(v -> {
             showWatermarkDialog();
         });
-        viewTopWatermark.setVisibility(uploadEnable ? View.VISIBLE : View.GONE);
         //签名表格
         if (viewTopSignTable != null) {
             viewTopSignTable.setOnClickListener(v -> {
                 showSignTableDialog();
             });
-            viewTopSignTable.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
         }
         //填写签名
         if (viewTopSignRow != null) {
             viewTopSignRow.setOnClickListener(v -> {
                 showSignRowDialog();
             });
-            viewTopSignRow.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
         }
 
         //<editor-fold desc="签名操作">
@@ -952,7 +974,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
             }).show();
         });
-        viewTopSignature.setVisibility(signatureEnable ? View.VISIBLE : View.GONE);
         //提交签名
         tv_submit_signature.setOnClickListener(v -> {
             if (mScalableView == null || mCurPageView == null) return;
@@ -1019,7 +1040,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             alert.setOnCancelListener(dialog -> dialog.dismiss());
             alert.show();
         });
-        viewTopJump.setVisibility(wpsOpenEnable ? View.VISIBLE : View.GONE);
         //截图批注
         viewTopScreenshot.setOnClickListener(v -> {
             hideButtons();
@@ -1027,7 +1047,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 EventBus.getDefault().post(new MupdfEventMessage.Builder().type(MupdfBusType.inform_screenshot).objects(mDocTitle, 0).build());
             }, 250);
         });
-        viewTopScreenshot.setVisibility(captureEnable ? View.VISIBLE : View.GONE);
         //界面跳转
         mPageNumberView.setOnClickListener(v -> {
             AlertDialog alert = mAlertBuilder.create();
@@ -1198,7 +1217,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             rootView.addView(artBoard, 1); // index=1：在 mDocView(0) 之上，mButtonsView(2) 之下
             artBoard.layout(0, 0, artW, artH);
         });
-        viewTopAnnotation.setVisibility(annotationEnable ? View.VISIBLE : View.GONE);
 
         ibs.add(viewArtBrush);//删除
         ibs.add(viewArtPen);//墨迹
@@ -1956,24 +1974,120 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     private void tipSavePop() {
-        new AlertDialog.Builder(this)
-                .setTitle(getString(R.string.title_save_pop))
-                .setPositiveButton(getString(R.string.save_and_exit), new DialogInterface.OnClickListener() {
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.mupdf_tip))
+                .setMessage(getString(R.string.title_save_pop))
+                .setNeutralButton(getString(R.string.mupdf_cancel), new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        dialog.dismiss();
+                    }
+                })
+                .setPositiveButton(getString(R.string.mupdf_save), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         dialog.dismiss();
                         saveAndExit();
                     }
                 })
-                .setNegativeButton(getString(R.string.exit_directly), new DialogInterface.OnClickListener() {
+                .setNegativeButton(getString(R.string.mupdf_not_save), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         dialog.dismiss();
                         finish();
                     }
                 })
-                .create()
-                .show();
+                .create();
+        dialog.show();
+        // 1. 修改三个按钮的字体大小（以 Positive 为例，其他同理）
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextSize(22);
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(ContextCompat.getColor(this, R.color.mupdf_text_black));
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextSize(22);
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(ContextCompat.getColor(this, R.color.mupdf_text_black));
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextSize(22);
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(ContextCompat.getColor(this, R.color.mupdf_text_black));
+
+        // 2. 通过文字内容修改标题大小（不管 ID 是什么）
+        setTextViewSizeByText(dialog, getString(R.string.mupdf_tip), 28);
+
+        // 3. 修改消息内容字体（ID 是 android.R.id.message）
+        TextView msgView = dialog.findViewById(android.R.id.message);
+        if (msgView != null) {
+            msgView.setTextSize(25);
+            msgView.setTextColor(ContextCompat.getColor(this, R.color.mupdf_text_gray));
+        }
+        // ---- 新增：修改按钮间距（例如设置为 16dp） ----
+        setButtonSpacing(dialog, 20);
+    }
+
+    /**
+     * 设置对话框按钮之间的间距（适用于原生 AlertDialog）
+     *
+     * @param dialog    对话框实例
+     * @param spacingDp 间距大小（单位 dp）
+     */
+    private void setButtonSpacing(AlertDialog dialog, int spacingDp) {
+        if (dialog == null) return;
+
+        Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        Button negative = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+//        Button neutral = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+
+        // 工具：dp 转 px
+        float density = getResources().getDisplayMetrics().density;
+        int spacingPx = (int) (spacingDp * density + 0.5f);
+
+        // 依次处理每个按钮的左右边距
+        // 注意：原生 AlertDialog 的按钮排列顺序通常是 [Negative] [Neutral] [Positive]
+        if (positive != null) {
+            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) positive.getLayoutParams();
+            params.leftMargin = spacingPx;   // 左边距拉开
+            params.rightMargin = 0;
+            positive.setLayoutParams(params);
+        }
+
+        if (negative != null) {
+            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) negative.getLayoutParams();
+            params.leftMargin = 0;
+            params.rightMargin = spacingPx;  // 右边距拉开
+            negative.setLayoutParams(params);
+        }
+
+        // 如果有中性按钮（它在正负之间），两边都留间距
+//        if (neutral != null) {
+//            ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) neutral.getLayoutParams();
+//            params.leftMargin = spacingPx;
+//            params.rightMargin = spacingPx;
+//            neutral.setLayoutParams(params);
+//        }
+    }
+
+
+    /**
+     * 在对话框的视图树中，根据文字内容查找 TextView 并修改字体大小
+     *
+     * @param dialog     对话框
+     * @param targetText 要匹配的文字（标题文字）
+     * @param size       目标字体大小（sp）
+     */
+    private void setTextViewSizeByText(AlertDialog dialog, String targetText, float size) {
+        if (dialog == null || dialog.getWindow() == null) return;
+        View root = dialog.getWindow().getDecorView();
+        findAndSetTextSize(root, targetText, size);
+    }
+
+    private void findAndSetTextSize(View view, String targetText, float size) {
+        if (view instanceof TextView) {
+            TextView tv = (TextView) view;
+            if (targetText.equals(tv.getText().toString())) {
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+            }
+        } else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                findAndSetTextSize(group.getChildAt(i), targetText, size);
+            }
+        }
     }
 
     private void saveAndExit() {
@@ -2502,88 +2616,91 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         root.addView(zoomRow);
         //</editor-fold>
 
-        //<editor-fold desc="水印">
-        root.addView(makeSectionLabel(getString(R.string.mupdf_watermark), density, true));
+        if (!MupdfMacro.isHengXunVersion) {
+            //<editor-fold desc="水印">
+            root.addView(makeSectionLabel(getString(R.string.mupdf_watermark), density, true));
 
-        android.widget.RadioGroup watermarkModeGroup = new android.widget.RadioGroup(this);
-        watermarkModeGroup.setOrientation(android.widget.RadioGroup.HORIZONTAL);
-        watermarkModeGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            android.widget.RadioGroup watermarkModeGroup = new android.widget.RadioGroup(this);
+            watermarkModeGroup.setOrientation(android.widget.RadioGroup.HORIZONTAL);
+            watermarkModeGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
 
-        android.widget.RadioButton noWatermark = new android.widget.RadioButton(this);
-        noWatermark.setId(View.generateViewId());
-        noWatermark.setText(R.string.mupdf_watermark_none);
+            android.widget.RadioButton noWatermark = new android.widget.RadioButton(this);
+            noWatermark.setId(View.generateViewId());
+            noWatermark.setText(R.string.mupdf_watermark_none);
 
-        android.widget.RadioButton pdfWatermark = new android.widget.RadioButton(this);
-        pdfWatermark.setId(View.generateViewId());
-        pdfWatermark.setText(R.string.mupdf_watermark_pdf);
+            android.widget.RadioButton pdfWatermark = new android.widget.RadioButton(this);
+            pdfWatermark.setId(View.generateViewId());
+            pdfWatermark.setText(R.string.mupdf_watermark_pdf);
 
-        android.widget.RadioButton windowWatermark = new android.widget.RadioButton(this);
-        windowWatermark.setId(View.generateViewId());
-        windowWatermark.setText(R.string.mupdf_watermark_window);
+            android.widget.RadioButton windowWatermark = new android.widget.RadioButton(this);
+            windowWatermark.setId(View.generateViewId());
+            windowWatermark.setText(R.string.mupdf_watermark_window);
 
-        watermarkModeGroup.addView(noWatermark);
-        watermarkModeGroup.addView(pdfWatermark);
-        watermarkModeGroup.addView(windowWatermark);
-        root.addView(watermarkModeGroup);
+            watermarkModeGroup.addView(noWatermark);
+            watermarkModeGroup.addView(pdfWatermark);
+            watermarkModeGroup.addView(windowWatermark);
+            root.addView(watermarkModeGroup);
 
-        final EditText watermarkInput = new EditText(this);
-        watermarkInput.setSingleLine();
-        watermarkInput.setHint(R.string.mupdf_watermark_text_hint);
-        watermarkInput.setText(!TextUtils.isEmpty(mWindowWatermark) ? mWindowWatermark : (!TextUtils.isEmpty(mWatermark) ? mWatermark : ""));
-        watermarkInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        root.addView(watermarkInput);
+            final EditText watermarkInput = new EditText(this);
+            watermarkInput.setSingleLine();
+            watermarkInput.setHint(R.string.mupdf_watermark_text_hint);
+            watermarkInput.setText(!TextUtils.isEmpty(mWindowWatermark) ? mWindowWatermark : (!TextUtils.isEmpty(mWatermark) ? mWatermark : ""));
+            watermarkInput.setInputType(InputType.TYPE_CLASS_TEXT);
+            root.addView(watermarkInput);
 
-        final int[] watermarkMode = {
-                !TextUtils.isEmpty(mWindowWatermark) || !TextUtils.isEmpty(mWatermark) ? WATERMARK_MODE_WINDOW : WATERMARK_MODE_NONE
-        };
-        watermarkModeGroup.check(watermarkMode[0] == WATERMARK_MODE_WINDOW
-                ? windowWatermark.getId()
-                : noWatermark.getId());
-        watermarkInput.setEnabled(watermarkMode[0] != WATERMARK_MODE_NONE);
-        watermarkModeGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            if (checkedId == pdfWatermark.getId()) {
-                watermarkMode[0] = WATERMARK_MODE_PDF;
-            } else if (checkedId == windowWatermark.getId()) {
-                watermarkMode[0] = WATERMARK_MODE_WINDOW;
-            } else {
-                watermarkMode[0] = WATERMARK_MODE_NONE;
-            }
+            final int[] watermarkMode = {
+                    !TextUtils.isEmpty(mWindowWatermark) || !TextUtils.isEmpty(mWatermark) ? WATERMARK_MODE_WINDOW : WATERMARK_MODE_NONE
+            };
+            watermarkModeGroup.check(watermarkMode[0] == WATERMARK_MODE_WINDOW
+                    ? windowWatermark.getId()
+                    : noWatermark.getId());
             watermarkInput.setEnabled(watermarkMode[0] != WATERMARK_MODE_NONE);
-        });
+            watermarkModeGroup.setOnCheckedChangeListener((group, checkedId) -> {
+                if (checkedId == pdfWatermark.getId()) {
+                    watermarkMode[0] = WATERMARK_MODE_PDF;
+                } else if (checkedId == windowWatermark.getId()) {
+                    watermarkMode[0] = WATERMARK_MODE_WINDOW;
+                } else {
+                    watermarkMode[0] = WATERMARK_MODE_NONE;
+                }
+                watermarkInput.setEnabled(watermarkMode[0] != WATERMARK_MODE_NONE);
+            });
 
-        TextView applyWatermarkBtn = new TextView(this);
-        applyWatermarkBtn.setText(getString(R.string.mupdf_watermark_apply));
-        applyWatermarkBtn.setTextColor(0xFF2196F3);
-        applyWatermarkBtn.setGravity(android.view.Gravity.CENTER);
-        applyWatermarkBtn.setPadding(0, (int) (12 * density), 0, 0);
-        applyWatermarkBtn.setOnClickListener(v -> {
-            String text = watermarkInput.getText() == null ? "" : watermarkInput.getText().toString().trim();
-            if (watermarkMode[0] == WATERMARK_MODE_NONE) {
-                applyWindowWatermark("");
-                mWatermark = "";
-                Toast.makeText(this, getString(R.string.mupdf_watermark_none), Toast.LENGTH_SHORT).show();
-            } else if (watermarkMode[0] == WATERMARK_MODE_WINDOW) {
-                if (text.isEmpty()) {
-                    Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
-                    return;
+            TextView applyWatermarkBtn = new TextView(this);
+            applyWatermarkBtn.setText(getString(R.string.mupdf_watermark_apply));
+            applyWatermarkBtn.setTextColor(0xFF2196F3);
+            applyWatermarkBtn.setGravity(android.view.Gravity.CENTER);
+            applyWatermarkBtn.setPadding(0, (int) (12 * density), 0, 0);
+            applyWatermarkBtn.setOnClickListener(v -> {
+                String text = watermarkInput.getText() == null ? "" : watermarkInput.getText().toString().trim();
+                if (watermarkMode[0] == WATERMARK_MODE_NONE) {
+                    applyWindowWatermark("");
+                    mWatermark = "";
+                    Toast.makeText(this, getString(R.string.mupdf_watermark_none), Toast.LENGTH_SHORT).show();
+                } else if (watermarkMode[0] == WATERMARK_MODE_WINDOW) {
+                    if (text.isEmpty()) {
+                        Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    mWatermark = "";
+                    applyWindowWatermark(text);
+                    Toast.makeText(this, getString(R.string.mupdf_watermark_window) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
+                } else {
+                    if (text.isEmpty()) {
+                        Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    float[] color = new float[]{0.82f, 0.20f, 0.18f};
+                    core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
+                    hadAnnotation = true;
+                    afterAnnotationPreservingScroll();
+                    Toast.makeText(this, getString(R.string.mupdf_watermark_pdf) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
                 }
-                mWatermark = "";
-                applyWindowWatermark(text);
-                Toast.makeText(this, getString(R.string.mupdf_watermark_window) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
-            } else {
-                if (text.isEmpty()) {
-                    Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                float[] color = new float[]{0.82f, 0.20f, 0.18f};
-                core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
-                hadAnnotation = true;
-                afterAnnotationPreservingScroll();
-                Toast.makeText(this, getString(R.string.mupdf_watermark_pdf) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
-            }
-        });
-        root.addView(applyWatermarkBtn);
-        //</editor-fold>
+            });
+            root.addView(applyWatermarkBtn);
+            //</editor-fold>
+        }
+
 
         // 重置按钮（不关闭弹窗，直接复位三项）
         TextView resetBtn = new TextView(this);
@@ -2788,6 +2905,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             canvas.drawPath(path, p);
         }
         return bmp;
+    }
+
+    private void setViewShowState(View view, boolean visible) {
+        setViewShowState(view, visible ? View.VISIBLE : View.GONE);
+    }
+
+    private void setViewShowState(View view, int visibility) {
+        if (view != null) view.setVisibility(visibility);
     }
 
     public void onDestroy() {

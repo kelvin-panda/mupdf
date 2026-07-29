@@ -1,6 +1,13 @@
 
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 # 更新
+## 6.0.25
+1. 添加外部可控显示或隐藏的功能开关
+   - 顶部菜单可显示或隐藏：水印、签名表、填写签名、设置里的水印（待完善使用场景）
+   - 批注中的文本功能：退出批注时无法撤销和删除（待完善）
+2. UI更新
+   - 恒迅版本的缩略图图标
+   - 退出时的保存提示：字体增大与调整间距
 ## 6.0.24
 1. 适配再上线上传功能批注保存时文件名去除日期，交给外部处理
    - MuPDFCore 中 save 方法文件名去除日期与批注

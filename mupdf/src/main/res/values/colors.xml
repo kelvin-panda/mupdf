@@ -6,6 +6,8 @@
 	<color name="black">#000000</color>
 	<color name="red">#FF0000</color>
 	<color name="blue">#51CEF8</color>
+	<color name="mupdf_text_gray">#556677</color>
+	<color name="mupdf_text_black">#454545</color>
 
 	<color name="mupdf_icon_color_white">#FFFFFF</color>
 	<color name="mupdf_icon_color_blue">#40C4FF</color>
