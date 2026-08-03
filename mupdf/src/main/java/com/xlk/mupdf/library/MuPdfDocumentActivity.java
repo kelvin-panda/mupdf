@@ -2616,7 +2616,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         root.addView(zoomRow);
         //</editor-fold>
 
-        if (!MupdfMacro.isHengXunVersion) {
+        if (mWindowWatermarkEnabled) {
             //<editor-fold desc="水印">
             root.addView(makeSectionLabel(getString(R.string.mupdf_watermark), density, true));
 
