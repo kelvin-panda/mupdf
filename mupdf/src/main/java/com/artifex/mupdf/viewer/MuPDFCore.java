@@ -1,9 +1,12 @@
 package com.artifex.mupdf.viewer;
 
+import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_HIGHLIGHT;
 import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_INK;
 import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_LINE;
 import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_SCREEN;
 import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_SQUARE;
+import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_STRIKE_OUT;
+import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_UNDERLINE;
 import static com.artifex.mupdf.fitz.PDFAnnotation.TYPE_WATERMARK;
 
 import android.graphics.Bitmap;
@@ -349,10 +352,10 @@ public class MuPDFCore {
      * @param pageNum
      * @param width
      * @param height
-     * @param type {@link PDFAnnotation#TYPE_LINE}
+     * @param type    {@link PDFAnnotation#TYPE_LINE}
      * @return
      */
-    public Point[] addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
+    public synchronized Point[] addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
         try {
             Point[] percentPoints = new Point[inkList.length];
             Page page = doc.loadPage(pageNum);
@@ -433,8 +436,8 @@ public class MuPDFCore {
     /**
      * 添加文本标记标注: 下划线/删除线，自动提取选区内的文字quad。
      */
-    public PDFAnnotation addTextMarkupAnnotation(int pageNum, int width, int height, int type,
-                                                 Point startPt, Point endPt, float[] color, float dpiX, float dpiY) {
+    public synchronized PDFAnnotation addTextMarkupAnnotation(int pageNum, int width, int height, int type,
+                                                              Point startPt, Point endPt, float[] color, float dpiX, float dpiY) {
         try {
             if (color == null || color.length < 3) {
                 Debugger.e(TAG, "addTextMarkupAnnotation: invalid color");
@@ -470,10 +473,11 @@ public class MuPDFCore {
 
     /**
      * 添加自由文本标注。
+     *
      * @param pos 在widget上的位置坐标
      */
     public PDFAnnotation addFreeTextAnnotation(int pageNum, int width, int height, Point pos,
-                                                String text, String fontName, float fontSize, float[] color) {
+                                               String text, String fontName, float fontSize, float[] color) {
         try {
             Page page = doc.loadPage(pageNum);
             if (page == null) return null;
@@ -495,7 +499,10 @@ public class MuPDFCore {
     }
 
     private void invalidatePageCache() {
-        if (page != null) { page.destroy(); page = null; }
+        if (page != null) {
+            page.destroy();
+            page = null;
+        }
         currentPage = -1;
         pageWidth = 0;
         pageHeight = 0;
@@ -505,7 +512,7 @@ public class MuPDFCore {
      * 水印: JNI content stream方式写入每页。
      */
     public void addContentWatermark(String text, float fontSize, float angle,
-                                     float opacity, float[] color, float spacing) {
+                                    float opacity, float[] color, float spacing) {
         try {
             /* doc 实际已是 PDFDocument 实例，直接 cast 避免 new PDFDocument(ptr)
              * 造成引用计数错误导致文档被意外释放 */
@@ -522,7 +529,7 @@ public class MuPDFCore {
      * 在文档末尾创建签名表格。
      */
     public void createSignatureTable(String[] names, String headerName,
-                                      String headerTime, String headerImage) {
+                                     String headerTime, String headerImage) {
         try {
             PDFDocument pdfDoc = (PDFDocument) doc;
             pdfDoc.createSignatureTable(names, headerName, headerTime, headerImage);
@@ -538,7 +545,7 @@ public class MuPDFCore {
      * 设置签名表格行的签名时间和图片。
      */
     public void setSignatureRow(int rowIndex, String time, byte[] imageRGB,
-                                 int imageW, int imageH, int totalNames) {
+                                int imageW, int imageH, int totalNames) {
         try {
             PDFDocument pdfDoc = (PDFDocument) doc;
             pdfDoc.setSignatureRow(rowIndex, time, imageRGB, imageW, imageH, totalNames);
@@ -566,7 +573,7 @@ public class MuPDFCore {
     /**
      * 删除指定页最后一条标注（用于撤销），返回删除条数（0或1）。
      */
-    public int deleteLastAnnotation(int pageNum) {
+    public synchronized int deleteLastAnnotation(int pageNum) {
         try {
             Page page = doc.loadPage(pageNum);
             PDFPage pdfPage = (PDFPage) page;
@@ -617,10 +624,16 @@ public class MuPDFCore {
     static class AnnotationPathBean {
         List<Path> paths;
         PDFAnnotation pdfAnnotation;
+        boolean areaHit;
 
         public AnnotationPathBean(List<Path> paths, PDFAnnotation pdfAnnotation) {
+            this(paths, pdfAnnotation, false);
+        }
+
+        public AnnotationPathBean(List<Path> paths, PDFAnnotation pdfAnnotation, boolean areaHit) {
             this.paths = paths;
             this.pdfAnnotation = pdfAnnotation;
+            this.areaHit = areaHit;
         }
 
         public List<Path> getPaths() {
@@ -629,6 +642,10 @@ public class MuPDFCore {
 
         public PDFAnnotation getPdfAnnotation() {
             return pdfAnnotation;
+        }
+
+        public boolean isAreaHit() {
+            return areaHit;
         }
     }
 
@@ -646,6 +663,7 @@ public class MuPDFCore {
         for (PDFAnnotation annotation : annotations) {
             int type = annotation.getType();
             pathList = new ArrayList<>();
+            boolean areaHit = false;
             if (type == TYPE_LINE) {//直线
                 Point[] line = annotation.getLine();
                 path = new Path();
@@ -685,9 +703,26 @@ public class MuPDFCore {
                 RectF rectF = new RectF(rect.x0, rect.y0, rect.x1, rect.y1);
                 path.addRect(rectF, Path.Direction.CCW);
                 pathList.add(path);
+            } else if (type == TYPE_HIGHLIGHT || type == TYPE_UNDERLINE || type == TYPE_STRIKE_OUT) {
+                // 文本标记批注（下划线/删除线/高亮）：以 QuadPoints 生成矩形命中区域
+                areaHit = true;
+                if (annotation.hasQuadPoints()) {
+                    Quad[] quads = annotation.getQuadPoints();
+                    for (Quad quad : quads) {
+                        Rect r = quad.toRect();
+                        path = new Path();
+                        path.addRect(new RectF(r.x0, r.y0, r.x1, r.y1), Path.Direction.CCW);
+                        pathList.add(path);
+                    }
+                } else {
+                    Rect rect = annotation.getRect();
+                    path = new Path();
+                    path.addRect(new RectF(rect.x0, rect.y0, rect.x1, rect.y1), Path.Direction.CCW);
+                    pathList.add(path);
+                }
             }
             Debugger.i(TAG, "annotations2path pathList=" + pathList.size());
-            annotationPathBeans.add(new AnnotationPathBean(pathList, annotation));
+            annotationPathBeans.add(new AnnotationPathBean(pathList, annotation, areaHit));
         }
         Debugger.i(TAG, "annotations2path annotationPathBeans=" + annotationPathBeans.size());
         return annotationPathBeans;
@@ -707,17 +742,27 @@ public class MuPDFCore {
             List<Path> pathList = annotationPathBean.getPaths();
             for (int i = 0; i < pathList.size(); i++) {
                 Path path = pathList.get(i);
-                PathMeasure pm = new PathMeasure(path, false);
-                float length = pm.getLength();
-                Path tempPath = new Path();
-                pm.getSegment(0, length, tempPath, false);
-                float[] fa = new float[2];
-                float sc = 0;
-                while (sc < 1) {
-                    sc += 0.001;
-                    pm.getPosTan(sc * length, fa, null);
-                    if (Math.abs((int) fa[0] - (int) x) <= 20 && Math.abs((int) fa[1] - (int) y) <= 20) {
+                if (annotationPathBean.isAreaHit()) {
+                    // 区域型批注（下划线/删除线/高亮）：触摸点落在矩形内（含 ±20 容差）即命中
+                    RectF bounds = new RectF();
+                    path.computeBounds(bounds, true);
+                    if (x >= bounds.left - 20 && x <= bounds.right + 20
+                            && y >= bounds.top - 20 && y <= bounds.bottom + 20) {
                         return pdfAnnotation;
+                    }
+                } else {
+                    PathMeasure pm = new PathMeasure(path, false);
+                    float length = pm.getLength();
+                    Path tempPath = new Path();
+                    pm.getSegment(0, length, tempPath, false);
+                    float[] fa = new float[2];
+                    float sc = 0;
+                    while (sc < 1) {
+                        sc += 0.001;
+                        pm.getPosTan(sc * length, fa, null);
+                        if (Math.abs((int) fa[0] - (int) x) <= 20 && Math.abs((int) fa[1] - (int) y) <= 20) {
+                            return pdfAnnotation;
+                        }
                     }
                 }
             }
@@ -735,7 +780,7 @@ public class MuPDFCore {
      * @param y       页内文档坐标 y
      * @return true 表示删除了批注
      */
-    public boolean deleteAnnotation(int pageIdx, int width, int height, float x, float y) {
+    public synchronized boolean deleteAnnotation(int pageIdx, int width, int height, float x, float y) {
         try {
             Page page = doc.loadPage(pageIdx);
             PDFPage pdfPage = (PDFPage) page;
@@ -754,14 +799,14 @@ public class MuPDFCore {
                 return true;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Debugger.e(TAG + " deleteAnnotation Exception", e);
         }
         return false;
     }
 
     public String save(String srcPath, String saveDirPath) throws Exception {
         String fileNameNoExtension = Util.getFileNameNoExtension(srcPath);
-        String destPath = saveDirPath + File.separator + fileNameNoExtension +".pdf";
+        String destPath = saveDirPath + File.separator + fileNameNoExtension + ".pdf";
         destPath = Util.getUniqueFilePath(destPath);
         boolean copy = Util.copyFile(new File(srcPath), new File(destPath), new Util.OnReplaceListener() {
             @Override

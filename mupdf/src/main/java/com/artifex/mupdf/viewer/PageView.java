@@ -108,6 +108,10 @@ public class PageView extends ViewGroup {
     private Matrix mEntireMat;
     private AsyncTask<Void, Void, Link[]> mGetLinkInfo;
     private CancellableAsyncTask<Void, Boolean> mDrawEntire;
+    /**
+     * 渲染任务进行中又收到渲染请求时置为 true，当前任务结束后自动补渲染，避免漏更新
+     */
+    private boolean mRenderPending;
 
     private Quad mSearchBoxes[][];
     protected Link mLinks[];
@@ -461,8 +465,11 @@ public class PageView extends ViewGroup {
         if (mIsBlank || width <= 0 || height <= 0)
             return;
 
-        if (mDrawEntire != null)
+        if (mDrawEntire != null) {
+            // 已有渲染任务在运行：记下待渲染标记，当前任务结束后自动补渲染，避免漏更新
+            mRenderPending = true;
             return;
+        }
 
         Point renderSize = limitBitmapSize(width, height);
         final boolean quietUpdate = update
@@ -492,7 +499,7 @@ public class PageView extends ViewGroup {
         final int renderW = renderSize.x;
         final int renderH = renderSize.y;
         final boolean swapBitmap = renderBitmap != mEntireBm;
-        final boolean[] bitmapAdopted = { !swapBitmap };
+        final boolean[] bitmapAdopted = {!swapBitmap};
         final CancellableTaskDefinition<Void, Boolean> renderTask = update
                 ? getUpdatePageTask(renderBitmap, renderPage, renderW, renderH, 0, 0, renderW, renderH)
                 : getDrawPageTask(renderBitmap, renderPage, renderW, renderH, 0, 0, renderW, renderH);
@@ -546,8 +553,10 @@ public class PageView extends ViewGroup {
                     removeView(mBusyIndicator);
                 mBusyIndicator = null;
 
-                if (mPageNumber != renderPage)
+                if (mPageNumber != renderPage) {
+                    mRenderPending = false;
                     return;
+                }
 
                 if (result.booleanValue()) {
                     clearRenderError();
@@ -579,6 +588,15 @@ public class PageView extends ViewGroup {
                     setRenderError(update ? "Error updating page" : "Error rendering page");
                 }
                 setBackgroundColor(Color.TRANSPARENT);
+                // 若期间有新的渲染请求被跳过，自动补一次渲染
+                if (mRenderPending) {
+                    mRenderPending = false;
+                    int vw = getWidth() > 0 ? getWidth() : mSize.x;
+                    int vh = getHeight() > 0 ? getHeight() : mSize.y;
+                    if (vw > 0 && vh > 0) {
+                        renderEntirePage(vw, vh, true);
+                    }
+                }
             }
         };
 

@@ -1208,9 +1208,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 Point localStart = new Point(start.x - pageLeft, start.y - pageTop);
                 Point localEnd = new Point(end.x - pageLeft, end.y - pageTop);
                 float[] c = core.parseColor(color);
-                core.addTextMarkupAnnotation(pageIdx, pageW, pageH,
+                PDFAnnotation added = core.addTextMarkupAnnotation(pageIdx, pageW, pageH,
                         type, localStart, localEnd, c, mDisplayDPI, mDisplayDPI);
+                if (added == null) return;
                 hadAnnotation = true;
+                // 下划线/删除线/高亮同样计入文档修改：记录变更页，供保存判断、撤销与取消批注使用
+                List<Integer> pages = new ArrayList<>();
+                pages.add(pageIdx);
+                savedAnnotationPages.add(pages);
                 PageView pv = (PageView) mDocView.getView(pageIdx);
                 if (pv != null) schedulePageUpdate(() -> pv.update());
             });

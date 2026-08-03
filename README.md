@@ -1,6 +1,10 @@
 
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 # 更新
+## 6.0.26
+1. 修复下划线删除线无法被擦除的问题
+2. 修复多批注同一位置擦除崩溃问题
+3. 改用`mWindowWatermarkEnabled`控制水印的显示与隐藏
 ## 6.0.25
 1. 添加外部可控显示或隐藏的功能开关
    - 顶部菜单可显示或隐藏：水印、签名表、填写签名、设置里的水印（待完善使用场景）
