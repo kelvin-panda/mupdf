@@ -1,6 +1,9 @@
 
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 # 更新
+## 6.0.27
+1. 界面右下角添加固定的返回控件
+   - 可在`MupdfConfig`配置`backButtonEnabled`，默认`false`隐藏
 ## 6.0.26
 1. 修复下划线删除线无法被擦除的问题
 2. 修复多批注同一位置擦除崩溃问题

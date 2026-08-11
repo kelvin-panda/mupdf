@@ -63,6 +63,7 @@ import com.artifex.mupdf.annotation.AnnotationBean;
 import com.artifex.mupdf.fitz.PDFAnnotation;
 import com.artifex.mupdf.fitz.Point;
 import com.artifex.mupdf.fitz.SeekableInputStream;
+import com.artifex.mupdf.fitz.Text;
 import com.artifex.mupdf.util.ActUtil;
 import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.util.ScreenUtils;
@@ -112,7 +113,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     //<editor-fold desc="功能开关与接收参数">
     private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable, deleteFileWhenExit,
-            mWindowWatermarkEnabled, watermarkEnable, mSignatureFormEnabled, mfillSignatureFormEnabled, mAnnotationInputTextEnabled;
+            mWindowWatermarkEnabled, watermarkEnable, mSignatureFormEnabled, mfillSignatureFormEnabled, mAnnotationInputTextEnabled, mBackButtonEnabled;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;
     private boolean isFullScreen = true;
     private int mWatermarkColor, mWindowWatermarkColor;
@@ -147,6 +148,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      */
     private LinearLayout ll_signature_layout;
     private TextView tv_submit_signature, tv_cancel_signature;
+    private TextView btnBackButton;
 
     /**
      * 签名自定义View
@@ -366,6 +368,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putBoolean(MupdfMacro.bundle_key_signature_form_enabled, config.isSignatureFormEnabled());
         bundle.putBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, config.isFillInSignatureEnabled());
         bundle.putBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, config.isAnnotationInputTextEnabled());
+        bundle.putBoolean(MupdfMacro.bundle_key_back_button_enabled, config.isBackButtonEnabled());
         jump(context, bundle);
     }
 
@@ -483,6 +486,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     mSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_signature_form_enabled, false);
                     mfillSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, false);
                     mAnnotationInputTextEnabled = bundle.getBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, false);
+                    mBackButtonEnabled = bundle.getBoolean(MupdfMacro.bundle_key_back_button_enabled, false);
                     Debugger.i(TAG, "bundle config："
                             + "\nsrcFilePath=" + srcFilePath
                             + "\nsrcUri=" + srcUri
@@ -500,6 +504,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                             + "\nmSignatureFormEnabled=" + mSignatureFormEnabled
                             + "\nmfillSignatureFormEnabled=" + mfillSignatureFormEnabled
                             + "\nmAnnotationInputTextEnabled=" + mAnnotationInputTextEnabled
+                            + "\nmBackButtonEnabled=" + mBackButtonEnabled
                     );
 
                     if (uri == null) {
@@ -714,7 +719,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             mDocView.requestLayout();
             mDocView.run();
 
-
             // 缩略图
             initThumbnailDrawer();
         }, 500L);
@@ -794,6 +798,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         rvThumbnails = (RecyclerView) mButtonsView.findViewById(R.id.rv_thumbnails);
         //</editor-fold>
 
+        btnBackButton = mButtonsView.findViewById(R.id.btnBackButton);
+
         mTopBarSwitcher.setVisibility(View.INVISIBLE);
         mLlPageView.setVisibility(View.INVISIBLE);
     }
@@ -813,6 +819,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         setViewShowState(viewTopScreenshot, captureEnable);         //截图批注
         setViewShowState(viewTopAnnotation, annotationEnable);      //批注
         setViewShowState(viewArtFreeText, mAnnotationInputTextEnabled);      //批注输入文本
+        setViewShowState(btnBackButton, mBackButtonEnabled);        //返回按钮
         if (isOnlyPreview) {
             setViewShowState(viewTopScreenshot, false);
             setViewShowState(viewTopSignature, false);
@@ -1092,6 +1099,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 mDocView.setDisplayedViewIndex(currentPageIndex + 1);
             }
         });
+        //返回
+        if (btnBackButton != null) {
+            btnBackButton.setOnClickListener(v -> {
+                exit();
+            });
+        }
 
         //缩略图
         if (viewTopThumbnail != null) {

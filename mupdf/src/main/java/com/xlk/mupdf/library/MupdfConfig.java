@@ -39,6 +39,7 @@ public class MupdfConfig {
     private final boolean signatureFormEnabled;
     private final boolean fillInSignatureEnabled;
     private final boolean annotationInputTextEnabled;
+    private final boolean backButtonEnabled;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -71,6 +72,7 @@ public class MupdfConfig {
         this.signatureFormEnabled = builder.signatureFormEnabled;
         this.fillInSignatureEnabled = builder.fillInSignatureEnabled;
         this.annotationInputTextEnabled = builder.annotationInputTextEnabled;
+        this.backButtonEnabled = builder.backButtonEnabled;
     }
 
     public String getFilePath() {
@@ -193,6 +195,10 @@ public class MupdfConfig {
         return annotationInputTextEnabled;
     }
 
+    public boolean isBackButtonEnabled() {
+        return backButtonEnabled;
+    }
+
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -251,6 +257,7 @@ public class MupdfConfig {
         private boolean signatureFormEnabled = false;
         private boolean fillInSignatureEnabled = false;
         private boolean annotationInputTextEnabled = false;
+        private boolean backButtonEnabled = false;
 
         /**
          * 设置PDF预览文件
@@ -459,6 +466,7 @@ public class MupdfConfig {
             this.fillInSignatureEnabled = enable;
             return this;
         }
+
         /**
          * 批注输入文本开关
          *
@@ -466,6 +474,11 @@ public class MupdfConfig {
          */
         public Builder annotationInputText(boolean enable) {
             this.annotationInputTextEnabled = enable;
+            return this;
+        }
+
+        public Builder backButtonEnabled(boolean enable) {
+            this.backButtonEnabled = enable;
             return this;
         }
 

@@ -206,6 +206,11 @@
             android:layout_rowWeight="1"
             android:layout_columnWeight="1"
             android:text="界面水印" />
+        <CheckBox
+            android:id="@+id/cbBackButton"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="返回按钮" />
     </GridLayout>
 
 
