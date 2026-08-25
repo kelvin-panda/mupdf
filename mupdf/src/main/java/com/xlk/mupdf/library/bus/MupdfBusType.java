@@ -58,7 +58,20 @@ public class MupdfBusType {
     public static final String inform_share_annotation = "inform_share_annotation";
     /**
      * 通知自己退出PDF批注，jni层调用
+     * <li>int mediaId</li>
      */
     public static final String inform_exit_annotation = "inform_exit_annotation";
+    /**
+     * 秘书端通知选择参会人进行PDF签名
+     */
+    public static final String inform_inform_signature = "inform_inform_signature";
+    /**
+     * 收到签名的通知（秘书端推送的通知）
+     */
+    public static final String receive_inform_signature = "receive_inform_signature";
+    /**
+     * 通知前端用户触摸了设备
+     */
+    public static final String inform_touch_device = "inform_touch_device";
     //</editor-fold>
 }

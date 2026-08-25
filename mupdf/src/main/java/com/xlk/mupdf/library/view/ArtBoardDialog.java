@@ -24,6 +24,7 @@ import com.xlk.mupdf.library.R;
 public class ArtBoardDialog extends Dialog {
     private final SignatureListener mListener;
     private final boolean retBitmap;
+    private final boolean cancelable;
 
     /**
      * @param context
@@ -31,9 +32,14 @@ public class ArtBoardDialog extends Dialog {
      * @param listener
      */
     public ArtBoardDialog(@NonNull Context context, boolean retBitmap, SignatureListener listener) {
+        this(context, retBitmap, true, listener);
+    }
+
+    public ArtBoardDialog(@NonNull Context context, boolean retBitmap, boolean cancelable, SignatureListener listener) {
         super(context);
         mListener = listener;
         this.retBitmap = retBitmap;
+        this.cancelable = cancelable;
         init();
     }
 
@@ -101,8 +107,8 @@ public class ArtBoardDialog extends Dialog {
             }
         });
         inflate.findViewById(R.id.btn_cancel).setOnClickListener(v -> dismiss());
-        setCancelable(true);
-        setCanceledOnTouchOutside(true);
+        setCancelable(cancelable);
+        setCanceledOnTouchOutside(cancelable);
         WindowManager.LayoutParams attributes = getWindow().getAttributes();
         attributes.width = ScreenUtils.getScreenWidth(getContext()) / 2;
         attributes.height = ScreenUtils.getScreenHeight(getContext()) / 2;

@@ -87,5 +87,6 @@
 	<string name="mupdf_art_drag">拖动</string>
     <string name="mupdf_not_save">不保存</string>
 	<string name="mupdf_tip">提示</string>
+	<string name="mupdf_inform_signature">通知签名</string>
 
 </resources>

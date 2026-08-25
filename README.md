@@ -1,6 +1,9 @@
 
 [![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
 # 更新
+## 6.0.28
+1. Activity添加`dispatchTouchEvent`拦截`MotionEvent.ACTION_DOWN`事件，通知给前端使用
+2. `MupdfConfig`添加`informSignature`开关，用于秘书端通知参会端签名（未完善）
 ## 6.0.27
 1. 界面右下角添加固定的返回控件
    - 可在`MupdfConfig`配置`backButtonEnabled`，默认`false`隐藏

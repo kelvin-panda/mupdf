@@ -96,7 +96,6 @@
                         android:textSize="10sp" />
                 </LinearLayout>
 
-
                 <LinearLayout
                     android:id="@+id/viewTopSignature"
                     android:layout_width="wrap_content"
@@ -312,6 +311,34 @@
                         android:layout_gravity="center"
                         android:gravity="center"
                         android:text="@string/mupdf_sign_row"
+                        android:textColor="@color/white"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/viewInformSignature"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginEnd="5dp"
+                    android:background="@drawable/view_click_bg"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_mupdf_inform_signature" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:text="@string/mupdf_inform_signature"
                         android:textColor="@color/white"
                         android:textSize="10sp" />
                 </LinearLayout>

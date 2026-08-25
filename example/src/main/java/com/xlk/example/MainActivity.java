@@ -143,12 +143,13 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
                 .watermarkEnable(bd.cbWatermark.isChecked())        //水印
                 .watermarkContent("保密文件限制外露")
                 .watermarkColor(Color.parseColor("#66FFAB00"))
-                .signatureForm(bd.cbSignatureForm.isChecked()) //签名表
+                .signatureForm(bd.cbSignatureForm.isChecked())      //签名表
                 .fillInSignature(bd.cbSignatureTableSignature.isChecked()) //签名表签名
-                .fillInSignature(bd.cbText.isChecked()) //文本
+                .annotationInputText(bd.cbText.isChecked())         //文本
                 //共享
                 .windowWatermarkEnable(bd.cbPdfWatermark.isChecked()) //界面水印
                 .backButtonEnabled(bd.cbBackButton.isChecked())
+                .informSignature(bd.cbInformSignature.isChecked())//通知签名（秘书端使用）
                 //界面水印
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);
