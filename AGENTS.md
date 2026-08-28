@@ -18,7 +18,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 ./gradlew clean
 
 # Publish library to local maven repository (for testing)
-./gradlew :mupdf:publishReleasePublicationToLocalMaven
+./gradlew :mupdf:publishReleasePublicationToMavenLocal
 ```
 
 - Gradle 7.1.2, Android Gradle Plugin 7.1.2, Kotlin 1.6.0, Java 11
