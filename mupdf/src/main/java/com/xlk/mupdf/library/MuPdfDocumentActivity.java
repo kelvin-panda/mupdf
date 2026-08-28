@@ -1120,6 +1120,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //返回
         if (btnBackButton != null) {
+            RelativeLayout.LayoutParams layoutParams = (RelativeLayout.LayoutParams) btnBackButton.getLayoutParams();
+            layoutParams.setMargins(0,300,0, 0);
+            btnBackButton.setLayoutParams(layoutParams);
             btnBackButton.setOnClickListener(v -> {
                 exit();
             });
@@ -1497,6 +1500,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
                 break;
             }
+            case MupdfBusType.close_mupdf:
+                exit();
+                break;
         }
     }
 

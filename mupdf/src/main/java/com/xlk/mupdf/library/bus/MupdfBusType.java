@@ -74,4 +74,6 @@ public class MupdfBusType {
      */
     public static final String inform_touch_device = "inform_touch_device";
     //</editor-fold>
+
+    public static final String close_mupdf = "close_mupdf";
 }
