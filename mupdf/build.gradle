@@ -58,18 +58,18 @@ dependencies {
 publishing {
     publications {
         release(MavenPublication) {
-            groupId = 'com.gitee.xlk_gitee'
-            artifactId = 'mupdf-library'
-            version = '6.0.34'
+            groupId = 'com.github.kelvin-panda'
+            artifactId = 'mupdf'
+            version = '6.0.35'
 
             afterEvaluate {
                 from components.release
             }
 
             pom {
-                name = 'mupdf-library'
+                name = 'mupdf'
                 description = 'Android PDF viewer library based on MuPDF'
-                url = 'https://gitee.com/xlk_gitee/mupdf-library'
+                url = 'https://github.com/kelvin-panda/mupdf'
                 licenses {
                     license {
                         name = 'MIT License'

@@ -1,6 +1,8 @@
 
-[![](https://jitpack.io/v/com.gitee.xlk_gitee/mupdf-library.svg)](https://jitpack.io/#com.gitee.xlk_gitee/mupdf-library)
+[![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 6.0.35
+1. 发布源迁移到 GitHub，坐标改为 `com.github.kelvin-panda:mupdf`
 ## 6.0.28
 1. Activity添加`dispatchTouchEvent`拦截`MotionEvent.ACTION_DOWN`事件，通知给前端使用
 2. `MupdfConfig`添加`informSignature`开关，用于秘书端通知参会端签名（未完善）
@@ -80,7 +82,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.gitee.xlk_gitee:mupdf-library:6.0.0")
+	        implementation("com.github.kelvin-panda:mupdf:6.0.35")
 	}
 ```
 **依赖方module**
@@ -117,8 +119,8 @@ android{
 
 **示例图**
 
-![](https://gitee.com/xlk_gitee/mupdf-library/raw/master/screenshot/1.png)
+![](https://raw.githubusercontent.com/kelvin-panda/mupdf/master/screenshot/1.png)
 
 
 
-![](https://gitee.com/xlk_gitee/mupdf-library/raw/master/screenshot/2.png)
+![](https://raw.githubusercontent.com/kelvin-panda/mupdf/master/screenshot/2.png)
