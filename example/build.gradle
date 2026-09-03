@@ -54,8 +54,7 @@ dependencies {
     implementation 'androidx.activity:activity:1.5.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation("org.greenrobot:eventbus:3.3.1")
-    implementation 'com.github.kelvin-panda:mupdf:6.0.36'
-//    implementation(project(":mupdf"))
+    implementation(project(":mupdf"))
 
     implementation 'com.blankj:utilcodex:1.31.1'
 }
