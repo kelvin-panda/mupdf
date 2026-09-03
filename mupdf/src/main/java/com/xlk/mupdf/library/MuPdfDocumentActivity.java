@@ -427,7 +427,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
         mDisplayDPI = (int) metrics.densityDpi;
         mAlertBuilder = new AlertDialog.Builder(this);
-        Debugger.i(TAG, "mupdf version: 6.0.36");
+        Debugger.i(TAG, "mupdf version: 6.0.37");
         if (core == null) {
             if (savedInstanceState != null && savedInstanceState.containsKey("DocTitle")) {
                 mDocTitle = savedInstanceState.getString("DocTitle");

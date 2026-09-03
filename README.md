@@ -1,6 +1,8 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 6.0.37
+1. example 改为使用本地 `project(":mupdf")` 依赖，避免 JitPack 构建时引用尚未发布的远程版本
 ## 6.0.36
 1. 添加签名提交的功能（测试）
 ## 6.0.35
@@ -84,7 +86,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:6.0.36")
+	        implementation("com.github.kelvin-panda:mupdf:6.0.37")
 	}
 ```
 **依赖方module**
