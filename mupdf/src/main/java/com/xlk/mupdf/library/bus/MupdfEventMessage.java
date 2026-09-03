@@ -29,6 +29,10 @@ public class MupdfEventMessage {
         return objects;
     }
 
+    public byte[] getBytes() {
+        return bytes;
+    }
+
     public static class Builder {
         private String type;
         private int method;

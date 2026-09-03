@@ -60,7 +60,7 @@ publishing {
         release(MavenPublication) {
             groupId = 'com.github.kelvin-panda'
             artifactId = 'mupdf'
-            version = '6.0.37'
+            version = '6.0.38'
 
             afterEvaluate {
                 from components.release
