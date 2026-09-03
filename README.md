@@ -84,7 +84,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:6.0.35")
+	        implementation("com.github.kelvin-panda:mupdf:6.0.36")
 	}
 ```
 **依赖方module**
