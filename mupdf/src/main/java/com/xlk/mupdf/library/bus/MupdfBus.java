@@ -13,6 +13,12 @@ public class MupdfBus {
                 .objects(values)
                 .build());
     }
+    public static void post(String type, byte[] bytes) {
+        post(new MupdfEventMessage.Builder()
+                .type(type)
+                .bytes(bytes)
+                .build());
+    }
 
     public static void post(MupdfEventMessage message) {
         EventBus.getDefault().post(message);

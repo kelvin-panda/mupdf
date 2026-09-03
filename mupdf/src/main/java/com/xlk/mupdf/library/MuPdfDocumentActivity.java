@@ -83,6 +83,7 @@ import com.xlk.mupdf.library.bus.MupdfBus;
 import com.xlk.mupdf.library.bus.MupdfBusType;
 import com.xlk.mupdf.library.bus.MupdfEventMessage;
 import com.xlk.mupdf.library.bus.MupdfInkBean;
+import com.xlk.mupdf.library.util.Utils;
 import com.xlk.mupdf.library.view.ArtBoardDialog;
 import com.xlk.mupdf.library.view.MupdfColorPickerDialog;
 import com.xlk.mupdf.library.view.MupdfColorPickerView;
@@ -94,6 +95,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -128,7 +130,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     /**
      * 批注后上传的目录id
      */
-    private int uploadDirId = 2;
+    private int uploadDirId = MupdfMacro.DEFAULT_UPLOAD_DIR_ID;
     /**
      * 打开时所在的页码
      */
@@ -162,6 +164,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 是否正在手写签名，正在签名时需要进行拦截翻页、缩放、顶部功能菜单显示
      */
     private boolean isSigning;
+    /**
+     * 签名表创建时保存的参会人id列表-用于提交签名时获取对应的索引
+     */
+    private List<Integer> memberIdList;
 
     /* The core rendering instance */
     enum TopBarMode {Main, Search, More}
@@ -448,11 +454,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     signatureEnable = bundle.getBoolean(MupdfMacro.bundle_key_signature_enable, true);
                     captureEnable = bundle.getBoolean(MupdfMacro.bundle_key_capture_enable, true);
                     wpsOpenEnable = bundle.getBoolean(MupdfMacro.bundle_key_wps_open_enable, true);
-                    deleteFileWhenExit = bundle.getBoolean(MupdfMacro.bundle_key_delete_file, true);
+                    deleteFileWhenExit = bundle.getBoolean(MupdfMacro.bundle_key_delete_file, false);
                     isOnlyPreview = bundle.getBoolean(MupdfMacro.bundle_key_only_preview, false);
-                    uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, 2);
+                    uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, MupdfMacro.DEFAULT_UPLOAD_DIR_ID);
                     srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
-                    MupdfMacro.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, -1);
+                    MupdfMacro.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, MupdfClarityMode.UNRESTRICTED);
                     isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
                     SharedPreferences displayPrefs = getDisplaySettingsPrefs();
                     boolean backgroundConfigured = bundle.containsKey(MupdfMacro.bundle_key_background_color_configured)
@@ -488,31 +494,49 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     watermarkEnable = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
                     if (watermarkEnable) {
                         mWatermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
-                        mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, Color.parseColor("#66FF6D00"));
+                        mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, MupdfMacro.DEFAULT_WATERMARK_COLOR);
                     }
                     mWindowWatermarkEnabled = bundle.getBoolean(MupdfMacro.bundle_key_window_watermark_enable, false);
                     if (mWindowWatermarkEnabled) {
                         mWindowWatermark = bundle.getString(MupdfMacro.bundle_key_window_watermark_content, "");
-                        mWindowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, Color.parseColor("#33FFAB00"));
+                        mWindowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, MupdfMacro.DEFAULT_WINDOW_WATERMARK_COLOR);
                     }
                     mSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_signature_form_enabled, false);
                     mfillSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, false);
                     mAnnotationInputTextEnabled = bundle.getBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, false);
                     mBackButtonEnabled = bundle.getBoolean(MupdfMacro.bundle_key_back_button_enabled, false);
                     mInformSignatureEnabled = bundle.getBoolean(MupdfMacro.bundle_key_inform_signature, false);
+                    MupdfMacro.currentMediaId = mediaId;
+                    MupdfMacro.currentFilePath = srcFilePath;
+                    MupdfMacro.currentUri = srcUri;
                     Debugger.i(TAG, "bundle config："
                             + "\nsrcFilePath=" + srcFilePath
                             + "\nsrcUri=" + srcUri
                             + "\nuri=" + uri
+                            + "\nannotationSavePath=" + annotationSavePath
                             + "\nmediaId=" + mediaId
+                            + "\nuploadEnable=" + uploadEnable
+                            + "\nannotationEnable=" + annotationEnable
+                            + "\nsignatureEnable=" + signatureEnable
+                            + "\ncaptureEnable=" + captureEnable
+                            + "\nwpsOpenEnable=" + wpsOpenEnable
                             + "\ndeleteFileWhenExit=" + deleteFileWhenExit
                             + "\nisOnlyPreview=" + isOnlyPreview
+                            + "\nsrcPageIndex=" + srcPageIndex
                             + "\nuploadDirId=" + uploadDirId
                             + "\nwatermarkEnable=" + watermarkEnable
                             + "\nmWatermark=" + mWatermark
+                            + "\nmWatermarkColor=" + mWatermarkColor
                             + "\nmWindowWatermarkEnabled=" + mWindowWatermarkEnabled
                             + "\nmWindowWatermark=" + mWindowWatermark
+                            + "\nmWindowWatermarkColor=" + mWindowWatermarkColor
                             + "\nMupdfMacro.clarityLimitMode=" + MupdfMacro.clarityLimitMode
+                            + "\nbackgroundColorConfigured=" + backgroundConfigured
+                            + "\nMupdfMacro.backgroundColor=" + MupdfMacro.backgroundColor
+                            + "\nbrightnessConfigured=" + brightnessConfigured
+                            + "\nMupdfMacro.brightness=" + MupdfMacro.brightness
+                            + "\nzoomConfigured=" + zoomConfigured
+                            + "\nconfiguredZoomPercent=" + configuredZoomPercent
                             + "\nisFullScreen=" + isFullScreen
                             + "\nmSignatureFormEnabled=" + mSignatureFormEnabled
                             + "\nmfillSignatureFormEnabled=" + mfillSignatureFormEnabled
@@ -727,7 +751,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
         postToMainDelayed(() -> {
             if (srcPageIndex != 0) {
-                mDocView.setDisplayedViewIndex(srcPageIndex);
+                mDocView.setDisplayedViewIndex(srcPageIndex - 1);
             }
             applyZoomPercent(resolveInitialZoomPercent(), false);
             mDocView.requestLayout();
@@ -1121,7 +1145,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //返回
         if (btnBackButton != null) {
             RelativeLayout.LayoutParams layoutParams = (RelativeLayout.LayoutParams) btnBackButton.getLayoutParams();
-            layoutParams.setMargins(0,300,0, 0);
+            layoutParams.setMargins(0, 300, 0, 0);
             btnBackButton.setLayoutParams(layoutParams);
             btnBackButton.setOnClickListener(v -> {
                 exit();
@@ -1214,6 +1238,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     // 即时保存模式下笔画已逐个提交，这里仅做退出后的刷新
                     Debugger.i(TAG, "onDrawAnnotations 退出批注，hadAnnotation=" + hadAnnotation);
                     if (hadAnnotation) {
+                        /*
+                        if (MupdfMacro.isSharing && !inkAnnotations.isEmpty()) {
+                            List<MupdfAnnotationBean> annotationBeans = new ArrayList<>();
+                            for (AnnotationBean inkAnnotation : inkAnnotations) {
+                                int type = inkAnnotation.getType();
+                                int paintColor = inkAnnotation.getPaintColor();
+                                Point[] points = inkAnnotation.getPoints();
+                                float paintSize = inkAnnotation.getPaintSize();
+                                int key = inkAnnotation.getKey();
+                                annotationBeans.add(new MupdfAnnotationBean(mediaId, key, type, paintSize, paintColor, points));
+                            }
+                            MupdfBus.post(MupdfBusType.inform_share_annotation, annotationBeans);
+                        }
+                        */
                         afterAnnotationPreservingScroll();
                     }
                 }
@@ -1451,31 +1489,22 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void eventBus(MupdfEventMessage msg) {
         switch (msg.getType()) {
-            case MupdfBusType.receive_inform_signature: {
-                Debugger.e("接收到秘书端通知签名的通知");
-                new ArtBoardDialog(this, true, false, new ArtBoardDialog.SignatureListener() {
-                    @Override
-                    public void onSuccess(Object[] object) {
-                        //提交给秘书端（或者服务器的签名列表）
-                        Bitmap bmp = (Bitmap) object[0];
-                        // TODO: 2026/8/25 提交给秘书端（或者服务器的签名列表）
-//                        MupdfBus.post(MupdfBusType.);
-                    }
-                }).show();
-                break;
-            }
+            //共享批注-接收到其他人加入的通知
             case MupdfBusType.receive_invite_annotation: {
                 Debugger.e("接收到其他人加入的通知");
                 break;
             }
+            //共享批注-接收到其他人拒绝的通知
             case MupdfBusType.receive_reject_annotation: {
                 Debugger.e("接收到其他人拒绝的通知");
                 break;
             }
+            //共享批注-收到其他人退出的通知
             case MupdfBusType.receive_exit_annotation: {
                 Debugger.e("接收到其他人退出的通知");
                 break;
             }
+            //共享批注-收到其他人的绘制信息
             case MupdfBusType.receive_annotation_info: {
                 Object[] objects = msg.getObjects();
                 Debugger.e("收到其他人的绘制信息 objects数量：" + objects.length);
@@ -1500,9 +1529,78 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
                 break;
             }
-            case MupdfBusType.close_mupdf:
+            case MupdfBusType.close_mupdf: {
                 exit();
                 break;
+            }
+            //秘书端收到通知-创建好签名表
+            case MupdfBusType.mupdf_create_signature_row: {
+                Object[] objects = msg.getObjects();
+                List<String> memberNameList = (List<String>) objects[0];
+                memberIdList = (List<Integer>) objects[1];
+                if (!memberNameList.isEmpty() && core != null) {
+                    java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
+                    for (String n : memberNameList) {
+                        String trimmed = n.trim();
+                        if (!trimmed.isEmpty()) nameList.add(trimmed);
+                    }
+                    if (!nameList.isEmpty()) {
+                        signTableTotalNames = nameList.size();
+                        core.createSignatureTable(nameList.toArray(new String[0]),
+                                "姓名", "时间", "签名");
+                        hadAnnotation = true;
+                        refreshDocumentAndShowPage(core.countPages() - 1);
+                    }
+                }
+                break;
+            }
+            //签名通知-接收到秘书端通知签名的通知
+            case MupdfBusType.receive_inform_signature: {
+                Debugger.e("接收到秘书端通知签名的通知");
+                new ArtBoardDialog(this, true, false, new ArtBoardDialog.SignatureListener() {
+                    @Override
+                    public void onSuccess(Object[] object) {
+                        //提交给秘书端（或者服务器的签名列表）
+                        Bitmap bmp = (Bitmap) object[0];
+                        byte[] bytes = Utils.bmp2byte(bmp);
+                        bmp.recycle();
+                        MupdfBus.post(MupdfBusType.result_signature, bytes);
+                    }
+                }).show();
+                break;
+            }
+            //签名通知-接收到参会人提交的签名后作为秘书端提交到签名表里
+            case MupdfBusType.submit_member_signature: {
+                int memberId = (int) msg.getObjects()[0];
+                byte[] bmpBytes = (byte[]) msg.getObjects()[1];
+                int rowIndex = memberIdList.indexOf(memberId);
+                if (core != null) {
+                    final int targetPage = Math.max(0, core.countPages() - 1);
+                    String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(new Date());
+                    Bitmap bmp = Utils.byte2bmp(bmpBytes);
+                    if (bmp != null) {
+                        int w = bmp.getWidth();
+                        int h = bmp.getHeight();
+                        int[] pixels = new int[w * h];
+                        bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+                        byte[] rgb = new byte[w * h * 3];
+                        for (int i = 0; i < pixels.length; i++) {
+                            int px = pixels[i];
+                            rgb[i * 3] = (byte) ((px >> 16) & 0xFF);
+                            rgb[i * 3 + 1] = (byte) ((px >> 8) & 0xFF);
+                            rgb[i * 3 + 2] = (byte) (px & 0xFF);
+                        }
+                        core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
+                        hadAnnotation = true;
+                        refreshDocumentAndShowPage(targetPage);
+                        Toast.makeText(MuPdfDocumentActivity.this,
+                                getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
+                                Toast.LENGTH_SHORT).show();
+                        bmp.recycle();
+                    }
+                }
+                break;
+            }
         }
     }
 
@@ -2019,7 +2117,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private void exit() {
         Debugger.i(TAG, "---exit---");
-        if (hadAnnotation) {
+        if (uploadEnable && hadAnnotation) {
             tipSavePop();
         } else {
             finish();
@@ -2516,7 +2614,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             return;
         }
         if (mWindowWatermarkColor == 0) {
-            mWindowWatermarkColor = Color.parseColor("#33FFAB00");
+            mWindowWatermarkColor = MupdfMacro.DEFAULT_WINDOW_WATERMARK_COLOR;
         }
         if (mWindowWatermarkView == null) {
             mWindowWatermarkView = new WindowWatermarkView(this);
@@ -2845,6 +2943,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_sign_table_create), (dialog, which) -> {
             String input = editText.getText().toString().trim();
             if (!input.isEmpty() && core != null) {
+                input = input.replace('，', ',');//将中文逗号替换成英文逗号
                 String[] names = input.split("[,\n]");
                 java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
                 for (String n : names) {
@@ -2980,10 +3079,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
         ActUtil.removeActivity(this);
         unregisterEventBus();
-        MupdfMacro.isSharing = false;
-        MupdfMacro.launchSrcmemid = 0;
-        MupdfMacro.launchSrcwbid = 0;
-        MupdfMacro.sharingIds.clear();
+        MupdfMacro.reset();//重置相应的参数值
         if (mainHandler != null) mainHandler.removeCallbacksAndMessages(null);
         pendingPageUpdate = null;
         mainHandler = null;

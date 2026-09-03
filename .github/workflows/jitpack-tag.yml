@@ -1,0 +1,39 @@
+name: JitPack release build
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger JitPack build
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # First request for a tag makes JitPack check out the code and build it.
+          curl -sS -o /dev/null \
+            "https://jitpack.io/com/github/kelvin-panda/mupdf/${TAG}/mupdf-${TAG}.pom" \
+            || true
+
+      - name: Wait for build
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          for i in $(seq 1 60); do
+            status=$(curl -sS \
+              "https://jitpack.io/api/builds/com.github.kelvin-panda/mupdf/${TAG}" \
+              | jq -r '.status // empty')
+            echo "JitPack status: ${status:-unknown}"
+            case "${status}" in
+              ok) exit 0 ;;
+              Error|error|needAuth)
+                echo "JitPack build failed or needs authentication"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "JitPack build still running after 10 minutes"
+          exit 1

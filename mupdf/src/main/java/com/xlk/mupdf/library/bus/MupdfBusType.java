@@ -61,14 +61,7 @@ public class MupdfBusType {
      * <li>int mediaId</li>
      */
     public static final String inform_exit_annotation = "inform_exit_annotation";
-    /**
-     * 秘书端通知选择参会人进行PDF签名
-     */
-    public static final String inform_inform_signature = "inform_inform_signature";
-    /**
-     * 收到签名的通知（秘书端推送的通知）
-     */
-    public static final String receive_inform_signature = "receive_inform_signature";
+
     /**
      * 通知前端用户触摸了设备
      */
@@ -76,4 +69,27 @@ public class MupdfBusType {
     //</editor-fold>
 
     public static final String close_mupdf = "close_mupdf";
+    
+    //<editor-fold desc="PDF签名">
+
+    /**
+     * 秘书端通知选择参会人进行PDF签名，需要在前端处理，通过画板接口通知
+     */
+    public static final String inform_inform_signature = "inform_inform_signature";
+    /**
+     * 收到签名的通知（秘书端推送的通知）
+     */
+    public static final String receive_inform_signature = "receive_inform_signature";
+    /**
+     * 参会端签名结果（提供给自己的前端使用，通过画板接口提交给秘书端）
+     * <li>byte[] bmpBytes</li>
+     * <li>int width</li>
+     * <li>int height</li>
+     */
+    public static final String result_signature = "result_signature";
+    //秘书端使用-前端选好签名参会人后通知pdf层创建好签名表
+    public static final String mupdf_create_signature_row = "mupdf_create_signature_row";
+    //秘书端使用-前端通知给PDF将当前收到的签名提交到创建好的签名表里
+    public static final String submit_member_signature = "submit_member_signature";
+    //</editor-fold>
 }

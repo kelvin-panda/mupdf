@@ -82,6 +82,18 @@ public class MupdfMacro {
      */
     public static final int DEFAULT_BACKGROUND_COLOR = 0xFFFFFFFF;
     public static int backgroundColor = DEFAULT_BACKGROUND_COLOR;
+    /**
+     * PDF 内容水印默认颜色。
+     */
+    public static final int DEFAULT_WATERMARK_COLOR = Color.parseColor("#66000000");
+    /**
+     * 窗口水印默认颜色。
+     */
+    public static final int DEFAULT_WINDOW_WATERMARK_COLOR = Color.parseColor("#33FFAB00");
+    /**
+     * 批注上传默认目录 id。
+     */
+    public static final int DEFAULT_UPLOAD_DIR_ID = 2;
     public static final int MIN_BRIGHTNESS = -255;
     public static final int MAX_BRIGHTNESS = 255;
     /**
@@ -225,7 +237,6 @@ public class MupdfMacro {
 
     //<editor-fold desc="共享批注相关">
 
-
     /**
      * 所有正在参与共享绘制的设备id
      */
@@ -236,4 +247,18 @@ public class MupdfMacro {
     public static int launchSrcmemid;//发起人的人员ID
     //</editor-fold>
 
+    public static int currentMediaId = -1;
+    public static String currentFilePath = "";
+    public static String currentUri = "";
+
+
+    public static void reset() {
+        sharingIds.clear();
+        isSharing = false;
+        launchSrcwbid = 0;
+        launchSrcmemid = 0;
+        currentMediaId = -1;
+        currentFilePath = "";
+        currentUri = "";
+    }
 }

@@ -1,6 +1,8 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 6.0.36
+1. 添加签名提交的功能（测试）
 ## 6.0.35
 1. 发布源迁移到 GitHub，坐标改为 `com.github.kelvin-panda:mupdf`
 ## 6.0.28

@@ -8,11 +8,13 @@ public class MupdfEventMessage {
     private String type;
     private int method;
     private Object[] objects;
+    private byte[] bytes;
 
     private MupdfEventMessage(Builder builder) {
         this.type = builder.type;
         this.method = builder.method;
         this.objects = builder.objects;
+        this.bytes = builder.bytes;
     }
 
     public String getType() {
@@ -31,6 +33,7 @@ public class MupdfEventMessage {
         private String type;
         private int method;
         private Object[] objects;
+        private byte[] bytes;
 
         public Builder type(String type) {
             this.type = type;
@@ -39,6 +42,11 @@ public class MupdfEventMessage {
 
         public Builder method(int method) {
             this.method = method;
+            return this;
+        }
+
+        public Builder bytes(byte[] bytes) {
+            this.bytes = bytes;
             return this;
         }
 

@@ -1,7 +1,5 @@
 package com.xlk.mupdf.library;
 
-import android.graphics.Color;
-
 /**
  * 宏开关
  *
@@ -209,10 +207,12 @@ public class MupdfConfig {
     public String toString() {
         return "MupdfConfig{" +
                 "filePath='" + filePath + '\'' +
+                ", annotationSaveDirPath='" + annotationSaveDirPath + '\'' +
                 ", fileUri='" + fileUri + '\'' +
                 ", mediaId=" + mediaId +
                 ", watermarkEnable=" + watermarkEnable +
                 ", watermarkContent='" + watermarkContent + '\'' +
+                ", watermarkColor=" + watermarkColor +
                 ", deleteSourceFile=" + deleteSourceFile +
                 ", uploadEnable=" + uploadEnable +
                 ", annotationEnable=" + annotationEnable +
@@ -229,6 +229,15 @@ public class MupdfConfig {
                 ", zoomPercent=" + zoomPercent +
                 ", windowWatermarkEnable=" + windowWatermarkEnable +
                 ", windowWatermarkContent='" + windowWatermarkContent + '\'' +
+                ", windowWatermarkColor=" + windowWatermarkColor +
+                ", backgroundColorConfigured=" + backgroundColorConfigured +
+                ", brightnessConfigured=" + brightnessConfigured +
+                ", zoomPercentConfigured=" + zoomPercentConfigured +
+                ", signatureFormEnabled=" + signatureFormEnabled +
+                ", fillInSignatureEnabled=" + fillInSignatureEnabled +
+                ", annotationInputTextEnabled=" + annotationInputTextEnabled +
+                ", backButtonEnabled=" + backButtonEnabled +
+                ", informSignature=" + informSignature +
                 '}';
     }
 
@@ -239,24 +248,57 @@ public class MupdfConfig {
         private int mediaId = 0;
         private boolean watermarkEnable = false;
         private String watermarkContent = "";
-        private int watermarkColor = Color.parseColor("#66000000");
+        private int watermarkColor = MupdfMacro.DEFAULT_WATERMARK_COLOR;
+        /**
+         * 退出时是否删除源文件
+         */
         private boolean deleteSourceFile = false;
+        /**
+         * 批注上传开关【默认显示】
+         */
         private boolean uploadEnable = true;
+        /**
+         * 批注控件【默认显示】
+         */
         private boolean annotationEnable = true;
+        /**
+         * 签名控件【默认显示】
+         */
         private boolean signatureEnable = true;
+        /**
+         * 截图图标【默认显示】
+         */
         private boolean captureEnable = true;
+        /**
+         * 外部打开图标【默认显示】
+         */
         private boolean wpsOpenEnable = true;
-        private int uploadDirId = 2;
+        /**
+         * 批注上传的目录id【默认2】
+         */
+        private int uploadDirId = MupdfMacro.DEFAULT_UPLOAD_DIR_ID;
+        /**
+         * 只进行预览不做任何操作
+         */
         private boolean onlyPreview = false;
+        /**
+         * 打开后的起始页
+         */
         private int pageIndex = 0;
+        /**
+         * 加载时的清晰度【默认不限制】
+         */
         private int clarityLimitMode = MupdfClarityMode.UNRESTRICTED;
+        /**
+         * 打开后是否全屏
+         */
         private boolean fullScreenEnable = true;
         private int backgroundColor = MupdfMacro.DEFAULT_BACKGROUND_COLOR;
         private int brightness = 0;
         private int zoomPercent = MupdfMacro.ZOOM_PERCENT_UNSET;
         private boolean windowWatermarkEnable = false;
         private String windowWatermarkContent = "";
-        private int windowWatermarkColor = Color.parseColor("#33FFAB00");
+        private int windowWatermarkColor = MupdfMacro.DEFAULT_WINDOW_WATERMARK_COLOR;
         private boolean backgroundColorConfigured = false;
         private boolean brightnessConfigured = false;
         private boolean zoomPercentConfigured = false;
@@ -267,7 +309,8 @@ public class MupdfConfig {
         private boolean informSignature = false;
 
         /**
-         * 设置PDF预览文件
+         * 设置PDF预览文件（文件绝对路径）。
+         * 同时设置 {@link #fileUri(String)} 时，打开优先使用 filePath。
          *
          * @param filePath 文件全路径
          */
@@ -277,7 +320,8 @@ public class MupdfConfig {
         }
 
         /**
-         * 设置PDF预览文件
+         * 设置PDF预览文件（content uri 等）。
+         * 仅在 filePath 为空时作为兜底使用。
          *
          * @param fileUri 文件uri
          */
