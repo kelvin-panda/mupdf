@@ -1,6 +1,8 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 6.0.39
+1. 修改签名Bitmap的获取方式
 ## 6.0.37
 1. example 改为使用本地 `project(":mupdf")` 依赖，避免 JitPack 构建时引用尚未发布的远程版本
 ## 6.0.36

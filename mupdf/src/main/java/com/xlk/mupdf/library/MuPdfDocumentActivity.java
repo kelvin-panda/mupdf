@@ -168,6 +168,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 签名表创建时保存的参会人id列表-用于提交签名时获取对应的索引
      */
     private List<Integer> memberIdList;
+    private List<Integer> signatureMemberIdList;
 
     /* The core rendering instance */
     enum TopBarMode {Main, Search, More}
@@ -980,7 +981,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //秘书端通知参会人签名
         if (viewInformSignature != null) {
             viewInformSignature.setOnClickListener(v -> {
-                MupdfBus.post(MupdfBusType.inform_inform_signature);
+                if (signatureMemberIdList != null && !signatureMemberIdList.isEmpty()) {
+                    return;
+                }
+                MupdfBus.post(MupdfBusType.inform_inform_signature, mediaId);
             });
         }
 
@@ -1535,9 +1539,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             }
             //秘书端收到通知-创建好签名表
             case MupdfBusType.mupdf_create_signature_row: {
+                if (signTableTotalNames != 0) {
+                    Debugger.d("已创建过签名表");
+                    return;
+                }
                 Object[] objects = msg.getObjects();
                 List<String> memberNameList = (List<String>) objects[0];
                 memberIdList = (List<Integer>) objects[1];
+                signatureMemberIdList = new ArrayList<>();
+                signatureMemberIdList.addAll(memberIdList);
                 if (!memberNameList.isEmpty() && core != null) {
                     java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
                     for (String n : memberNameList) {
@@ -1557,14 +1567,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             //签名通知-接收到秘书端通知签名的通知
             case MupdfBusType.receive_inform_signature: {
                 Debugger.e("接收到秘书端通知签名的通知");
-                new ArtBoardDialog(this, true, false, new ArtBoardDialog.SignatureListener() {
+                // 打开签名画板
+                new ArtBoardDialog(MuPdfDocumentActivity.this, false,false, new ArtBoardDialog.SignatureListener() {
                     @Override
                     public void onSuccess(Object[] object) {
-                        //提交给秘书端（或者服务器的签名列表）
-                        Bitmap bmp = (Bitmap) object[0];
-                        byte[] bytes = Utils.bmp2byte(bmp);
-                        bmp.recycle();
-                        MupdfBus.post(MupdfBusType.result_signature, bytes);
+                        List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
+                        RectF regionSize = (RectF) object[1];
+                        // 生成签名图片
+                        Bitmap bmp = renderSignatureBitmap(drawPaths, regionSize);
+                        if (bmp != null) {
+                            byte[] bytes = Utils.bmp2byte(bmp);
+                            MupdfBus.post(MupdfBusType.result_signature, bytes);
+                            bmp.recycle();
+                        }
                     }
                 }).show();
                 break;
@@ -1579,8 +1594,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(new Date());
                     Bitmap bmp = Utils.byte2bmp(bmpBytes);
                     if (bmp != null) {
+                        signatureMemberIdList.remove(signatureMemberIdList.indexOf(memberId));
                         int w = bmp.getWidth();
                         int h = bmp.getHeight();
+                        Debugger.d("收到签名图数据 bmp大小=" + w + " x " + h);
                         int[] pixels = new int[w * h];
                         bmp.getPixels(pixels, 0, w, 0, 0, w, h);
                         byte[] rgb = new byte[w * h * 3];

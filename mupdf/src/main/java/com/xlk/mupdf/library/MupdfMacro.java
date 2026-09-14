@@ -241,7 +241,6 @@ public class MupdfMacro {
      * 所有正在参与共享绘制的设备id
      */
     public static List<Integer> sharingIds = new ArrayList<>();
-
     public static boolean isSharing;
     public static long launchSrcwbid;//发起人的白板标识 取微秒级的时间作标识 白板标识使用
     public static int launchSrcmemid;//发起人的人员ID
