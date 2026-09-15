@@ -20,9 +20,12 @@ import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.viewer.MuPDFCore;
 import com.artifex.mupdf.viewer.PageView;
 import com.artifex.mupdf.viewer.ReaderView;
+import com.xlk.mupdf.library.bus.MupdfOperationId;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 
 /**
@@ -70,6 +73,8 @@ public class AnnotationArtBoard extends View {
      */
     private int currentDrawGraphics = DRAW_SLINE;
     private List<AnnotationArtBoard.DrawPath> pathList = new ArrayList<>();
+    private long currentOperationId;
+    private final Set<Long> erasedOperationIds = new LinkedHashSet<>();
     private Paint mBitmapPaint;
     private Bitmap mBitmap;
     private Canvas mCanvas;
@@ -415,6 +420,8 @@ public class AnnotationArtBoard extends View {
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
+                currentOperationId = MupdfOperationId.next();
+                erasedOperationIds.clear();
                 startX = event.getX();
                 startY = event.getY();
                 startDocY = y + documentScrollY;
@@ -497,8 +504,12 @@ public class AnnotationArtBoard extends View {
                             int pageH = docView.getPageDisplayHeight(pageIdx);
                             if (pageH <= 0) pageH = screenHeight;
                             float localY = y + docView.getDocumentScrollY() - pageTop;
-                            boolean deleted = core.deleteAnnotation(pageIdx, pageW, pageH, x - pageLeft, localY);
-                            if (deleted) {
+                            long[] deletedOperationIds = core.deleteAnnotationWithOperationIds(
+                                    pageIdx, pageW, pageH, x - pageLeft, localY);
+                            if (deletedOperationIds.length > 0) {
+                                for (long operationId : deletedOperationIds) {
+                                    if (operationId > 0) erasedOperationIds.add(operationId);
+                                }
                                 View pv = docView.getView(pageIdx);
                                 if (pv instanceof PageView) ((PageView) pv).update();
                             }
@@ -513,8 +524,14 @@ public class AnnotationArtBoard extends View {
                 break;
             case MotionEvent.ACTION_UP: {
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
-                long utcstamp = System.currentTimeMillis();
-                int operid = (int) (utcstamp / 10);
+                if (currentDrawGraphics == DRAW_ERASER) {
+                    notifyEraseFinished();
+                    points.clear();
+                    mPath = null;
+                    invalidate();
+                    break;
+                }
+                long operid = currentOperationId;
                 // 屏幕坐标 → 文档坐标（画板固定在屏幕，需使用采样时的滚动偏移）
                 float dx = x, dy = y + documentScrollY;
                 float dsx = startX, dsy = startDocY;
@@ -588,9 +605,29 @@ public class AnnotationArtBoard extends View {
                 }
                 break;
             } // end ACTION_UP block
+            case MotionEvent.ACTION_CANCEL:
+                if (currentDrawGraphics == DRAW_ERASER) {
+                    notifyEraseFinished();
+                }
+                points.clear();
+                mPath = null;
+                invalidate();
+                break;
             default:
                 break;
         }
+    }
+
+    private void notifyEraseFinished() {
+        if (eraseListener != null && !erasedOperationIds.isEmpty()) {
+            long[] targets = new long[erasedOperationIds.size()];
+            int index = 0;
+            for (Long operationId : erasedOperationIds) {
+                targets[index++] = operationId;
+            }
+            eraseListener.onErase(currentOperationId, targets);
+        }
+        erasedOperationIds.clear();
     }
 
     private Point toDocumentPoint(float x, float y) {
@@ -608,7 +645,7 @@ public class AnnotationArtBoard extends View {
         return array;
     }
 
-    private void deleteAnnotationBean(int key) {
+    private void deleteAnnotationBean(long key) {
         for (AnnotationBean next : annotationBeans) {
             if (next.key == key) {
                 next.setDeleted(true);
@@ -617,7 +654,7 @@ public class AnnotationArtBoard extends View {
         }
     }
 
-    private void reAddAnnotationBean(int key) {
+    private void reAddAnnotationBean(long key) {
         for (AnnotationBean next : annotationBeans) {
             if (next.key == key) {
                 next.setDeleted(false);
@@ -839,7 +876,7 @@ public class AnnotationArtBoard extends View {
         public int deleteIndex;//进行删除操作的操作列表中的索引位
         public Paint paint; //画笔
         public Path path = null; //路径
-        public int operid;//操作ID
+        public long operid;//操作ID
 
         public String text = null;//绘制的文本
         public PointF pointF;//添加文本的起点（x,y）
@@ -880,6 +917,16 @@ public class AnnotationArtBoard extends View {
 
     public void setStrokeListener(StrokeListener l) {
         this.strokeListener = l;
+    }
+
+    public interface EraseListener {
+        void onErase(long operationId, long[] targetOperationIds);
+    }
+
+    private EraseListener eraseListener;
+
+    public void setEraseListener(EraseListener l) {
+        this.eraseListener = l;
     }
 
     private TextMarkupListener textMarkupListener;

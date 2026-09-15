@@ -39,7 +39,10 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MuPDFCore {
     private static final String TAG = "MuPDFCore";
@@ -51,6 +54,12 @@ public class MuPDFCore {
     private Page page;
     private float pageWidth;
     private float pageHeight;
+    /**
+     * PDF 批注与共享操作标识的映射，用于擦除和撤销。
+     */
+    private final Map<Long, List<PDFAnnotation>> annotationsByOperationId = new HashMap<>();
+    private final Map<PDFAnnotation, Long> operationIdByAnnotation = new HashMap<>();
+    private final Map<PDFAnnotation, Integer> pageIndexByAnnotation = new HashMap<>();
 
     /* Default to "A Format" pocket book size. */
     private int layoutW = 312;
@@ -297,26 +306,55 @@ public class MuPDFCore {
     }
 
     public void addShareInk(int pageNum, float paintSize, int paintColor, Point[] inkList) {
-        Page page = doc.loadPage(pageNum - 1);
-        Rect bounds = page.getBounds();
-        float realWidth = bounds.x1 - bounds.x0;
-        float realHeight = bounds.y1 - bounds.y0;
-        for (Point point : inkList) {
-            float tx = point.x;
-            float ty = point.y;
-            point.x = point.x * realWidth;
-            point.y = point.y * realHeight;
-            Debugger.i(TAG, "addShareInk: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
+        List<SharedAnnotationData> data = new ArrayList<>(1);
+        data.add(new SharedAnnotationData(0L, pageNum, TYPE_INK, paintSize, paintColor,
+                pointArrayToFloatArray(inkList)));
+        addSharedAnnotations(data);
+    }
+
+    /**
+     * 批量写入远端批注。按页加载一次、更新一次，避免逐条操作反复触发文档刷新。
+     */
+    public synchronized void addSharedAnnotations(List<SharedAnnotationData> dataList) {
+        if (dataList == null || dataList.isEmpty()) return;
+        Map<Integer, List<SharedAnnotationData>> grouped = new LinkedHashMap<>();
+        for (SharedAnnotationData data : dataList) {
+            if (data == null || data.pageNumber <= 0 || data.points == null
+                    || data.points.length < 2) continue;
+            List<SharedAnnotationData> pageData = grouped.get(data.pageNumber);
+            if (pageData == null) {
+                pageData = new ArrayList<>();
+                grouped.put(data.pageNumber, pageData);
+            }
+            pageData.add(data);
         }
-        PDFPage pdfPage = (PDFPage) page;
-        PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_INK);
-        float[] color = parseColor(paintColor);
-        pdfAnnotation.setColor(color);
-        pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-        pdfAnnotation.addInkList(inkList);
-        boolean update = pdfAnnotation.update();
-        boolean update1 = pdfPage.update();
-        Debugger.i(TAG, "addShareInk 添加共享批注 update=" + update + ",update1=" + update1);
+        if (grouped.isEmpty()) return;
+
+        try {
+            for (Map.Entry<Integer, List<SharedAnnotationData>> entry : grouped.entrySet()) {
+                int pageNum = entry.getKey();
+                Page loadedPage = doc.loadPage(pageNum - 1);
+                if (loadedPage == null) continue;
+                Rect bounds = loadedPage.getBounds();
+                float realWidth = bounds.x1 - bounds.x0;
+                float realHeight = bounds.y1 - bounds.y0;
+                PDFPage pdfPage = (PDFPage) loadedPage;
+                boolean pageChanged = false;
+                for (SharedAnnotationData data : entry.getValue()) {
+                    Point[] pdfPoints = normalizedToPdfPoints(data.points, realWidth, realHeight);
+                    PDFAnnotation annotation = createAnnotation(pdfPage, data.type,
+                            data.strokeWidth, data.argb, pdfPoints);
+                    if (annotation == null) continue;
+                    annotation.update();
+                    registerAnnotation(data.operationId, pageNum - 1, annotation);
+                    pageChanged = true;
+                }
+                if (pageChanged) pdfPage.update();
+            }
+            invalidatePageCache();
+        } catch (Exception e) {
+            Debugger.e(TAG + " addSharedAnnotations Exception", e);
+        }
     }
 
     /**
@@ -328,6 +366,12 @@ public class MuPDFCore {
      * @return
      */
     public synchronized Point[] addAnnotation(int pageNum, int width, int height, int type, float paintSize, int paintColor, Point[] inkList) {
+        return addAnnotation(pageNum, width, height, type, paintSize, paintColor, inkList, 0L);
+    }
+
+    public synchronized Point[] addAnnotation(int pageNum, int width, int height, int type,
+                                              float paintSize, int paintColor, Point[] inkList,
+                                              long operationId) {
         try {
             Point[] percentPoints = new Point[inkList.length];
             Page page = doc.loadPage(pageNum);
@@ -345,56 +389,11 @@ public class MuPDFCore {
                 Debugger.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
             }
             PDFPage pdfPage = (PDFPage) page;
-            PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(type);
-            float[] color = parseColor(paintColor);
-            pdfAnnotation.setColor(color);
-            switch (type) {
-                //直线
-                case TYPE_LINE: {
-                    float x0 = inkList[0].x;
-                    float y0 = inkList[0].y;
-                    float x1 = inkList[1].x;
-                    float y1 = inkList[1].y;
-                    Debugger.e(TAG, "addAnnotation: 直线=" + x0 + "," + y0 + "," + x1 + "," + y1);
-                    pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-                    pdfAnnotation.setLine(new Point(x0, y0), new Point(x1, y1));
-                    break;
-                }
-                //矩形
-                case TYPE_SQUARE: {
-                    float x0 = inkList[0].x;
-                    float y0 = inkList[0].y;
-                    float x1 = inkList[1].x;
-                    float y1 = inkList[1].y;
-                    Debugger.e(TAG, "addAnnotation: 矩形=" + x0 + "," + y0 + "," + x1 + "," + y1);
-                    pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-                    Rect rect = new Rect(x0, y0, x1, y1);
-                    pdfAnnotation.setRect(rect);
-                    break;
-                }
-                //高亮
-                case PDFAnnotation.TYPE_HIGHLIGHT: {
-                    float x0 = inkList[0].x;
-                    float y0 = inkList[0].y;
-                    float x1 = inkList[1].x;
-                    float y1 = inkList[1].y;
-                    Debugger.e(TAG, "addAnnotation: 高亮=" + x0 + "," + y0 + "," + x1 + "," + y1);
-                    pdfAnnotation.setOpacity(0.5f);//设置透明度
-                    pdfAnnotation.setColor(new float[]{1f, 1f, 0f});
-                    Quad quad = new Quad(x0, y0, x1, y0, x0, y1, x1, y1);
-//                pdfAnnotation.addQuadPoint(quad);
-                    pdfAnnotation.setQuadPoints(new Quad[]{quad});
-                    break;
-                }
-                //默认画笔
-                default: {
-                    pdfAnnotation.setBorderWidth(paintSize);//设置画笔大小
-                    pdfAnnotation.addInkList(inkList);
-                    break;
-                }
-            }
+            PDFAnnotation pdfAnnotation = createAnnotation(pdfPage, type, paintSize, paintColor, inkList);
+            if (pdfAnnotation == null) return null;
             boolean update = pdfAnnotation.update();
             boolean update1 = pdfPage.update();
+            registerAnnotation(operationId, pageNum, pdfAnnotation);
             invalidatePageCache();
             Debugger.i(TAG, "addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
             return percentPoints;
@@ -403,6 +402,90 @@ public class MuPDFCore {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private PDFAnnotation createAnnotation(PDFPage pdfPage, int type, float paintSize,
+                                           int paintColor, Point[] points) {
+        if (pdfPage == null || points == null || points.length == 0) return null;
+        PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(type);
+        float[] color = parseColor(paintColor);
+        pdfAnnotation.setColor(color);
+        switch (type) {
+            case TYPE_LINE: {
+                if (points.length < 2) return null;
+                pdfAnnotation.setBorderWidth(paintSize);
+                pdfAnnotation.setLine(new Point(points[0].x, points[0].y),
+                        new Point(points[1].x, points[1].y));
+                break;
+            }
+            case TYPE_SQUARE: {
+                if (points.length < 2) return null;
+                pdfAnnotation.setBorderWidth(paintSize);
+                pdfAnnotation.setRect(new Rect(points[0].x, points[0].y,
+                        points[1].x, points[1].y));
+                break;
+            }
+            case TYPE_HIGHLIGHT: {
+                if (points.length < 2) return null;
+                float x0 = points[0].x;
+                float y0 = points[0].y;
+                float x1 = points[1].x;
+                float y1 = points[1].y;
+                pdfAnnotation.setOpacity(0.5f);
+                pdfAnnotation.setColor(new float[]{1f, 1f, 0f});
+                Quad quad = new Quad(x0, y0, x1, y0, x0, y1, x1, y1);
+                pdfAnnotation.setQuadPoints(new Quad[]{quad});
+                break;
+            }
+            default: {
+                pdfAnnotation.setBorderWidth(paintSize);
+                pdfAnnotation.addInkList(points);
+                break;
+            }
+        }
+        return pdfAnnotation;
+    }
+
+    private Point[] normalizedToPdfPoints(float[] normalizedPoints, float realWidth, float realHeight) {
+        Point[] points = new Point[normalizedPoints.length / 2];
+        for (int i = 0; i < points.length; i++) {
+            points[i] = new Point(normalizedPoints[i * 2] * realWidth,
+                    normalizedPoints[i * 2 + 1] * realHeight);
+        }
+        return points;
+    }
+
+    private float[] pointArrayToFloatArray(Point[] points) {
+        if (points == null) return new float[0];
+        float[] values = new float[points.length * 2];
+        for (int i = 0; i < points.length; i++) {
+            values[i * 2] = points[i].x;
+            values[i * 2 + 1] = points[i].y;
+        }
+        return values;
+    }
+
+    private void registerAnnotation(long operationId, int pageIndex, PDFAnnotation annotation) {
+        if (operationId <= 0 || annotation == null) return;
+        List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
+        if (annotations == null) {
+            annotations = new ArrayList<>();
+            annotationsByOperationId.put(operationId, annotations);
+        }
+        annotations.add(annotation);
+        operationIdByAnnotation.put(annotation, operationId);
+        pageIndexByAnnotation.put(annotation, pageIndex);
+    }
+
+    private void unregisterAnnotation(PDFAnnotation annotation) {
+        if (annotation == null) return;
+        Long operationId = operationIdByAnnotation.remove(annotation);
+        pageIndexByAnnotation.remove(annotation);
+        if (operationId == null) return;
+        List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
+        if (annotations == null) return;
+        annotations.remove(annotation);
+        if (annotations.isEmpty()) annotationsByOperationId.remove(operationId);
     }
 
     /**
@@ -551,13 +634,66 @@ public class MuPDFCore {
             PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation[] anns = pdfPage.getAnnotations();
             if (anns == null || anns.length == 0) return 0;
-            pdfPage.deleteAnnotation(anns[anns.length - 1]);
+            PDFAnnotation annotation = anns[anns.length - 1];
+            pdfPage.deleteAnnotation(annotation);
+            unregisterAnnotation(annotation);
             invalidatePageCache();
             return 1;
         } catch (Exception e) {
             Debugger.e(TAG, "deleteLastAnnotation Exception: " + e);
         }
         return 0;
+    }
+
+    /**
+     * 删除一组共享操作创建的批注。
+     *
+     * @return 实际发生变化的页索引
+     */
+    public synchronized List<Integer> deleteAnnotationsByOperationIds(long[] operationIds) {
+        List<Integer> changedPages = new ArrayList<>();
+        if (operationIds == null || operationIds.length == 0) return changedPages;
+        for (long operationId : operationIds) {
+            if (operationId <= 0) continue;
+            List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
+            if (annotations == null || annotations.isEmpty()) continue;
+
+            Map<Integer, List<PDFAnnotation>> grouped = new LinkedHashMap<>();
+            for (PDFAnnotation annotation : new ArrayList<>(annotations)) {
+                Integer pageIndex = pageIndexByAnnotation.get(annotation);
+                if (pageIndex == null) continue;
+                List<PDFAnnotation> pageAnnotations = grouped.get(pageIndex);
+                if (pageAnnotations == null) {
+                    pageAnnotations = new ArrayList<>();
+                    grouped.put(pageIndex, pageAnnotations);
+                }
+                pageAnnotations.add(annotation);
+            }
+            for (Map.Entry<Integer, List<PDFAnnotation>> entry : grouped.entrySet()) {
+                try {
+                    Page loadedPage = doc.loadPage(entry.getKey());
+                    PDFPage pdfPage = (PDFPage) loadedPage;
+                    for (PDFAnnotation annotation : entry.getValue()) {
+                        pdfPage.deleteAnnotation(annotation);
+                        unregisterAnnotation(annotation);
+                    }
+                    pdfPage.update();
+                    if (!changedPages.contains(entry.getKey())) {
+                        changedPages.add(entry.getKey());
+                    }
+                } catch (Exception e) {
+                    Debugger.e(TAG + " deleteAnnotationsByOperationId Exception", e);
+                }
+            }
+            annotationsByOperationId.remove(operationId);
+        }
+        if (!changedPages.isEmpty()) invalidatePageCache();
+        return changedPages;
+    }
+
+    public synchronized boolean hasAnnotationsForOperation(long operationId) {
+        List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
+        return annotations != null && !annotations.isEmpty();
     }
 
     public void logAnnotations(int pageNum) {
@@ -753,11 +889,20 @@ public class MuPDFCore {
      * @return true 表示删除了批注
      */
     public synchronized boolean deleteAnnotation(int pageIdx, int width, int height, float x, float y) {
+        return deleteAnnotationWithOperationIds(pageIdx, width, height, x, y).length > 0;
+    }
+
+    /**
+     * 根据坐标删除页面批注，并返回被删除批注对应的共享操作标识。
+     * 对于没有共享标识的历史批注，数组中返回 0 表示已经删除但无法跨端同步。
+     */
+    public synchronized long[] deleteAnnotationWithOperationIds(int pageIdx, int width, int height,
+                                                                float x, float y) {
         try {
             Page page = doc.loadPage(pageIdx);
             PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation[] annotations = pdfPage.getAnnotations();
-            if (annotations == null) return false;
+            if (annotations == null) return new long[0];
             Rect bounds = page.getBounds();
             float realWidth = bounds.x1 - bounds.x0;
             float realHeight = bounds.y1 - bounds.y0;
@@ -766,14 +911,39 @@ public class MuPDFCore {
             List<AnnotationPathBean> annotationPathBeans = annotations2path(annotations);
             PDFAnnotation pdfAnnotation = findShouldDeleteAnnotation(annotationPathBeans, pdfX, pdfY);
             if (pdfAnnotation != null) {
+                Long operationId = operationIdByAnnotation.get(pdfAnnotation);
+                if (operationId != null && operationId > 0) {
+                    deleteAnnotationsByOperationIds(new long[]{operationId});
+                    return new long[]{operationId};
+                }
                 pdfPage.deleteAnnotation(pdfAnnotation);
+                unregisterAnnotation(pdfAnnotation);
                 invalidatePageCache();
-                return true;
+                return new long[]{0L};
             }
         } catch (Exception e) {
             Debugger.e(TAG + " deleteAnnotation Exception", e);
         }
-        return false;
+        return new long[0];
+    }
+
+    public static class SharedAnnotationData {
+        final long operationId;
+        final int pageNumber;
+        final int type;
+        final float strokeWidth;
+        final int argb;
+        final float[] points;
+
+        public SharedAnnotationData(long operationId, int pageNumber, int type,
+                                    float strokeWidth, int argb, float[] points) {
+            this.operationId = operationId;
+            this.pageNumber = pageNumber;
+            this.type = type;
+            this.strokeWidth = strokeWidth;
+            this.argb = argb;
+            this.points = points;
+        }
     }
 
     public String save(String srcPath, String saveDirPath) throws Exception {

@@ -78,7 +78,6 @@ import com.artifex.mupdf.viewer.Pallet;
 import com.artifex.mupdf.viewer.ReaderView;
 import com.artifex.mupdf.viewer.SearchTask;
 import com.artifex.mupdf.viewer.SearchTaskResult;
-import com.xlk.mupdf.library.bus.MupdfAnnotationBean;
 import com.xlk.mupdf.library.bus.MupdfBus;
 import com.xlk.mupdf.library.bus.MupdfBusType;
 import com.xlk.mupdf.library.bus.MupdfEventMessage;
@@ -101,9 +100,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import me.jessyan.autosize.AutoSizeCompat;
 import me.jessyan.autosize.internal.CancelAdapt;
@@ -225,6 +230,22 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 当前批注会话开始时的撤销栈位置；取消时只回滚本会话新增批注
      */
     private int annotationSessionStartIndex = 0;
+    private int annotationOperationSessionStartIndex = 0;
+    /**
+     * 本机尚未撤销的操作，按完成顺序排列。
+     */
+    private final List<Long> localOperationIds = new ArrayList<>();
+    /**
+     * 当前共享会话内的操作历史，用于擦除恢复和撤销。
+     */
+    private final Map<Long, MupdfInkBean> sharedOperationHistory = new HashMap<>();
+    private final Set<Long> processedSharedOperationIds = new HashSet<>();
+    private final Map<Long, MupdfInkBean> pendingSharedOperations = new LinkedHashMap<>();
+    private final Map<Long, Integer> pendingSharedOperationAttempts = new HashMap<>();
+    private boolean sharedOperationDrainScheduled;
+    private static final long SHARED_OPERATION_BATCH_DELAY_MS = 120L;
+    private static final long SHARED_OPERATION_RETRY_DELAY_MS = 300L;
+    private static final int MAX_SHARED_OPERATION_RETRIES = 20;
 
     /**
      * 当前页：索引
@@ -414,6 +435,121 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             AutoSizeCompat.cancelAdapt(superResources);
         }
         return superResources;
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void eventBus(MupdfEventMessage msg) {
+        switch (msg.getType()) {
+            //共享批注-接收到其他人加入的通知
+            case MupdfBusType.receive_invite_annotation: {
+                Debugger.e("接收到其他人加入的通知");
+                break;
+            }
+            //共享批注-接收到其他人拒绝的通知
+            case MupdfBusType.receive_reject_annotation: {
+                Debugger.e("接收到其他人拒绝的通知");
+                break;
+            }
+            //共享批注-收到其他人退出的通知
+            case MupdfBusType.receive_exit_annotation: {
+                Debugger.e("接收到其他人退出的通知");
+                break;
+            }
+            //共享批注-收到其他人的绘制信息
+            case MupdfBusType.receive_annotation_info: {
+                Object[] objects = msg.getObjects();
+                if (objects == null || objects.length == 0) {
+                    break;
+                }
+                enqueueSharedOperations(objects[0]);
+                break;
+            }
+            case MupdfBusType.close_mupdf: {
+                exit();
+                break;
+            }
+            //签名通知-秘书端收到通知-创建好签名表
+            case MupdfBusType.mupdf_create_signature_row: {
+                if (signTableTotalNames != 0) {
+                    Debugger.d("已创建过签名表");
+                    return;
+                }
+                Object[] objects = msg.getObjects();
+                List<String> memberNameList = (List<String>) objects[0];
+                memberIdList = (List<Integer>) objects[1];
+                signatureMemberIdList = new ArrayList<>();
+                signatureMemberIdList.addAll(memberIdList);
+                if (!memberNameList.isEmpty() && core != null) {
+                    java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
+                    for (String n : memberNameList) {
+                        String trimmed = n.trim();
+                        if (!trimmed.isEmpty()) nameList.add(trimmed);
+                    }
+                    if (!nameList.isEmpty()) {
+                        signTableTotalNames = nameList.size();
+                        core.createSignatureTable(nameList.toArray(new String[0]),
+                                "姓名", "时间", "签名");
+                        hadAnnotation = true;
+                        refreshDocumentAndShowPage(core.countPages() - 1);
+                    }
+                }
+                break;
+            }
+            //签名通知-接收到秘书端通知签名的通知
+            case MupdfBusType.receive_inform_signature: {
+                Debugger.e("接收到秘书端通知签名的通知");
+                // 打开签名画板
+                new ArtBoardDialog(MuPdfDocumentActivity.this, false, false, new ArtBoardDialog.SignatureListener() {
+                    @Override
+                    public void onSuccess(Object[] object) {
+                        List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
+                        RectF regionSize = (RectF) object[1];
+                        // 生成签名图片
+                        Bitmap bmp = renderSignatureBitmap(drawPaths, regionSize);
+                        if (bmp != null) {
+                            byte[] bytes = Utils.bmp2byte(bmp);
+                            MupdfBus.post(MupdfBusType.result_signature, bytes);
+                            bmp.recycle();
+                        }
+                    }
+                }).show();
+                break;
+            }
+            //签名通知-接收到参会人提交的签名后作为秘书端提交到签名表里
+            case MupdfBusType.submit_member_signature: {
+                int memberId = (int) msg.getObjects()[0];
+                byte[] bmpBytes = (byte[]) msg.getObjects()[1];
+                int rowIndex = memberIdList.indexOf(memberId);
+                if (core != null) {
+                    final int targetPage = Math.max(0, core.countPages() - 1);
+                    String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(new Date());
+                    Bitmap bmp = Utils.byte2bmp(bmpBytes);
+                    if (bmp != null) {
+                        signatureMemberIdList.remove(signatureMemberIdList.indexOf(memberId));
+                        int w = bmp.getWidth();
+                        int h = bmp.getHeight();
+                        Debugger.d("收到签名图数据 bmp大小=" + w + " x " + h);
+                        int[] pixels = new int[w * h];
+                        bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+                        byte[] rgb = new byte[w * h * 3];
+                        for (int i = 0; i < pixels.length; i++) {
+                            int px = pixels[i];
+                            rgb[i * 3] = (byte) ((px >> 16) & 0xFF);
+                            rgb[i * 3 + 1] = (byte) ((px >> 8) & 0xFF);
+                            rgb[i * 3 + 2] = (byte) (px & 0xFF);
+                        }
+                        core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
+                        hadAnnotation = true;
+                        refreshDocumentAndShowPage(targetPage);
+                        Toast.makeText(MuPdfDocumentActivity.this,
+                                getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
+                                Toast.LENGTH_SHORT).show();
+                        bmp.recycle();
+                    }
+                }
+                break;
+            }
+        }
     }
 
     /**
@@ -774,6 +910,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 当前缩放百分比，100 表示 PDF 页宽与屏幕宽度对齐。
      */
     private int currentZoomPercent = FIT_WIDTH_ZOOM_PERCENT;
+
 
     public void createUI(Bundle savedInstanceState) {
         if (core == null)
@@ -1181,7 +1318,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             int width = pageView.getWidth();
             int height = pageView.getHeight();
 
-            List<MupdfAnnotationBean> annotationBeans = new ArrayList<>();
+            List<MupdfInkBean> annotationBeans = new ArrayList<>();
             for (SignatureBoard.DrawPath drawPath : drawPaths) {
                 PointF[] points = drawPath.points;
                 Point[] array = new Point[points.length];
@@ -1190,9 +1327,16 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     float y = points[i].y;
                     array[i] = new Point(x, y);
                 }
-                Point[] percentPoints = core.addAnnotation(signaturePageIndex, width, height, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array);
+                long operationId = com.xlk.mupdf.library.bus.MupdfOperationId.next();
+                Point[] percentPoints = core.addAnnotation(signaturePageIndex, width, height,
+                        PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array, operationId);
+                if (percentPoints == null) continue;
                 //points是经过core.addAnnotation方法计算后的实际坐标
-                annotationBeans.add(new MupdfAnnotationBean(mediaId, signaturePageIndex + 1, PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, percentPoints));
+                List<MupdfInkBean.InkSegment> segments = new ArrayList<>(1);
+                segments.add(new MupdfInkBean.InkSegment(signaturePageIndex + 1,
+                        pointsToFloatArray(percentPoints)));
+                annotationBeans.add(MupdfInkBean.createAdd(operationId,
+                        PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, segments));
                 hadAnnotation = true;
             }
             if (MupdfMacro.isSharing && !annotationBeans.isEmpty()) {
@@ -1346,17 +1490,23 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             chooseType(1);
             hadAnnotationBeforeCurrentSession = hadAnnotation;
             annotationSessionStartIndex = savedAnnotationPages.size();
+            annotationOperationSessionStartIndex = localOperationIds.size();
             artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH);
             artBoard.setDocumentScrollY(mDocView.getDocumentScrollY());
             artBoard.setPaintWidth(default_ink_size);
             // 即时保存：每笔松开即提交到 PDF，避免滚动时标注视觉偏移
             artBoard.setStrokeListener(bean -> {
-                List<Integer> changedPages = addStrokeAnnotation(bean, artH);
-                if (changedPages.isEmpty()) return;
-                savedAnnotationPages.add(changedPages);  // 记录用于撤销
+                List<MupdfInkBean.InkSegment> segments = new ArrayList<>();
+                List<Integer> changedPages = addStrokeAnnotation(bean, artH, segments);
+                if (changedPages.isEmpty() || segments.isEmpty()) return;
                 hadAnnotation = true;
+                recordLocalOperation(MupdfInkBean.createAdd(bean.getKey(), bean.getType(),
+                        bean.getPaintSize() / 3.0f, bean.getPaintColor(), segments));
                 scheduleAnnotationPagesUpdate(changedPages);
             });
+            artBoard.setEraseListener((operationId, targetOperationIds) ->
+                    recordLocalOperation(MupdfInkBean.createErase(
+                            operationId, targetOperationIds)));
             artBoard.setFreeTextListener(pos -> {
                 showFreeTextDialog(pos);
             });
@@ -1431,6 +1581,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //撤销
         viewArtRevoke.setOnClickListener(v -> {
+            if (!localOperationIds.isEmpty()) {
+                undoLastLocalOperation();
+                return;
+            }
             // 即时保存模式：从 PDF 内容层删除最后一笔标注
             if (!savedAnnotationPages.isEmpty()) {
                 List<Integer> lastPages = savedAnnotationPages.remove(savedAnnotationPages.size() - 1);
@@ -1438,10 +1592,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     core.deleteLastAnnotation(lastPages.get(i));
                 }
                 scheduleAnnotationPagesUpdate(lastPages);
-            }
-            // 同时清理画板残留（橡皮擦后可能遗留）
-            if (artBoard != null) {
-                artBoard.revoke();
             }
         });
         //删除
@@ -1546,136 +1696,246 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void eventBus(MupdfEventMessage msg) {
-        switch (msg.getType()) {
-            //共享批注-接收到其他人加入的通知
-            case MupdfBusType.receive_invite_annotation: {
-                Debugger.e("接收到其他人加入的通知");
-                break;
+    private void enqueueSharedOperations(Object payload) {
+        if (core == null || payload == null) return;
+        List<MupdfInkBean> operations = new ArrayList<>();
+        if (payload instanceof MupdfInkBean) {
+            operations.add((MupdfInkBean) payload);
+        } else if (payload instanceof List) {
+            for (Object item : (List<?>) payload) {
+                if (item instanceof MupdfInkBean) operations.add((MupdfInkBean) item);
             }
-            //共享批注-接收到其他人拒绝的通知
-            case MupdfBusType.receive_reject_annotation: {
-                Debugger.e("接收到其他人拒绝的通知");
-                break;
+        }
+
+        for (MupdfInkBean operation : operations) {
+            MupdfInkBean normalized = normalizeSharedOperation(operation);
+            if (normalized == null || normalized.getOperationId() <= 0
+                    || processedSharedOperationIds.contains(normalized.getOperationId())) {
+                continue;
             }
-            //共享批注-收到其他人退出的通知
-            case MupdfBusType.receive_exit_annotation: {
-                Debugger.e("接收到其他人退出的通知");
-                break;
+            pendingSharedOperations.put(normalized.getOperationId(), normalized);
+        }
+        scheduleSharedOperationDrain(SHARED_OPERATION_BATCH_DELAY_MS);
+    }
+
+    private void scheduleSharedOperationDrain(long delayMillis) {
+        if (pendingSharedOperations.isEmpty() || sharedOperationDrainScheduled
+                || mainHandler == null) return;
+        sharedOperationDrainScheduled = true;
+        mainHandler.postDelayed(this::drainSharedOperations, delayMillis);
+    }
+
+    private MupdfInkBean normalizeSharedOperation(MupdfInkBean operation) {
+        if (operation == null) return null;
+        if (operation.getOperationId() > 0) return operation;
+        int operationType = operation.getOperationType();
+        long operationId = com.xlk.mupdf.library.bus.MupdfOperationId.next();
+        if (operationType == MupdfInkBean.OP_ERASE) {
+            return MupdfInkBean.createErase(operationId, operation.getTargetOperationIds());
+        }
+        if (operationType == MupdfInkBean.OP_UNDO) {
+            long[] targets = operation.getTargetOperationIds();
+            return targets.length == 0 ? null
+                    : MupdfInkBean.createUndo(operationId, targets[0]);
+        }
+        return MupdfInkBean.createAdd(operationId, operation.getType(),
+                operation.getStrokeWidth(), operation.getArgb(), operation.getSegments());
+    }
+
+    private void drainSharedOperations() {
+        sharedOperationDrainScheduled = false;
+        if (core == null || pendingSharedOperations.isEmpty()) {
+            pendingSharedOperations.clear();
+            return;
+        }
+
+        List<MupdfInkBean> operations = new ArrayList<>(pendingSharedOperations.values());
+        pendingSharedOperations.clear();
+        Collections.sort(operations, (left, right) -> {
+            long leftId = left.getOperationId();
+            long rightId = right.getOperationId();
+            return leftId < rightId ? -1 : (leftId == rightId ? 0 : 1);
+        });
+
+        Set<Integer> changedPages = new HashSet<>();
+        boolean retryNeeded = false;
+        // 新增批注先集中写入，之后处理擦除和撤销，减少 MuPDF 页面加载和刷新次数。
+        for (MupdfInkBean operation : operations) {
+            if (operation.getOperationType() != MupdfInkBean.OP_ADD
+                    || processedSharedOperationIds.contains(operation.getOperationId())) {
+                continue;
             }
-            //共享批注-收到其他人的绘制信息
-            case MupdfBusType.receive_annotation_info: {
-                Object[] objects = msg.getObjects();
-                Debugger.e("收到其他人的绘制信息 objects数量：" + objects.length);
-                boolean onThisPage = false;
-                List<MupdfInkBean> inkList = (List<MupdfInkBean>) objects[0];
-                for (MupdfInkBean bean : inkList) {
-                    int pageNumber = bean.getPageNumber();
-                    int linesize = bean.getLinesize();
-                    int argb = bean.getArgb();
-                    Point[] array = bean.getArray();
-                    if (pageNumber == currentPageIndex + 1) onThisPage = true;
-                    core.addShareInk(pageNumber, linesize, argb, array);
+            sharedOperationHistory.put(operation.getOperationId(), operation);
+            addOperationToCore(operation, changedPages);
+            processedSharedOperationIds.add(operation.getOperationId());
+            pendingSharedOperationAttempts.remove(operation.getOperationId());
+        }
+        for (MupdfInkBean operation : operations) {
+            if (operation.getOperationType() == MupdfInkBean.OP_ADD
+                    || processedSharedOperationIds.contains(operation.getOperationId())) {
+                continue;
+            }
+            if (applyRemoteOperation(operation, changedPages)) {
+                processedSharedOperationIds.add(operation.getOperationId());
+                pendingSharedOperationAttempts.remove(operation.getOperationId());
+                continue;
+            }
+            Integer savedAttempt = pendingSharedOperationAttempts.get(
+                    operation.getOperationId());
+            int attempt = (savedAttempt == null ? 0 : savedAttempt) + 1;
+            if (attempt < MAX_SHARED_OPERATION_RETRIES) {
+                pendingSharedOperationAttempts.put(operation.getOperationId(), attempt);
+                pendingSharedOperations.put(operation.getOperationId(), operation);
+                retryNeeded = true;
+            } else {
+                pendingSharedOperationAttempts.remove(operation.getOperationId());
+                processedSharedOperationIds.add(operation.getOperationId());
+                Debugger.e("共享批注操作等待目标超时，operationId="
+                        + operation.getOperationId());
+            }
+        }
+
+        if (!changedPages.isEmpty()) {
+            Debugger.e("共享批注批量同步完成，操作数：" + operations.size()
+                    + "，变更页数：" + changedPages.size());
+            refreshAfterSharedChanges(changedPages);
+        }
+        if (retryNeeded) scheduleSharedOperationDrain(SHARED_OPERATION_RETRY_DELAY_MS);
+    }
+
+    private boolean applyRemoteOperation(MupdfInkBean operation, Set<Integer> changedPages) {
+        switch (operation.getOperationType()) {
+            case MupdfInkBean.OP_ERASE:
+                if (!hasOperationTargets(operation.getTargetOperationIds())) return false;
+                sharedOperationHistory.put(operation.getOperationId(), operation);
+                changedPages.addAll(core.deleteAnnotationsByOperationIds(
+                        operation.getTargetOperationIds()));
+                return true;
+            case MupdfInkBean.OP_UNDO:
+                if (!hasUndoDependencies(operation)) return false;
+                sharedOperationHistory.put(operation.getOperationId(), operation);
+                applyUndoOperation(operation, changedPages);
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    private boolean hasOperationTargets(long[] operationIds) {
+        if (operationIds == null || operationIds.length == 0) return true;
+        for (long operationId : operationIds) {
+            MupdfInkBean operation = sharedOperationHistory.get(operationId);
+            if (operation == null || operation.getOperationType() != MupdfInkBean.OP_ADD) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean hasUndoDependencies(MupdfInkBean undoOperation) {
+        for (long targetOperationId : undoOperation.getTargetOperationIds()) {
+            MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
+            if (target == null) return false;
+            if (target.getOperationType() != MupdfInkBean.OP_ERASE) continue;
+            for (long erasedOperationId : target.getTargetOperationIds()) {
+                MupdfInkBean erasedOperation = sharedOperationHistory.get(erasedOperationId);
+                if (erasedOperation == null
+                        || erasedOperation.getOperationType() != MupdfInkBean.OP_ADD) {
+                    return false;
                 }
-                if (onThisPage) {
-                    Debugger.e("收到其他人的绘制信息 当前页有更新，则进行刷新");
-                    if (mAnnotationVisible) {
-                        Debugger.e("收到其他人的绘制信息 当前页正在批注，退出批注后再自动刷新");
-                        afterAnnotationRefresh = true;
-                    } else {
-                        afterAnnotationPreservingScroll();
+            }
+        }
+        return true;
+    }
+
+    private void applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages) {
+        for (long targetOperationId : undoOperation.getTargetOperationIds()) {
+            MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
+            if (target == null) continue;
+            if (target.getOperationType() == MupdfInkBean.OP_ADD) {
+                changedPages.addAll(core.deleteAnnotationsByOperationIds(
+                        new long[]{targetOperationId}));
+            } else if (target.getOperationType() == MupdfInkBean.OP_ERASE) {
+                for (long erasedOperationId : target.getTargetOperationIds()) {
+                    MupdfInkBean erasedOperation = sharedOperationHistory.get(erasedOperationId);
+                    if (erasedOperation != null
+                            && erasedOperation.getOperationType() == MupdfInkBean.OP_ADD) {
+                        addOperationToCore(erasedOperation, changedPages);
                     }
                 }
-                break;
-            }
-            case MupdfBusType.close_mupdf: {
-                exit();
-                break;
-            }
-            //秘书端收到通知-创建好签名表
-            case MupdfBusType.mupdf_create_signature_row: {
-                if (signTableTotalNames != 0) {
-                    Debugger.d("已创建过签名表");
-                    return;
-                }
-                Object[] objects = msg.getObjects();
-                List<String> memberNameList = (List<String>) objects[0];
-                memberIdList = (List<Integer>) objects[1];
-                signatureMemberIdList = new ArrayList<>();
-                signatureMemberIdList.addAll(memberIdList);
-                if (!memberNameList.isEmpty() && core != null) {
-                    java.util.ArrayList<String> nameList = new java.util.ArrayList<>();
-                    for (String n : memberNameList) {
-                        String trimmed = n.trim();
-                        if (!trimmed.isEmpty()) nameList.add(trimmed);
-                    }
-                    if (!nameList.isEmpty()) {
-                        signTableTotalNames = nameList.size();
-                        core.createSignatureTable(nameList.toArray(new String[0]),
-                                "姓名", "时间", "签名");
-                        hadAnnotation = true;
-                        refreshDocumentAndShowPage(core.countPages() - 1);
-                    }
-                }
-                break;
-            }
-            //签名通知-接收到秘书端通知签名的通知
-            case MupdfBusType.receive_inform_signature: {
-                Debugger.e("接收到秘书端通知签名的通知");
-                // 打开签名画板
-                new ArtBoardDialog(MuPdfDocumentActivity.this, false, false, new ArtBoardDialog.SignatureListener() {
-                    @Override
-                    public void onSuccess(Object[] object) {
-                        List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
-                        RectF regionSize = (RectF) object[1];
-                        // 生成签名图片
-                        Bitmap bmp = renderSignatureBitmap(drawPaths, regionSize);
-                        if (bmp != null) {
-                            byte[] bytes = Utils.bmp2byte(bmp);
-                            MupdfBus.post(MupdfBusType.result_signature, bytes);
-                            bmp.recycle();
-                        }
-                    }
-                }).show();
-                break;
-            }
-            //签名通知-接收到参会人提交的签名后作为秘书端提交到签名表里
-            case MupdfBusType.submit_member_signature: {
-                int memberId = (int) msg.getObjects()[0];
-                byte[] bmpBytes = (byte[]) msg.getObjects()[1];
-                int rowIndex = memberIdList.indexOf(memberId);
-                if (core != null) {
-                    final int targetPage = Math.max(0, core.countPages() - 1);
-                    String timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(new Date());
-                    Bitmap bmp = Utils.byte2bmp(bmpBytes);
-                    if (bmp != null) {
-                        signatureMemberIdList.remove(signatureMemberIdList.indexOf(memberId));
-                        int w = bmp.getWidth();
-                        int h = bmp.getHeight();
-                        Debugger.d("收到签名图数据 bmp大小=" + w + " x " + h);
-                        int[] pixels = new int[w * h];
-                        bmp.getPixels(pixels, 0, w, 0, 0, w, h);
-                        byte[] rgb = new byte[w * h * 3];
-                        for (int i = 0; i < pixels.length; i++) {
-                            int px = pixels[i];
-                            rgb[i * 3] = (byte) ((px >> 16) & 0xFF);
-                            rgb[i * 3 + 1] = (byte) ((px >> 8) & 0xFF);
-                            rgb[i * 3 + 2] = (byte) (px & 0xFF);
-                        }
-                        core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
-                        hadAnnotation = true;
-                        refreshDocumentAndShowPage(targetPage);
-                        Toast.makeText(MuPdfDocumentActivity.this,
-                                getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
-                                Toast.LENGTH_SHORT).show();
-                        bmp.recycle();
-                    }
-                }
-                break;
             }
         }
     }
+
+    private void addOperationToCore(MupdfInkBean operation, Set<Integer> changedPages) {
+        if (operation == null || operation.getOperationType() != MupdfInkBean.OP_ADD) return;
+        if (core.hasAnnotationsForOperation(operation.getOperationId())) return;
+        List<MuPDFCore.SharedAnnotationData> data = new ArrayList<>();
+        for (MupdfInkBean.InkSegment segment : operation.getSegments()) {
+            float[] points = segment.getPoints();
+            if (segment.getPageNumber() <= 0 || points.length < 2) continue;
+            data.add(new MuPDFCore.SharedAnnotationData(operation.getOperationId(),
+                    segment.getPageNumber(), operation.getType(),
+                    operation.getStrokeWidth(), operation.getArgb(), points));
+            changedPages.add(segment.getPageNumber() - 1);
+        }
+        if (!data.isEmpty()) core.addSharedAnnotations(data);
+    }
+
+    private void recordLocalOperation(MupdfInkBean operation) {
+        rememberLocalOperation(operation, true, true);
+    }
+
+    private void rememberLocalOperation(MupdfInkBean operation,
+                                        boolean addToUndoStack,
+                                        boolean publish) {
+        if (operation == null || operation.getOperationId() <= 0) return;
+        sharedOperationHistory.put(operation.getOperationId(), operation);
+        processedSharedOperationIds.add(operation.getOperationId());
+        if (addToUndoStack && operation.getOperationType() != MupdfInkBean.OP_UNDO) {
+            localOperationIds.add(operation.getOperationId());
+        }
+        if (publish && MupdfMacro.isSharing) {
+            MupdfBus.post(MupdfBusType.inform_share_annotation,
+                    Collections.singletonList(operation));
+        }
+    }
+
+    private void undoLastLocalOperation() {
+        Set<Integer> changedPages = new HashSet<>();
+        while (!localOperationIds.isEmpty()) {
+            long targetOperationId = localOperationIds.remove(localOperationIds.size() - 1);
+            MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
+            if (target == null) continue;
+
+            MupdfInkBean undoOperation = MupdfInkBean.createUndo(
+                    com.xlk.mupdf.library.bus.MupdfOperationId.next(), targetOperationId);
+            int changedCount = changedPages.size();
+            applyUndoOperation(undoOperation, changedPages);
+            if (changedPages.size() == changedCount) continue;
+            rememberLocalOperation(undoOperation, false, true);
+            break;
+        }
+        if (changedPages.isEmpty()) return;
+        if (artBoard != null) artBoard.clearStrokes();
+        scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
+    }
+
+    private void refreshAfterSharedChanges(Set<Integer> changedPages) {
+        boolean currentPageChanged = changedPages.contains(currentPageIndex);
+        if (currentPageChanged) {
+            if (mAnnotationVisible) {
+                Debugger.e("共享批注当前页有更新，批注中实时刷新页面");
+                afterAnnotationRefresh = true;
+                scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
+            } else {
+                afterAnnotationPreservingScroll();
+            }
+        } else {
+            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
+        }
+    }
+
 
     private String toHex(byte[] digest) {
         StringBuilder builder = new StringBuilder(2 * digest.length);
@@ -2083,7 +2343,27 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     private void cancelAnnotationAndHide() {
-        List<Integer> changedPages = new ArrayList<>();
+        Set<Integer> changedPages = new HashSet<>();
+        List<MupdfInkBean> undoOperations = new ArrayList<>();
+        int operationStartIndex = Math.max(0, Math.min(
+                annotationOperationSessionStartIndex, localOperationIds.size()));
+        for (int i = localOperationIds.size() - 1; i >= operationStartIndex; i--) {
+            long targetOperationId = localOperationIds.remove(i);
+            MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
+            if (target == null) continue;
+            MupdfInkBean undoOperation = MupdfInkBean.createUndo(
+                    com.xlk.mupdf.library.bus.MupdfOperationId.next(), targetOperationId);
+            int changedCount = changedPages.size();
+            applyUndoOperation(undoOperation, changedPages);
+            if (changedPages.size() == changedCount) continue;
+            sharedOperationHistory.put(undoOperation.getOperationId(), undoOperation);
+            processedSharedOperationIds.add(undoOperation.getOperationId());
+            undoOperations.add(undoOperation);
+        }
+        if (!undoOperations.isEmpty() && MupdfMacro.isSharing) {
+            MupdfBus.post(MupdfBusType.inform_share_annotation, undoOperations);
+        }
+
         int startIndex = Math.max(0, Math.min(annotationSessionStartIndex, savedAnnotationPages.size()));
         for (int i = savedAnnotationPages.size() - 1; i >= startIndex; i--) {
             List<Integer> pages = savedAnnotationPages.get(i);
@@ -2097,9 +2377,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             savedAnnotationPages.remove(i);
         }
         annotationSessionStartIndex = savedAnnotationPages.size();
+        annotationOperationSessionStartIndex = localOperationIds.size();
         hadAnnotation = hadAnnotationBeforeCurrentSession;
         if (!changedPages.isEmpty()) {
-            scheduleAnnotationPagesUpdate(changedPages);
+            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
         }
         hideAnnotationViews(true, false);
     }
@@ -2334,6 +2615,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     private List<Integer> addStrokeAnnotation(AnnotationBean bean, int fallbackHeight) {
+        return addStrokeAnnotation(bean, fallbackHeight, null);
+    }
+
+    private List<Integer> addStrokeAnnotation(AnnotationBean bean, int fallbackHeight,
+                                              List<MupdfInkBean.InkSegment> segments) {
         List<Integer> changedPages = new ArrayList<>();
         if (bean == null || core == null || mDocView == null) return changedPages;
         Point[] docPts = bean.getPoints();
@@ -2343,27 +2629,35 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         float paintSize = bean.getPaintSize() / 3.0f;
         int paintColor = bean.getPaintColor();
         if (type == PDFAnnotation.TYPE_LINE && docPts.length >= 2) {
-            addLineAnnotationByPages(docPts[0], docPts[1], paintSize, paintColor, fallbackHeight, changedPages);
+            addLineAnnotationByPages(bean.getKey(), docPts[0], docPts[1], paintSize,
+                    paintColor, fallbackHeight, changedPages, segments);
         } else if (type == PDFAnnotation.TYPE_INK) {
-            addInkAnnotationByPages(docPts, paintSize, paintColor, fallbackHeight, changedPages);
+            addInkAnnotationByPages(bean.getKey(), docPts, paintSize, paintColor,
+                    fallbackHeight, changedPages, segments);
         } else {
-            addSinglePageAnnotation(type, docPts, paintSize, paintColor, fallbackHeight, changedPages);
+            addSinglePageAnnotation(bean.getKey(), type, docPts, paintSize, paintColor,
+                    fallbackHeight, changedPages, segments);
         }
         return changedPages;
     }
 
-    private void addSinglePageAnnotation(int type, Point[] docPts, float paintSize, int paintColor,
-                                         int fallbackHeight, List<Integer> changedPages) {
+    private void addSinglePageAnnotation(long operationId, int type, Point[] docPts,
+                                         float paintSize, int paintColor,
+                                         int fallbackHeight, List<Integer> changedPages,
+                                         List<MupdfInkBean.InkSegment> segments) {
         int pageIdx = mDocView.findPageAtY((int) docPts[0].y);
         Point[] localPts = new Point[docPts.length];
         for (int i = 0; i < docPts.length; i++) {
             localPts[i] = toPageLocalPoint(docPts[i], pageIdx);
         }
-        addAnnotationOnPage(pageIdx, type, localPts, paintSize, paintColor, fallbackHeight, changedPages);
+        addAnnotationOnPage(operationId, pageIdx, type, localPts, paintSize, paintColor,
+                fallbackHeight, changedPages, segments);
     }
 
-    private void addLineAnnotationByPages(Point start, Point end, float paintSize, int paintColor,
-                                          int fallbackHeight, List<Integer> changedPages) {
+    private void addLineAnnotationByPages(long operationId, Point start, Point end,
+                                          float paintSize, int paintColor,
+                                          int fallbackHeight, List<Integer> changedPages,
+                                          List<MupdfInkBean.InkSegment> segments) {
         int count = core.countPages();
         float dy = end.y - start.y;
         for (int pageIdx = 0; pageIdx < count; pageIdx++) {
@@ -2384,27 +2678,31 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             if (t1 <= t0) continue;
             Point localStart = toPageLocalPoint(interpolate(start, end, t0), pageIdx);
             Point localEnd = toPageLocalPoint(interpolate(start, end, t1), pageIdx);
-            addAnnotationOnPage(pageIdx, PDFAnnotation.TYPE_LINE, new Point[]{localStart, localEnd},
-                    paintSize, paintColor, fallbackHeight, changedPages);
+            addAnnotationOnPage(operationId, pageIdx, PDFAnnotation.TYPE_LINE,
+                    new Point[]{localStart, localEnd}, paintSize, paintColor,
+                    fallbackHeight, changedPages, segments);
         }
     }
 
-    private void addInkAnnotationByPages(Point[] docPts, float paintSize, int paintColor,
-                                         int fallbackHeight, List<Integer> changedPages) {
+    private void addInkAnnotationByPages(long operationId, Point[] docPts, float paintSize,
+                                         int paintColor, int fallbackHeight,
+                                         List<Integer> changedPages,
+                                         List<MupdfInkBean.InkSegment> segments) {
         if (docPts.length == 1) {
-            addSinglePageAnnotation(PDFAnnotation.TYPE_INK, docPts, paintSize, paintColor, fallbackHeight, changedPages);
+            addSinglePageAnnotation(operationId, PDFAnnotation.TYPE_INK, docPts,
+                    paintSize, paintColor, fallbackHeight, changedPages, segments);
             return;
         }
 
-        List<PagePointSegment> segments = splitInkByPages(docPts, fallbackHeight);
-        for (PagePointSegment segment : segments) {
+        List<PagePointSegment> pageSegments = splitInkByPages(docPts, fallbackHeight);
+        for (PagePointSegment segment : pageSegments) {
             if (segment.points.size() < 2) continue;
             Point[] localPts = new Point[segment.points.size()];
             for (int i = 0; i < segment.points.size(); i++) {
                 localPts[i] = toPageLocalPoint(segment.points.get(i), segment.pageIdx);
             }
-            addAnnotationOnPage(segment.pageIdx, PDFAnnotation.TYPE_INK, localPts,
-                    paintSize, paintColor, fallbackHeight, changedPages);
+            addAnnotationOnPage(operationId, segment.pageIdx, PDFAnnotation.TYPE_INK,
+                    localPts, paintSize, paintColor, fallbackHeight, changedPages, segments);
         }
     }
 
@@ -2467,13 +2765,30 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         return parts;
     }
 
-    private void addAnnotationOnPage(int pageIdx, int type, Point[] localPts, float paintSize, int paintColor,
-                                     int fallbackHeight, List<Integer> changedPages) {
+    private void addAnnotationOnPage(long operationId, int pageIdx, int type, Point[] localPts,
+                                     float paintSize, int paintColor, int fallbackHeight,
+                                     List<Integer> changedPages,
+                                     List<MupdfInkBean.InkSegment> segments) {
         int pageW = getAnnotationPageWidth(pageIdx);
         int pageH = getAnnotationPageHeight(pageIdx, fallbackHeight);
         if (pageW <= 0 || pageH <= 0) return;
-        core.addAnnotation(pageIdx, pageW, pageH, type, paintSize, paintColor, localPts);
+        Point[] percentPoints = core.addAnnotation(pageIdx, pageW, pageH, type,
+                paintSize, paintColor, localPts, operationId);
+        if (percentPoints == null) return;
         changedPages.add(pageIdx);
+        if (segments != null) {
+            segments.add(new MupdfInkBean.InkSegment(pageIdx + 1,
+                    pointsToFloatArray(percentPoints)));
+        }
+    }
+
+    private float[] pointsToFloatArray(Point[] points) {
+        float[] values = new float[points.length * 2];
+        for (int i = 0; i < points.length; i++) {
+            values[i * 2] = points[i].x;
+            values[i * 2 + 1] = points[i].y;
+        }
+        return values;
     }
 
     private int getAnnotationPageWidth(int pageIdx) {

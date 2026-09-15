@@ -48,12 +48,12 @@ public class MupdfBusType {
     public static final String receive_exit_annotation = "receive_exit_annotation";
     /**
      * 收到其他人的绘制信息
-     * <li>参会人员id</li>
-     * <li>页码和绘制信息</li>
+     * <li>objects[0] 可以是 {@link MupdfInkBean} 或 List&lt;MupdfInkBean&gt;</li>
      */
     public static final String receive_annotation_info = "receive_annotation_info";
     /**
-     * 通知本机前端共享自己的批注出去 {@link MupdfAnnotationBean}
+     * 通知本机前端共享自己的批注出去。
+     * <li>objects[0] 为 List&lt;{@link MupdfInkBean}&gt;</li>
      */
     public static final String inform_share_annotation = "inform_share_annotation";
     /**

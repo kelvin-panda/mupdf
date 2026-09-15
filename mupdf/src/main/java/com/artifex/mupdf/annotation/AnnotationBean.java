@@ -8,7 +8,7 @@ import com.artifex.mupdf.fitz.Point;
  * @description :
  */
 public class AnnotationBean {
-    int key;
+    long key;
     /**
      * 批注类型 {@link com.artifex.mupdf.fitz.PDFAnnotation#TYPE_LINE}
      */
@@ -18,7 +18,7 @@ public class AnnotationBean {
     int paintColor;
     boolean isDeleted = false;
 
-    public AnnotationBean(int key, int type, Point[] points, float paintSize, int paintColor) {
+    public AnnotationBean(long key, int type, Point[] points, float paintSize, int paintColor) {
         this.key = key;
         this.type = type;
         this.points = points;
@@ -34,7 +34,7 @@ public class AnnotationBean {
         isDeleted = deleted;
     }
 
-    public int getKey() {
+    public long getKey() {
         return key;
     }
 
