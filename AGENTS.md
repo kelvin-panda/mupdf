@@ -55,7 +55,7 @@ Android library project wrapping MuPDF for PDF document rendering with annotatio
 ### Key Architecture Decisions
 
 - **`MupdfConfig`** (Builder pattern) is the single configuration entry point. Every feature (annotation, signature, screenshot, watermark, WPS integration, clarity mode, fullscreen) is toggled via this object.
-- **`MuPdfDocumentActivity`** is the main viewer Activity. It bundles MuPDF's native `DocumentActivity` with customization layers. Callers use `MuPdfDocumentActivity.jump(context, config)`.
+- **`MuPdfDocumentActivity`** is the main viewer Activity and contains the viewer/annotation customization layers. Callers use `MuPdfDocumentActivity.jump(context, config)`.
 - **Native .so libraries** for MuPDF rendering are bundled for `armeabi-v7a` and `arm64-v8a`. Consumers must handle ABI splits and `libc++_shared.so` conflicts (see README).
 - **Inter-activity communication** uses EventBus, not Intents, for complex UI state (annotation positions, color selections, ink strokes).
 - **Version 6.0.18+** added `CancelAdapt` interface implementation on `MuPdfDocumentActivity` to prevent UI scaling conflicts when the host app uses AndroidAutoSize.

@@ -231,9 +231,13 @@ public class MupdfMacro {
     public static final String bundle_key_signature_form_enabled = "signature_form_enabled";
     public static final String bundle_key_fill_signature_form_enabled = "fill_signature_form_enabled";
     //</editor-fold>
+
     public static final String bundle_key_annotation_input_text_enabled = "annotation_input_text";
     public static final String bundle_key_back_button_enabled = "back_button_enabled";
     public static final String bundle_key_inform_signature = "bundle_key_inform_signature";
+    public static final String bundle_key_shouldSignature = "bundle_key_shouldSignature";
+
+    // 变量
 
     //<editor-fold desc="共享批注相关">
 

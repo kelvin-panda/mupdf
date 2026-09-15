@@ -286,34 +286,6 @@ public class MuPDFCore {
         return doc.authenticatePassword(password);
     }
 
-    public void addWaterMark(int pageNum) {
-        Page page = doc.loadPage(pageNum);
-//        Rect bounds = page.getBounds();
-//        float realWidth = bounds.x1 - bounds.x0;
-//        float realHeight = bounds.y1 - bounds.y0;
-//        for (Point point : inkList) {
-//            point.x = realWidth / width * point.x;
-//            point.y = realHeight / height * point.y;
-//        }
-        PDFPage pdfPage = (PDFPage) page;
-        PDFAnnotation annotation = pdfPage.createAnnotation(TYPE_WATERMARK);
-        annotation.setBorderWidth(1f);
-        annotation.setContents("测试水印");
-        boolean update = annotation.update();
-        boolean update1 = pdfPage.update();
-        Debugger.i(TAG, "addWaterMark 添加水印 update=" + update);
-    }
-
-    public void addFreeText(int pageNum, int width, int height, String text) {
-        Page page = doc.loadPage(pageNum);
-        Rect bounds = page.getBounds();
-        float realWidth = bounds.x1 - bounds.x0;
-        float realHeight = bounds.y1 - bounds.y0;
-        PDFPage pdfPage = (PDFPage) page;
-        PDFAnnotation pdfAnnotation = pdfPage.createAnnotation(PDFAnnotation.TYPE_FREE_TEXT);
-        pdfAnnotation.setBorderWidth(1f);
-    }
-
     public float[] parseColor(int color) {
         int red = Color.red(color);
         int green = Color.green(color);

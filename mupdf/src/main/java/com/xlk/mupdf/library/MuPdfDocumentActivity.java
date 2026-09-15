@@ -118,7 +118,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     //<editor-fold desc="功能开关与接收参数">
     private boolean uploadEnable, annotationEnable, signatureEnable, captureEnable, wpsOpenEnable, deleteFileWhenExit,
             mWindowWatermarkEnabled, watermarkEnable, mSignatureFormEnabled, mfillSignatureFormEnabled,
-            mAnnotationInputTextEnabled, mBackButtonEnabled, mInformSignatureEnabled;
+            mAnnotationInputTextEnabled, mBackButtonEnabled, mInformSignatureEnabled, shouldSignature;
     private String srcFilePath, annotationSavePath, srcUri, mWatermark, mWindowWatermark;
     private boolean isFullScreen = true;
     private int mWatermarkColor, mWindowWatermarkColor;
@@ -195,6 +195,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private SearchTask mSearchTask;
     private ArrayList<OutlineActivity.Item> mFlatOutline;
     private boolean mReturnToLibraryActivity = false;
+    private DocumentLoadResult pendingDocumentState;
 
     protected int mDisplayDPI;
     private int mLayoutEM = 10;
@@ -208,7 +209,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private ThumbnailAdapter thumbnailAdapter;
     //</editor-fold>
 
-    protected View mLayoutButton;
     protected PopupMenu mLayoutPopupMenu;
     public static List<AnnotationBean> inkAnnotations = new ArrayList<>();
     /**
@@ -388,14 +388,16 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, config.isAnnotationInputTextEnabled());
         bundle.putBoolean(MupdfMacro.bundle_key_back_button_enabled, config.isBackButtonEnabled());
         bundle.putBoolean(MupdfMacro.bundle_key_inform_signature, config.isInformSignature());
+        bundle.putBoolean(MupdfMacro.bundle_key_shouldSignature, config.isShouldSignature());
         jump(context, bundle);
     }
 
     public static void jump(Context context, Bundle bundle) {
-        ActUtil.finishActivity(MuPdfDocumentActivity.class);
+//        ActUtil.finishActivity(MuPdfDocumentActivity.class);
         Intent intent = new Intent(context, MuPdfDocumentActivity.class);
         //intent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);//使用此标志后，进入画板返回时无法返回当前页面
         intent.setAction(Intent.ACTION_VIEW);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         if (!(context instanceof Activity)) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
@@ -438,194 +440,23 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             Intent intent = getIntent();
 
             mReturnToLibraryActivity = intent.getIntExtra(getComponentName().getPackageName() + ".ReturnToLibraryActivity", 0) != 0;
-
-            if (Intent.ACTION_VIEW.equals(intent.getAction())) {
-                Bundle bundle = intent.getBundleExtra(MupdfMacro.mupdf_bundle_key);
-                if (bundle != null) {
-                    String mimetype = getIntent().getType();
-                    srcFilePath = bundle.getString(MupdfMacro.bundle_key_file_path, "");
-                    annotationSavePath = bundle.getString(MupdfMacro.bundle_key_annotation_save_path, "");
-                    if (annotationSavePath.isEmpty()) {
-                        annotationSavePath = getExternalFilesDir("annotation").getAbsolutePath();
-                    }
-                    srcUri = bundle.getString(MupdfMacro.bundle_key_file_uri, "");
-                    mediaId = bundle.getInt(MupdfMacro.bundle_key_file_mediaId, 0);
-                    uploadEnable = bundle.getBoolean(MupdfMacro.bundle_key_upload_enable, true);
-                    annotationEnable = bundle.getBoolean(MupdfMacro.bundle_key_annotation_enable, true);
-                    signatureEnable = bundle.getBoolean(MupdfMacro.bundle_key_signature_enable, true);
-                    captureEnable = bundle.getBoolean(MupdfMacro.bundle_key_capture_enable, true);
-                    wpsOpenEnable = bundle.getBoolean(MupdfMacro.bundle_key_wps_open_enable, true);
-                    deleteFileWhenExit = bundle.getBoolean(MupdfMacro.bundle_key_delete_file, false);
-                    isOnlyPreview = bundle.getBoolean(MupdfMacro.bundle_key_only_preview, false);
-                    uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, MupdfMacro.DEFAULT_UPLOAD_DIR_ID);
-                    srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
-                    MupdfMacro.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, MupdfClarityMode.UNRESTRICTED);
-                    isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
-                    SharedPreferences displayPrefs = getDisplaySettingsPrefs();
-                    boolean backgroundConfigured = bundle.containsKey(MupdfMacro.bundle_key_background_color_configured)
-                            ? bundle.getBoolean(MupdfMacro.bundle_key_background_color_configured, false)
-                            : bundle.containsKey(MupdfMacro.bundle_key_background_color);
-                    boolean brightnessConfigured = bundle.containsKey(MupdfMacro.bundle_key_brightness_configured)
-                            ? bundle.getBoolean(MupdfMacro.bundle_key_brightness_configured, false)
-                            : bundle.containsKey(MupdfMacro.bundle_key_brightness);
-                    boolean zoomConfigured = bundle.containsKey(MupdfMacro.bundle_key_zoom_percent_configured)
-                            ? bundle.getBoolean(MupdfMacro.bundle_key_zoom_percent_configured, false)
-                            : bundle.containsKey(MupdfMacro.bundle_key_zoom_percent);
-
-                    MupdfMacro.backgroundColor = backgroundConfigured
-                            ? bundle.getInt(MupdfMacro.bundle_key_background_color, MupdfMacro.DEFAULT_BACKGROUND_COLOR)
-                            : displayPrefs.getInt(PREF_BACKGROUND_COLOR, MupdfMacro.DEFAULT_BACKGROUND_COLOR);
-                    MupdfMacro.brightness = MupdfMacro.clampBrightness(brightnessConfigured
-                            ? bundle.getInt(MupdfMacro.bundle_key_brightness, 0)
-                            : displayPrefs.getInt(PREF_BRIGHTNESS, 0));
-                    configuredZoomPercent = zoomConfigured
-                            ? bundle.getInt(MupdfMacro.bundle_key_zoom_percent, MupdfMacro.ZOOM_PERCENT_UNSET)
-                            : displayPrefs.getInt(PREF_ZOOM_PERCENT, MupdfMacro.ZOOM_PERCENT_UNSET);
-                    Uri uri;
-                    if (!srcFilePath.isEmpty()) {
-                        uri = Uri.parse(new File(srcFilePath).toURI().toString());
-                    } else {
-                        uri = Uri.parse(srcUri);
-                    }
-                    if (uri == null) {
-                        Debugger.e("srcFilePath can not parse uri");
-                        uri = Uri.parse(srcUri);
-                    }
-
-                    watermarkEnable = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
-                    if (watermarkEnable) {
-                        mWatermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
-                        mWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, MupdfMacro.DEFAULT_WATERMARK_COLOR);
-                    }
-                    mWindowWatermarkEnabled = bundle.getBoolean(MupdfMacro.bundle_key_window_watermark_enable, false);
-                    if (mWindowWatermarkEnabled) {
-                        mWindowWatermark = bundle.getString(MupdfMacro.bundle_key_window_watermark_content, "");
-                        mWindowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, MupdfMacro.DEFAULT_WINDOW_WATERMARK_COLOR);
-                    }
-                    mSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_signature_form_enabled, false);
-                    mfillSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, false);
-                    mAnnotationInputTextEnabled = bundle.getBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, false);
-                    mBackButtonEnabled = bundle.getBoolean(MupdfMacro.bundle_key_back_button_enabled, false);
-                    mInformSignatureEnabled = bundle.getBoolean(MupdfMacro.bundle_key_inform_signature, false);
-                    MupdfMacro.currentMediaId = mediaId;
-                    MupdfMacro.currentFilePath = srcFilePath;
-                    MupdfMacro.currentUri = srcUri;
-                    Debugger.i(TAG, "bundle config："
-                            + "\nsrcFilePath=" + srcFilePath
-                            + "\nsrcUri=" + srcUri
-                            + "\nuri=" + uri
-                            + "\nannotationSavePath=" + annotationSavePath
-                            + "\nmediaId=" + mediaId
-                            + "\nuploadEnable=" + uploadEnable
-                            + "\nannotationEnable=" + annotationEnable
-                            + "\nsignatureEnable=" + signatureEnable
-                            + "\ncaptureEnable=" + captureEnable
-                            + "\nwpsOpenEnable=" + wpsOpenEnable
-                            + "\ndeleteFileWhenExit=" + deleteFileWhenExit
-                            + "\nisOnlyPreview=" + isOnlyPreview
-                            + "\nsrcPageIndex=" + srcPageIndex
-                            + "\nuploadDirId=" + uploadDirId
-                            + "\nwatermarkEnable=" + watermarkEnable
-                            + "\nmWatermark=" + mWatermark
-                            + "\nmWatermarkColor=" + mWatermarkColor
-                            + "\nmWindowWatermarkEnabled=" + mWindowWatermarkEnabled
-                            + "\nmWindowWatermark=" + mWindowWatermark
-                            + "\nmWindowWatermarkColor=" + mWindowWatermarkColor
-                            + "\nMupdfMacro.clarityLimitMode=" + MupdfMacro.clarityLimitMode
-                            + "\nbackgroundColorConfigured=" + backgroundConfigured
-                            + "\nMupdfMacro.backgroundColor=" + MupdfMacro.backgroundColor
-                            + "\nbrightnessConfigured=" + brightnessConfigured
-                            + "\nMupdfMacro.brightness=" + MupdfMacro.brightness
-                            + "\nzoomConfigured=" + zoomConfigured
-                            + "\nconfiguredZoomPercent=" + configuredZoomPercent
-                            + "\nisFullScreen=" + isFullScreen
-                            + "\nmSignatureFormEnabled=" + mSignatureFormEnabled
-                            + "\nmfillSignatureFormEnabled=" + mfillSignatureFormEnabled
-                            + "\nmAnnotationInputTextEnabled=" + mAnnotationInputTextEnabled
-                            + "\nmBackButtonEnabled=" + mBackButtonEnabled
-                            + "\nmInformSignatureEnabled=" + mInformSignatureEnabled
-                    );
-
-                    if (uri == null) {
-                        showCannotOpenDialog();
-                        return;
-                    }
-
-                    mDocKey = uri.toString();
-
-                    Debugger.i(TAG, "OPEN filePath " + srcFilePath);
-                    Debugger.i(TAG, "OPEN URI " + uri);
-                    Debugger.i(TAG, "OPEN mimetype " + mimetype);
-
-                    mDocTitle = null;
-                    long size = -1;
-                    Cursor cursor = null;
-
-                    try {
-                        cursor = getContentResolver().query(uri, null, null, null, null);
-                        if (cursor != null && cursor.moveToFirst()) {
-                            int idx;
-
-                            idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                            if (idx >= 0 && cursor.getType(idx) == Cursor.FIELD_TYPE_STRING)
-                                mDocTitle = cursor.getString(idx);
-
-                            idx = cursor.getColumnIndex(OpenableColumns.SIZE);
-                            if (idx >= 0 && cursor.getType(idx) == Cursor.FIELD_TYPE_INTEGER)
-                                size = cursor.getLong(idx);
-
-                            if (size == 0)
-                                size = -1;
-                        }
-                    } catch (Exception x) {
-                        // Ignore any exception and depend on default values for title
-                        // and size (unless one was decoded
-                    } finally {
-                        if (cursor != null)
-                            cursor.close();
-                    }
-                    Debugger.i(TAG, "  NAME " + mDocTitle);
-                    Debugger.i(TAG, "  SIZE " + size);
-
-                    if (mimetype == null || mimetype.equals("application/octet-stream")) {
-                        mimetype = getContentResolver().getType(uri);
-                        Debugger.i(TAG, "  MAGIC (Resolved) " + mimetype);
-                    }
-                    if (mimetype == null || mimetype.equals("application/octet-stream")) {
-                        mimetype = mDocTitle;
-                        Debugger.i(TAG, "  MAGIC (Filename) " + mimetype);
-                    }
-                    if (srcFilePath != null && !srcFilePath.isEmpty()) {
-                        mDocTitle = Util.getFileName(srcFilePath);
-                        Debugger.i(TAG, "  NAME " + mDocTitle);
-                        try {
-                            core = openFile(srcFilePath);
-                            SearchTaskResult.set(null);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-
-                    if (core == null) {
-                        try {
-                            core = openCore(uri, size, "application/pdf");
-                            SearchTaskResult.set(null);
-                        } catch (Exception x) {
-                            Debugger.e(x.toString());
-                            showCannotOpenDialog();
-                            return;
-                        }
-                    }
-                }
+            DocumentLoadResult retainedState = getLastCustomNonConfigurationInstance() instanceof DocumentLoadResult
+                    ? (DocumentLoadResult) getLastCustomNonConfigurationInstance()
+                    : null;
+            DocumentLoadResult documentState = retainedState != null ? retainedState : loadDocument(intent);
+            if (documentState != null && documentState.core != null) {
+                applyDocumentState(documentState);
+                SearchTaskResult.set(null);
             }
-            if (core != null && core.needsPassword()) {
-                requestPassword(savedInstanceState);
-                return;
-            }
-            if (core != null && core.countPages() == 0) {
-                Debugger.e("countPages为0");
-                core = null;
-            }
+        }
+        if (core != null && core.needsPassword()) {
+            requestPassword(savedInstanceState);
+            return;
+        }
+        if (core != null && core.countPages() == 0) {
+            Debugger.e("countPages为0");
+            core.onDestroy();
+            core = null;
         }
         if (core == null) {
             showCannotOpenDialog();
@@ -636,6 +467,300 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         createUI(savedInstanceState);
         registerEventBus();
         ActUtil.addActivity(this);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        DocumentLoadResult documentState = loadDocument(intent);
+        if (documentState == null || documentState.core == null) {
+            Toast.makeText(this, R.string.cannot_open_document, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        pendingDocumentState = documentState;
+        setIntent(intent);
+        recreate();
+    }
+
+    @Override
+    public Object onRetainCustomNonConfigurationInstance() {
+        DocumentLoadResult documentState = pendingDocumentState;
+        pendingDocumentState = null;
+        return documentState != null ? documentState : super.onRetainCustomNonConfigurationInstance();
+    }
+
+    private DocumentLoadResult loadDocument(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) {
+            return null;
+        }
+        Bundle bundle = intent.getBundleExtra(MupdfMacro.mupdf_bundle_key);
+        if (bundle == null) {
+            return null;
+        }
+
+        DocumentLoadResult state = new DocumentLoadResult();
+        String mimetype = intent.getType();
+        state.srcFilePath = bundle.getString(MupdfMacro.bundle_key_file_path, "");
+        state.annotationSavePath = bundle.getString(MupdfMacro.bundle_key_annotation_save_path, "");
+        if (state.annotationSavePath.isEmpty()) {
+            File annotationDir = getExternalFilesDir("annotation");
+            state.annotationSavePath = annotationDir != null
+                    ? annotationDir.getAbsolutePath()
+                    : getFilesDir().getAbsolutePath();
+        }
+        state.srcUri = bundle.getString(MupdfMacro.bundle_key_file_uri, "");
+        state.mediaId = bundle.getInt(MupdfMacro.bundle_key_file_mediaId, 0);
+        state.uploadEnable = bundle.getBoolean(MupdfMacro.bundle_key_upload_enable, true);
+        state.annotationEnable = bundle.getBoolean(MupdfMacro.bundle_key_annotation_enable, true);
+        state.signatureEnable = bundle.getBoolean(MupdfMacro.bundle_key_signature_enable, true);
+        state.captureEnable = bundle.getBoolean(MupdfMacro.bundle_key_capture_enable, true);
+        state.wpsOpenEnable = bundle.getBoolean(MupdfMacro.bundle_key_wps_open_enable, true);
+        state.deleteFileWhenExit = bundle.getBoolean(MupdfMacro.bundle_key_delete_file, false);
+        state.isOnlyPreview = bundle.getBoolean(MupdfMacro.bundle_key_only_preview, false);
+        state.uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, MupdfMacro.DEFAULT_UPLOAD_DIR_ID);
+        state.srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
+        state.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, MupdfClarityMode.UNRESTRICTED);
+        state.isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
+
+        SharedPreferences displayPrefs = getDisplaySettingsPrefs();
+        boolean backgroundConfigured = bundle.containsKey(MupdfMacro.bundle_key_background_color_configured)
+                ? bundle.getBoolean(MupdfMacro.bundle_key_background_color_configured, false)
+                : bundle.containsKey(MupdfMacro.bundle_key_background_color);
+        boolean brightnessConfigured = bundle.containsKey(MupdfMacro.bundle_key_brightness_configured)
+                ? bundle.getBoolean(MupdfMacro.bundle_key_brightness_configured, false)
+                : bundle.containsKey(MupdfMacro.bundle_key_brightness);
+        boolean zoomConfigured = bundle.containsKey(MupdfMacro.bundle_key_zoom_percent_configured)
+                ? bundle.getBoolean(MupdfMacro.bundle_key_zoom_percent_configured, false)
+                : bundle.containsKey(MupdfMacro.bundle_key_zoom_percent);
+
+        state.backgroundColor = backgroundConfigured
+                ? bundle.getInt(MupdfMacro.bundle_key_background_color, MupdfMacro.DEFAULT_BACKGROUND_COLOR)
+                : displayPrefs.getInt(PREF_BACKGROUND_COLOR, MupdfMacro.DEFAULT_BACKGROUND_COLOR);
+        state.brightness = MupdfMacro.clampBrightness(brightnessConfigured
+                ? bundle.getInt(MupdfMacro.bundle_key_brightness, 0)
+                : displayPrefs.getInt(PREF_BRIGHTNESS, 0));
+        state.configuredZoomPercent = zoomConfigured
+                ? bundle.getInt(MupdfMacro.bundle_key_zoom_percent, MupdfMacro.ZOOM_PERCENT_UNSET)
+                : displayPrefs.getInt(PREF_ZOOM_PERCENT, MupdfMacro.ZOOM_PERCENT_UNSET);
+
+        state.watermarkEnable = bundle.getBoolean(MupdfMacro.bundle_key_watermark_enable, false);
+        if (state.watermarkEnable) {
+            state.watermark = bundle.getString(MupdfMacro.bundle_key_watermark_content, "");
+            state.watermarkColor = bundle.getInt(MupdfMacro.bundle_key_watermark_color, MupdfMacro.DEFAULT_WATERMARK_COLOR);
+        }
+        state.windowWatermarkEnabled = bundle.getBoolean(MupdfMacro.bundle_key_window_watermark_enable, false);
+        if (state.windowWatermarkEnabled) {
+            state.windowWatermark = bundle.getString(MupdfMacro.bundle_key_window_watermark_content, "");
+            state.windowWatermarkColor = bundle.getInt(MupdfMacro.bundle_key_window_watermark_color, MupdfMacro.DEFAULT_WINDOW_WATERMARK_COLOR);
+        }
+        state.signatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_signature_form_enabled, false);
+        state.fillSignatureFormEnabled = bundle.getBoolean(MupdfMacro.bundle_key_fill_signature_form_enabled, false);
+        state.annotationInputTextEnabled = bundle.getBoolean(MupdfMacro.bundle_key_annotation_input_text_enabled, false);
+        state.backButtonEnabled = bundle.getBoolean(MupdfMacro.bundle_key_back_button_enabled, false);
+        state.informSignatureEnabled = bundle.getBoolean(MupdfMacro.bundle_key_inform_signature, false);
+        state.shouldSignature = bundle.getBoolean(MupdfMacro.bundle_key_shouldSignature, false);
+
+        Uri uri;
+        if (!state.srcFilePath.isEmpty()) {
+            uri = Uri.parse(new File(state.srcFilePath).toURI().toString());
+        } else if (!state.srcUri.isEmpty()) {
+            uri = Uri.parse(state.srcUri);
+        } else {
+            Debugger.e("srcFilePath and srcUri are empty");
+            return null;
+        }
+        state.docKey = uri.toString();
+
+        Debugger.i(TAG, "OPEN filePath " + state.srcFilePath);
+        Debugger.i(TAG, "OPEN URI " + uri);
+        Debugger.i(TAG, "OPEN mimetype " + mimetype);
+
+        long size = -1;
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(uri, null, null, null, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0 && cursor.getType(idx) == Cursor.FIELD_TYPE_STRING) {
+                    state.docTitle = cursor.getString(idx);
+                }
+                idx = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (idx >= 0 && cursor.getType(idx) == Cursor.FIELD_TYPE_INTEGER) {
+                    size = cursor.getLong(idx);
+                }
+                if (size == 0) {
+                    size = -1;
+                }
+            }
+        } catch (Exception e) {
+            Debugger.e(TAG, "读取文档信息失败：" + e);
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+
+        if (mimetype == null || "application/octet-stream".equals(mimetype)) {
+            try {
+                mimetype = getContentResolver().getType(uri);
+            } catch (Exception e) {
+                Debugger.e(TAG, "读取文档类型失败：" + e);
+            }
+        }
+        if (mimetype == null || "application/octet-stream".equals(mimetype)) {
+            mimetype = state.docTitle;
+        }
+        Debugger.i(TAG, "  NAME " + state.docTitle);
+        Debugger.i(TAG, "  SIZE " + size);
+        Debugger.i(TAG, "  MAGIC " + mimetype);
+
+        if (!state.srcFilePath.isEmpty()) {
+            state.docTitle = Util.getFileName(state.srcFilePath);
+            state.core = openFile(state.srcFilePath);
+        }
+        if (state.core == null) {
+            try {
+                state.core = openCore(uri, size, "application/pdf");
+            } catch (Exception e) {
+                Debugger.e(TAG, "打开文档失败：" + e);
+            }
+        }
+        if (state.core == null) {
+            return null;
+        }
+        try {
+            if (!state.core.needsPassword() && state.core.countPages() == 0) {
+                Debugger.e("countPages为0");
+                MuPDFCore invalidCore = state.core;
+                state.core = null;
+                invalidCore.onDestroy();
+                return null;
+            }
+        } catch (Exception e) {
+            Debugger.e(TAG, "检查文档失败：" + e);
+            if (state.core != null) {
+                MuPDFCore invalidCore = state.core;
+                state.core = null;
+                invalidCore.onDestroy();
+            }
+            return null;
+        }
+
+        Debugger.i(TAG, "bundle config："
+                + "\nsrcFilePath=" + state.srcFilePath
+                + "\nsrcUri=" + state.srcUri
+                + "\nuri=" + uri
+                + "\nannotationSavePath=" + state.annotationSavePath
+                + "\nmediaId=" + state.mediaId
+                + "\nuploadEnable=" + state.uploadEnable
+                + "\nannotationEnable=" + state.annotationEnable
+                + "\nsignatureEnable=" + state.signatureEnable
+                + "\ncaptureEnable=" + state.captureEnable
+                + "\nwpsOpenEnable=" + state.wpsOpenEnable
+                + "\ndeleteFileWhenExit=" + state.deleteFileWhenExit
+                + "\nisOnlyPreview=" + state.isOnlyPreview
+                + "\nsrcPageIndex=" + state.srcPageIndex
+                + "\nuploadDirId=" + state.uploadDirId
+                + "\nwatermarkEnable=" + state.watermarkEnable
+                + "\nmWatermark=" + state.watermark
+                + "\nmWatermarkColor=" + state.watermarkColor
+                + "\nmWindowWatermarkEnabled=" + state.windowWatermarkEnabled
+                + "\nmWindowWatermark=" + state.windowWatermark
+                + "\nmWindowWatermarkColor=" + state.windowWatermarkColor
+                + "\nMupdfMacro.clarityLimitMode=" + state.clarityLimitMode
+                + "\nbackgroundColorConfigured=" + backgroundConfigured
+                + "\nMupdfMacro.backgroundColor=" + state.backgroundColor
+                + "\nbrightnessConfigured=" + brightnessConfigured
+                + "\nMupdfMacro.brightness=" + state.brightness
+                + "\nzoomConfigured=" + zoomConfigured
+                + "\nconfiguredZoomPercent=" + state.configuredZoomPercent
+                + "\nisFullScreen=" + state.isFullScreen
+                + "\nmSignatureFormEnabled=" + state.signatureFormEnabled
+                + "\nmfillSignatureFormEnabled=" + state.fillSignatureFormEnabled
+                + "\nmAnnotationInputTextEnabled=" + state.annotationInputTextEnabled
+                + "\nmBackButtonEnabled=" + state.backButtonEnabled
+                + "\nmInformSignatureEnabled=" + state.informSignatureEnabled
+                + "\nshouldSignature=" + state.shouldSignature
+        );
+        return state;
+    }
+
+    private void applyDocumentState(DocumentLoadResult state) {
+        core = state.core;
+        mDocTitle = state.docTitle;
+        mDocKey = state.docKey;
+        srcFilePath = state.srcFilePath;
+        annotationSavePath = state.annotationSavePath;
+        srcUri = state.srcUri;
+        mediaId = state.mediaId;
+        uploadEnable = state.uploadEnable;
+        annotationEnable = state.annotationEnable;
+        signatureEnable = state.signatureEnable;
+        captureEnable = state.captureEnable;
+        wpsOpenEnable = state.wpsOpenEnable;
+        deleteFileWhenExit = state.deleteFileWhenExit;
+        isOnlyPreview = state.isOnlyPreview;
+        uploadDirId = state.uploadDirId;
+        srcPageIndex = state.srcPageIndex;
+        isFullScreen = state.isFullScreen;
+        watermarkEnable = state.watermarkEnable;
+        mWatermark = state.watermark;
+        mWatermarkColor = state.watermarkColor;
+        mWindowWatermarkEnabled = state.windowWatermarkEnabled;
+        mWindowWatermark = state.windowWatermark;
+        mWindowWatermarkColor = state.windowWatermarkColor;
+        mSignatureFormEnabled = state.signatureFormEnabled;
+        mfillSignatureFormEnabled = state.fillSignatureFormEnabled;
+        mAnnotationInputTextEnabled = state.annotationInputTextEnabled;
+        mBackButtonEnabled = state.backButtonEnabled;
+        mInformSignatureEnabled = state.informSignatureEnabled;
+        configuredZoomPercent = state.configuredZoomPercent;
+        shouldSignature = state.shouldSignature;
+        MupdfMacro.clarityLimitMode = state.clarityLimitMode;
+        MupdfMacro.backgroundColor = state.backgroundColor;
+        MupdfMacro.brightness = state.brightness;
+        MupdfMacro.currentMediaId = state.mediaId;
+        MupdfMacro.currentFilePath = state.srcFilePath;
+        MupdfMacro.currentUri = state.srcUri;
+    }
+
+    /**
+     * 为了适配文件预览中需要预览新的文件，同时存在新文件打开失败的情况
+     */
+    private static final class DocumentLoadResult {
+        MuPDFCore core;
+        String srcFilePath;
+        String annotationSavePath;
+        String srcUri;
+        String docTitle;
+        String docKey;
+        String watermark;
+        String windowWatermark;
+        boolean uploadEnable;
+        boolean annotationEnable;
+        boolean signatureEnable;
+        boolean captureEnable;
+        boolean wpsOpenEnable;
+        boolean deleteFileWhenExit;
+        boolean isOnlyPreview;
+        boolean isFullScreen;
+        boolean watermarkEnable;
+        boolean windowWatermarkEnabled;
+        boolean signatureFormEnabled;
+        boolean fillSignatureFormEnabled;
+        boolean annotationInputTextEnabled;
+        boolean backButtonEnabled;
+        boolean informSignatureEnabled;
+        int watermarkColor;
+        int windowWatermarkColor;
+        int mediaId;
+        int uploadDirId;
+        int srcPageIndex;
+        int clarityLimitMode;
+        int backgroundColor;
+        int brightness;
+        int configuredZoomPercent;
+        boolean shouldSignature;
     }
 
     /**
@@ -760,6 +885,23 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
             // 缩略图
             initThumbnailDrawer();
+            // 成功打开后需要提交签名
+            if (shouldSignature) {
+                new ArtBoardDialog(MuPdfDocumentActivity.this, false, false, new ArtBoardDialog.SignatureListener() {
+                    @Override
+                    public void onSuccess(Object[] object) {
+                        List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
+                        RectF regionSize = (RectF) object[1];
+                        // 生成签名图片
+                        Bitmap bmp = renderSignatureBitmap(drawPaths, regionSize);
+                        if (bmp != null) {
+                            byte[] bytes = Utils.bmp2byte(bmp);
+                            MupdfBus.post(MupdfBusType.result_signature, bytes);
+                            bmp.recycle();
+                        }
+                    }
+                }).show();
+            }
         }, 500L);
 
         Debugger.i(TAG, "createUI: end");
@@ -774,7 +916,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         mPageNumberView = (TextView) mButtonsView.findViewById(R.id.pageNumber);//页码
         mPrePageView = (TextView) mButtonsView.findViewById(R.id.prePage);//上一页
         mNextPageView = (TextView) mButtonsView.findViewById(R.id.nextPage);//下一页
-        mLayoutButton = mButtonsView.findViewById(R.id.layoutButton);
         //提交签名、取消签名
         ll_signature_layout = mButtonsView.findViewById(R.id.ll_signature_layout);
         tv_submit_signature = mButtonsView.findViewById(R.id.tv_submit_signature);
@@ -1169,37 +1310,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             });
         }
 
-        if (core.isReflowable()) {
-            mLayoutButton.setVisibility(View.VISIBLE);
-            mLayoutPopupMenu = new PopupMenu(this, mLayoutButton);
-            mLayoutPopupMenu.getMenuInflater().inflate(R.menu.layout_menu, mLayoutPopupMenu.getMenu());
-            mLayoutPopupMenu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
-                public boolean onMenuItemClick(MenuItem item) {
-                    float oldLayoutEM = mLayoutEM;
-                    int id = item.getItemId();
-                    if (id == R.id.action_layout_6pt) mLayoutEM = 6;
-                    else if (id == R.id.action_layout_7pt) mLayoutEM = 7;
-                    else if (id == R.id.action_layout_8pt) mLayoutEM = 8;
-                    else if (id == R.id.action_layout_9pt) mLayoutEM = 9;
-                    else if (id == R.id.action_layout_10pt) mLayoutEM = 10;
-                    else if (id == R.id.action_layout_11pt) mLayoutEM = 11;
-                    else if (id == R.id.action_layout_12pt) mLayoutEM = 12;
-                    else if (id == R.id.action_layout_13pt) mLayoutEM = 13;
-                    else if (id == R.id.action_layout_14pt) mLayoutEM = 14;
-                    else if (id == R.id.action_layout_15pt) mLayoutEM = 15;
-                    else if (id == R.id.action_layout_16pt) mLayoutEM = 16;
-                    if (oldLayoutEM != mLayoutEM)
-                        relayoutDocument();
-                    return true;
-                }
-            });
-            mLayoutButton.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
-                    mLayoutPopupMenu.show();
-                }
-            });
-        }
-
         if (core.hasOutline()) {
             viewTopBookmark.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
@@ -1236,30 +1346,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             chooseType(1);
             hadAnnotationBeforeCurrentSession = hadAnnotation;
             annotationSessionStartIndex = savedAnnotationPages.size();
-            artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH, new AnnotationArtBoard.DrawExitListener() {
-                @Override
-                public void onDrawAnnotations(List<AnnotationBean> inkAnnotations) {
-                    // 即时保存模式下笔画已逐个提交，这里仅做退出后的刷新
-                    Debugger.i(TAG, "onDrawAnnotations 退出批注，hadAnnotation=" + hadAnnotation);
-                    if (hadAnnotation) {
-                        /*
-                        if (MupdfMacro.isSharing && !inkAnnotations.isEmpty()) {
-                            List<MupdfAnnotationBean> annotationBeans = new ArrayList<>();
-                            for (AnnotationBean inkAnnotation : inkAnnotations) {
-                                int type = inkAnnotation.getType();
-                                int paintColor = inkAnnotation.getPaintColor();
-                                Point[] points = inkAnnotation.getPoints();
-                                float paintSize = inkAnnotation.getPaintSize();
-                                int key = inkAnnotation.getKey();
-                                annotationBeans.add(new MupdfAnnotationBean(mediaId, key, type, paintSize, paintColor, points));
-                            }
-                            MupdfBus.post(MupdfBusType.inform_share_annotation, annotationBeans);
-                        }
-                        */
-                        afterAnnotationPreservingScroll();
-                    }
-                }
-            });
+            artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH);
             artBoard.setDocumentScrollY(mDocView.getDocumentScrollY());
             artBoard.setPaintWidth(default_ink_size);
             // 即时保存：每笔松开即提交到 PDF，避免滚动时标注视觉偏移
@@ -1433,37 +1520,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //</editor-fold>
 
-        if (core.isReflowable()) {
-            mLayoutButton.setVisibility(View.VISIBLE);
-            mLayoutPopupMenu = new PopupMenu(this, mLayoutButton);
-            mLayoutPopupMenu.getMenuInflater().inflate(R.menu.layout_menu, mLayoutPopupMenu.getMenu());
-            mLayoutPopupMenu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
-                public boolean onMenuItemClick(MenuItem item) {
-                    float oldLayoutEM = mLayoutEM;
-                    int id = item.getItemId();
-                    if (id == R.id.action_layout_6pt) mLayoutEM = 6;
-                    else if (id == R.id.action_layout_7pt) mLayoutEM = 7;
-                    else if (id == R.id.action_layout_8pt) mLayoutEM = 8;
-                    else if (id == R.id.action_layout_9pt) mLayoutEM = 9;
-                    else if (id == R.id.action_layout_10pt) mLayoutEM = 10;
-                    else if (id == R.id.action_layout_11pt) mLayoutEM = 11;
-                    else if (id == R.id.action_layout_12pt) mLayoutEM = 12;
-                    else if (id == R.id.action_layout_13pt) mLayoutEM = 13;
-                    else if (id == R.id.action_layout_14pt) mLayoutEM = 14;
-                    else if (id == R.id.action_layout_15pt) mLayoutEM = 15;
-                    else if (id == R.id.action_layout_16pt) mLayoutEM = 16;
-                    if (oldLayoutEM != mLayoutEM)
-                        relayoutDocument();
-                    return true;
-                }
-            });
-            mLayoutButton.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
-                    mLayoutPopupMenu.show();
-                }
-            });
-        }
-
         // Reenstate last state if it was recorded
         SharedPreferences prefs = getPreferences(Context.MODE_PRIVATE);
         mDocView.setDisplayedViewIndex(prefs.getInt("page" + mDocKey, 0));
@@ -1568,7 +1624,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             case MupdfBusType.receive_inform_signature: {
                 Debugger.e("接收到秘书端通知签名的通知");
                 // 打开签名画板
-                new ArtBoardDialog(MuPdfDocumentActivity.this, false,false, new ArtBoardDialog.SignatureListener() {
+                new ArtBoardDialog(MuPdfDocumentActivity.this, false, false, new ArtBoardDialog.SignatureListener() {
                     @Override
                     public void onSuccess(Object[] object) {
                         List<SignatureBoard.DrawPath> drawPaths = (List<SignatureBoard.DrawPath>) object[0];
@@ -1630,12 +1686,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private MuPDFCore openBuffer(byte buffer[], String magic) {
         try {
-            core = new MuPDFCore(buffer, magic);
+            return new MuPDFCore(buffer, magic);
         } catch (Exception e) {
             Debugger.e(TAG, "Error opening document buffer: " + e);
             return null;
         }
-        return core;
     }
 
     private MuPDFCore openFile(String filePath) {
@@ -1646,22 +1701,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
         Debugger.i(TAG, "Opening File " + filePath);
         try {
-            core = new MuPDFCore(filePath);
+            return new MuPDFCore(filePath);
         } catch (Exception e) {
             Debugger.e(TAG, "Error opening document file: " + e);
             return null;
         }
-        return core;
     }
 
     private MuPDFCore openStream(SeekableInputStream stm, String magic) {
         try {
-            core = new MuPDFCore(stm, magic);
+            return new MuPDFCore(stm, magic);
         } catch (Exception e) {
             Debugger.e(TAG, "Error opening document stream: " + e);
             return null;
         }
-        return core;
     }
 
     private MuPDFCore openCore(Uri uri, long size, String mimetype) throws IOException {
@@ -1766,7 +1819,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         alert.setView(mPasswordView);
         alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.okay), (dialog, which) -> {
             if (core.authenticatePassword(mPasswordView.getText().toString())) {
+                applyWindowBrightness();
                 createUI(savedInstanceState);
+                registerEventBus();
+                ActUtil.addActivity(this);
             } else {
                 requestPassword(savedInstanceState);
             }
@@ -2027,10 +2083,6 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     private void cancelAnnotationAndHide() {
-        if (artBoard != null) {
-            artBoard.setCancelAnnotation();
-        }
-
         List<Integer> changedPages = new ArrayList<>();
         int startIndex = Math.max(0, Math.min(annotationSessionStartIndex, savedAnnotationPages.size()));
         for (int i = savedAnnotationPages.size() - 1; i >= startIndex; i--) {
@@ -3086,6 +3138,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     public void onDestroy() {
         Debugger.i(TAG, "---onDestroy---start");
+        if (mSearchTask != null) {
+            mSearchTask.stop();
+            mSearchTask = null;
+        }
         if (MupdfMacro.isSharing) {
             MupdfBus.post(MupdfBusType.inform_exit_annotation, mediaId);
         }
@@ -3097,6 +3153,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         ActUtil.removeActivity(this);
         unregisterEventBus();
         MupdfMacro.reset();//重置相应的参数值
+        inkAnnotations.clear();
         if (mainHandler != null) mainHandler.removeCallbacksAndMessages(null);
         pendingPageUpdate = null;
         mainHandler = null;

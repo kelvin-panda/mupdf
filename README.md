@@ -1,6 +1,10 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 6.0.40
+1. 适配预览中实时切换新的PDF文件
+2. 新增`shouldSignature`配置参数：`=true`时PDF文件打开后展示签名框进行PDF的文件签名
+3. 优化`ArtBoardDialog`，当`cancelable`为`false`时隐藏掉取消按钮
 ## 6.0.39
 1. 修改签名Bitmap的获取方式
 ## 6.0.37

@@ -54,13 +54,22 @@ dependencies {
     api 'com.github.JessYanCoding:AndroidAutoSize:v1.2.1'
 }
 
+def jitpackGroup = project.providers.environmentVariable("GROUP")
+        .orElse("com.github.kelvin-panda")
+
+def jitpackArtifact = project.providers.environmentVariable("ARTIFACT")
+        .orElse("mupdf")
+
+def jitpackVersion = project.providers.environmentVariable("VERSION")
+        .orElse("6.0.38")
+
 //https://github.com/jitpack/android-example
 publishing {
     publications {
         release(MavenPublication) {
-            groupId = 'com.github.kelvin-panda'
-            artifactId = 'mupdf'
-            version = '6.0.39'
+            groupId = jitpackGroup.get()
+            artifactId = jitpackArtifact.get()
+            version = jitpackVersion.get()
 
             afterEvaluate {
                 from components.release

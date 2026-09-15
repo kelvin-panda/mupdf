@@ -39,6 +39,7 @@ public class MupdfConfig {
     private final boolean annotationInputTextEnabled;
     private final boolean backButtonEnabled;
     private final boolean informSignature;
+    private final boolean shouldSignature;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -73,6 +74,7 @@ public class MupdfConfig {
         this.annotationInputTextEnabled = builder.annotationInputTextEnabled;
         this.backButtonEnabled = builder.backButtonEnabled;
         this.informSignature = builder.informSignature;
+        this.shouldSignature = builder.shouldSignature;
     }
 
     public String getFilePath() {
@@ -203,6 +205,10 @@ public class MupdfConfig {
         return informSignature;
     }
 
+    public boolean isShouldSignature() {
+        return shouldSignature;
+    }
+
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -238,6 +244,7 @@ public class MupdfConfig {
                 ", annotationInputTextEnabled=" + annotationInputTextEnabled +
                 ", backButtonEnabled=" + backButtonEnabled +
                 ", informSignature=" + informSignature +
+                ", shouldSignature=" + shouldSignature +
                 '}';
     }
 
@@ -307,6 +314,10 @@ public class MupdfConfig {
         private boolean annotationInputTextEnabled = false;
         private boolean backButtonEnabled = false;
         private boolean informSignature = false;
+        /**
+         * 参会端收到秘书的签名通知时并未打开打开文件，在下载完毕进行打开时设置为true
+         */
+        private boolean shouldSignature = false;
 
         /**
          * 设置PDF预览文件（文件绝对路径）。
@@ -535,6 +546,14 @@ public class MupdfConfig {
 
         public Builder informSignature(boolean enable) {
             this.informSignature = enable;
+            return this;
+        }
+
+        /**
+         * @param shouldSignature 参会端收到秘书的签名通知时并未打开文件，在下载完毕进行打开时设置为true
+         */
+        public Builder shouldSignature(boolean shouldSignature) {
+            this.shouldSignature = shouldSignature;
             return this;
         }
 

@@ -20,10 +20,8 @@ import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.viewer.MuPDFCore;
 import com.artifex.mupdf.viewer.PageView;
 import com.artifex.mupdf.viewer.ReaderView;
-import com.xlk.mupdf.library.MupdfMacro;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 
@@ -79,7 +77,6 @@ public class AnnotationArtBoard extends View {
     private DrawPath drawPath;
     private final int WRAP_WIDTH = 300;
     private final int WRAP_HEIGHT = 300;
-    private DrawExitListener mDrawExitListener;
     /**
      * 是否拖动画板
      */
@@ -89,7 +86,6 @@ public class AnnotationArtBoard extends View {
     private List<AnnotationBean> annotationBeans = new ArrayList<>();
     private MuPDFCore core;
     private ReaderView docView;
-    private boolean isCancelAnnotation;
     /** 当前文档滚动偏移（px），用于屏幕坐标→文档坐标的转换 */
     private int documentScrollY;
 
@@ -113,11 +109,10 @@ public class AnnotationArtBoard extends View {
     /**
      * 删除旧批注
      */
-    public AnnotationArtBoard(Context context, MuPDFCore core, ReaderView docView, int width, int height, DrawExitListener drawExitListener) {
+    public AnnotationArtBoard(Context context, MuPDFCore core, ReaderView docView, int width, int height) {
         this(context);
         this.core = core;
         this.docView = docView;
-        this.mDrawExitListener = drawExitListener;
         isCreate = true;
         screenWidth = width;
         screenHeight = height;
@@ -830,10 +825,6 @@ public class AnnotationArtBoard extends View {
     }
 
 
-    public void setCancelAnnotation() {
-        isCancelAnnotation = true;
-    }
-
     /** 设置当前文档滚动偏移，用于双指滑动时更新坐标基准 */
     public void setDocumentScrollY(int scrollY) {
         this.documentScrollY = scrollY;
@@ -880,10 +871,6 @@ public class AnnotationArtBoard extends View {
         }
     }
 
-    public void setDrawExitListener(DrawExitListener listener) {
-        mDrawExitListener = listener;
-    }
-
     public interface StrokeListener {
         /** 笔画完成时立即回调（已转为文档坐标），用于即时保存到 PDF */
         void onStroke(AnnotationBean bean);
@@ -893,10 +880,6 @@ public class AnnotationArtBoard extends View {
 
     public void setStrokeListener(StrokeListener l) {
         this.strokeListener = l;
-    }
-
-    public interface DrawExitListener {
-        void onDrawAnnotations(List<AnnotationBean> inkAnnotations);
     }
 
     private TextMarkupListener textMarkupListener;
@@ -932,30 +915,10 @@ public class AnnotationArtBoard extends View {
     }
 
     public void release() {
-        Debugger.i(TAG, "release: mDrawExitListener是否为null：" + (mDrawExitListener == null));
-        if (mDrawExitListener != null && !isCancelAnnotation) {
-            //去掉删除状态的
-            Iterator<AnnotationBean> iterator = annotationBeans.iterator();
-            while (iterator.hasNext()) {
-                AnnotationBean next = iterator.next();
-                if (next.isDeleted()) {
-                    iterator.remove();
-                }
-            }
-            mDrawExitListener.onDrawAnnotations(annotationBeans);
-        }
-        if (mBitmap != null) {
-            if (!mBitmap.isRecycled()) {
-                mBitmap.recycle();
-                Debugger.i(TAG, "release:回收bitmap");
-            }
-        }
-        if (mCanvas != null) {
-            mCanvas = null;
-        }
+        recycleBitmapOnly();
     }
 
-    /** 仅回收画板位图资源，不触发退出回调，也不清空批注历史记录 */
+    /** 仅回收画板位图资源，不清空批注历史记录 */
     public void recycleBitmapOnly() {
         if (mBitmap != null && !mBitmap.isRecycled()) {
             mBitmap.recycle();

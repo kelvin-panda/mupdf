@@ -216,6 +216,11 @@
             android:layout_rowWeight="1"
             android:layout_columnWeight="1"
             android:text="通知签名" />
+        <CheckBox
+            android:id="@+id/cbShouldSignature"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:text="打开后提交签名" />
     </GridLayout>
 
 

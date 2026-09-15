@@ -149,7 +149,8 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
                 //共享
                 .windowWatermarkEnable(bd.cbPdfWatermark.isChecked()) //界面水印
                 .backButtonEnabled(bd.cbBackButton.isChecked())
-                .informSignature(bd.cbInformSignature.isChecked())//通知签名（秘书端使用）
+                .informSignature(bd.cbInformSignature.isChecked())  //通知签名（秘书端使用）
+                .shouldSignature(bd.cbShouldSignature.isChecked())  //打开后提交签名（参会端使用）
                 //界面水印
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);

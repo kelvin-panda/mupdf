@@ -106,7 +106,11 @@ public class ArtBoardDialog extends Dialog {
                 Toast.makeText(getContext(), R.string.tip_please_signature, Toast.LENGTH_SHORT).show();
             }
         });
-        inflate.findViewById(R.id.btn_cancel).setOnClickListener(v -> dismiss());
+        if (cancelable) {
+            inflate.findViewById(R.id.btn_cancel).setOnClickListener(v -> dismiss());
+        } else {
+            inflate.findViewById(R.id.btn_cancel).setVisibility(View.GONE);
+        }
         setCancelable(cancelable);
         setCanceledOnTouchOutside(cancelable);
         WindowManager.LayoutParams attributes = getWindow().getAttributes();
