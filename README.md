@@ -1,6 +1,21 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 6.0.43（未发布）
+1. 批注提交改为**局部 patch 重绘**：只重绘笔迹包围盒（实测 3–8ms，原整页重绘约 160ms），
+   页面内容区与整页重绘逐像素一致；撤销/共享等其它刷新路径仍走整页重绘
+2. 库版本号改为单一来源：由 `mupdf/build.gradle` 的 `jitpackVersion`（JitPack `VERSION` 环境变量 / 本地兜底值）注入为
+   `R.string.mupdf_library_version`，启动日志不再硬编码
+## 6.0.42
+1. 修复批注绘制出现"两条线"：即时保存后同一笔不再同时被浮层和页面各渲染一份，只保留实时预览并在页面渲染完成后撤销
+   - 浮层已提交笔画按滚动差平移，随文档（含双指平移/页面重排）一起移动，不再与 PDF 批注错开
+   - 落笔、双指接管、进入批注三个时机停止惯性/翻页滚动动画，避免批注期间文档继续滑动导致坐标基准漂移
+2. 修复绘制后闪屏：预览线宽改为按页面比例换算成与 PDF 批注相同的屏幕宽度，交接不再粗细跳变
+## 6.0.41
+1. 批注改为**即时保存**：每笔松开即写入 PDF 标注对象
+2. 撤销/擦除/共享统一重构为基于 `operationId` 的操作流
+   - 新增 `MupdfOperationId`，`MupdfInkBean` 支持 `OP_ADD / OP_ERASE / OP_UNDO` 与百分比坐标分段
+   - 移除 `MupdfAnnotationBean`，`MuPDFCore` 增加按 operationId 注册/删除批注的能力
 ## 6.0.40
 1. 适配预览中实时切换新的PDF文件
 2. 新增`shouldSignature`配置参数：`=true`时PDF文件打开后展示签名框进行PDF的文件签名
@@ -92,7 +107,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:6.0.37")
+	        implementation("com.github.kelvin-panda:mupdf:6.0.42")
 	}
 ```
 **依赖方module**

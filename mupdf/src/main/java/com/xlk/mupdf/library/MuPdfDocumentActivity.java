@@ -150,6 +150,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             viewTopWatermark, viewTopSignTable, viewTopSignRow, viewTopSearch, viewTopSetting, viewInformSignature;
     private boolean mAnnotationVisible, afterAnnotationRefresh;
     private AnnotationArtBoard artBoard;
+    /**
+     * 本次 {@link #addStrokeAnnotation} 中各页需要局部重绘的区域（页内显示像素），
+     * 由 {@link #recordPatchRect} 填写、笔画回调读取后用于 patch 刷新。
+     */
+    private final Map<Integer, RectF> strokePatchRects = new HashMap<>();
     private TextView viewArtSizeTv;
     private SeekBar viewArtSeekBar;
     private final int default_ink_size = 3;
@@ -307,6 +312,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     private void scheduleAnnotationPagesUpdate(final List<Integer> pageIndexes) {
+        scheduleAnnotationPagesUpdate(pageIndexes, null);
+    }
+
+    /**
+     * 刷新批注变更页。
+     *
+     * @param patchRects 可选：页索引 → 该页需要局部重绘的矩形（页内显示像素）。
+     *                   有值时走 {@link PageView#updatePatch}，只重绘这一小块；
+     *                   为空或某页无记录时退回整页重绘。
+     */
+    private void scheduleAnnotationPagesUpdate(final List<Integer> pageIndexes,
+                                               final Map<Integer, RectF> patchRects) {
         schedulePageUpdate(() -> {
             if (mDocView == null || pageIndexes == null) return;
             for (int pageIdx : pageIndexes) {
@@ -314,7 +331,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 if (pv != null) {
                     // 页面重绘完成后撤掉浮层临时预览，保证同一笔不会同时显示两份
                     pv.setRenderCompleteListener(this::onAnnotationPageRendered);
-                    pv.update();
+                    RectF rect = patchRects == null ? null : patchRects.get(pageIdx);
+                    if (rect != null && rect.width() > 0 && rect.height() > 0) {
+                        pv.updatePatch(pageIdx, Math.round(rect.left), Math.round(rect.top),
+                                Math.round(rect.width()), Math.round(rect.height()));
+                    } else {
+                        pv.update();
+                    }
                 }
             }
             // 页面重排可能改变滚动偏移，重绘画板让浮层笔画跟随文档
@@ -585,7 +608,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
         mDisplayDPI = (int) metrics.densityDpi;
         mAlertBuilder = new AlertDialog.Builder(this);
-        Debugger.i(TAG, "mupdf version: 6.0.37");
+        Debugger.i(TAG, "mupdf version: " + getString(R.string.mupdf_library_version));
         if (core == null) {
             if (savedInstanceState != null && savedInstanceState.containsKey("DocTitle")) {
                 mDocTitle = savedInstanceState.getString("DocTitle");
@@ -1528,7 +1551,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 hadAnnotation = true;
                 recordLocalOperation(MupdfInkBean.createAdd(bean.getKey(), bean.getType(),
                         bean.getPaintSize() / 3.0f, bean.getPaintColor(), segments));
-                scheduleAnnotationPagesUpdate(changedPages);
+                // 只刷新这一笔覆盖的区域（拷贝一份，供延迟执行的刷新读取）
+                scheduleAnnotationPagesUpdate(changedPages, new HashMap<>(strokePatchRects));
             });
             artBoard.setEraseListener((operationId, targetOperationIds) ->
                     recordLocalOperation(MupdfInkBean.createErase(
@@ -2647,6 +2671,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private List<Integer> addStrokeAnnotation(AnnotationBean bean, int fallbackHeight,
                                               List<MupdfInkBean.InkSegment> segments) {
         List<Integer> changedPages = new ArrayList<>();
+        // 每次提交前清空区域记录，调用方在返回后读取，用于局部重绘
+        strokePatchRects.clear();
         if (bean == null || core == null || mDocView == null) return changedPages;
         Point[] docPts = bean.getPoints();
         if (docPts == null || docPts.length == 0) return changedPages;
@@ -2798,6 +2824,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         int pageW = getAnnotationPageWidth(pageIdx);
         int pageH = getAnnotationPageHeight(pageIdx, fallbackHeight);
         if (pageW <= 0 || pageH <= 0) return;
+        // 记下这一笔在本页覆盖的区域（页内显示像素），供提交后做局部重绘。
+        // 必须在 addAnnotation 之前：该方法会就地把 localPts 由页内像素改写成 PDF 点。
+        recordPatchRect(pageIdx, localPts, paintSize);
         Point[] percentPoints = core.addAnnotation(pageIdx, pageW, pageH, type,
                 paintSize, paintColor, localPts, operationId);
         if (percentPoints == null) return;
@@ -2805,6 +2834,37 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         if (segments != null) {
             segments.add(new MupdfInkBean.InkSegment(pageIdx + 1,
                     pointsToFloatArray(percentPoints)));
+        }
+    }
+
+    /**
+     * 记录本页需要局部重绘的矩形：笔迹包围盒按笔宽外扩（PDF 点 → 页内像素）。
+     * 只在本次 {@link #addStrokeAnnotation} 调用内有效，由调用方读取后用于 patch 刷新。
+     */
+    private void recordPatchRect(int pageIdx, Point[] localPts, float paintSize) {
+        if (localPts == null || localPts.length == 0) return;
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        for (Point p : localPts) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        float half = 4f;
+        try {
+            float scale = mDocView.getPageDisplayScale(pageIdx);
+            if (scale > 0f) half = paintSize * scale / 2f;
+        } catch (Exception e) {
+            Debugger.e(TAG, e);
+        }
+        half += 6f;
+        RectF rect = new RectF(minX - half, minY - half, maxX + half, maxY + half);
+        RectF exist = strokePatchRects.get(pageIdx);
+        if (exist == null) {
+            strokePatchRects.put(pageIdx, rect);
+        } else {
+            exist.union(rect);
         }
     }
 

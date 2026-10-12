@@ -85,6 +85,8 @@ public class PageView extends ViewGroup {
     private static final int PROGRESS_DIALOG_DELAY = 200;
     private static final int MAX_BITMAP_DIMENSION = 4096;
     private static final long MAX_BITMAP_BYTES = 64L * 1024L * 1024L;
+    /** 局部重绘时在笔迹包围盒外额外扩大的像素（抗锯齿/线帽余量） */
+    private static final int PATCH_MARGIN = 6;
 
     protected final Context mContext;
     private final String mWaterMark;
@@ -694,6 +696,99 @@ public class PageView extends ViewGroup {
         int width = getWidth() > 0 ? getWidth() : mSize.x;
         int height = getHeight() > 0 ? getHeight() : mSize.y;
         renderEntirePage(width, height, true);
+    }
+
+    /**
+     * 只重绘页面上的一小块区域（批注提交后的增量刷新）。
+     *
+     * <p>坐标为页面显示像素（与 {@link #getWidth()} / {@code ReaderView#getPageDisplayWidth(int)} 同一空间）。
+     * 相比整页重绘（例如 2200x3111，实测约 160ms，且要新建整页位图再替换），
+     * 局部重绘只渲染这一小块并直接贴回当前位图：交接几乎无感，也不存在整张位图被替换的观感风险。
+     * MuPDF 侧的 patch 语义是"位图即该 patch，patchX/patchY 为它在页面显示坐标中的左上角"，
+     * 因此这里传入 patch 尺寸的位图 + patch 原点即可，无需改动 {@code MuPDFCore.drawPage}。</p>
+     *
+     * @param pageNumber 期望页号；与当前页不一致（View 已被复用）时退回整页重绘
+     */
+    public void updatePatch(int pageNumber, int viewX, int viewY, int viewWidth, int viewHeight) {
+        Bitmap ent = mEntireBm;
+        int viewW = getWidth();
+        int viewH = getHeight();
+        if (mIsBlank || pageNumber != mPageNumber || mDrawEntire != null
+                || viewWidth <= 0 || viewHeight <= 0
+                || viewW <= 0 || viewH <= 0
+                || ent == null || ent.isRecycled()) {
+            update();
+            return;
+        }
+        float sx = ent.getWidth() / (float) viewW;
+        float sy = ent.getHeight() / (float) viewH;
+        final int px = Math.max(0, (int) Math.floor(viewX * sx) - PATCH_MARGIN);
+        final int py = Math.max(0, (int) Math.floor(viewY * sy) - PATCH_MARGIN);
+        final int px1 = Math.min(ent.getWidth(), (int) Math.ceil((viewX + viewWidth) * sx) + PATCH_MARGIN);
+        final int py1 = Math.min(ent.getHeight(), (int) Math.ceil((viewY + viewHeight) * sy) + PATCH_MARGIN);
+        final int pw = px1 - px;
+        final int ph = py1 - py;
+        // 区域接近整页时，整页重绘更划算
+        if (pw <= 0 || ph <= 0 || (long) pw * ph * 3L > (long) ent.getWidth() * ent.getHeight()) {
+            update();
+            return;
+        }
+        final Bitmap patchBm = createBitmapSafely(pw, ph);
+        if (patchBm == null || patchBm.isRecycled()) {
+            update();
+            return;
+        }
+
+        final int renderPage = mPageNumber;
+        final int fullW = ent.getWidth();
+        final int fullH = ent.getHeight();
+        Debugger.d(TAG, "updatePatch page=" + renderPage + " patch=(" + px + "," + py + ","
+                + pw + "," + ph + ") full=" + fullW + "x" + fullH);
+        final CancellableTaskDefinition<Void, Boolean> renderTask =
+                getUpdatePageTask(patchBm, renderPage, fullW, fullH, px, py, pw, ph);
+        CancellableTaskDefinition<Void, Boolean> task = new CancellableTaskDefinition<Void, Boolean>() {
+            @Override
+            public Boolean doInBackground(Void... params) {
+                return renderTask.doInBackground(params);
+            }
+
+            @Override
+            public void doCancel() {
+                renderTask.doCancel();
+            }
+
+            @Override
+            public void doCleanup() {
+                renderTask.doCleanup();
+                if (!patchBm.isRecycled()) patchBm.recycle();
+            }
+        };
+
+        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task) {
+            @Override
+            public void onPostExecute(Boolean result) {
+                mDrawEntire = null;
+                if (result != null && result.booleanValue()
+                        && renderPage == mPageNumber
+                        && mEntireBm != null && !mEntireBm.isRecycled()
+                        && !patchBm.isRecycled()) {
+                    // 在主线程贴回，避免后台线程写正在显示的位图造成撕裂
+                    new Canvas(mEntireBm).drawBitmap(patchBm, px, py, null);
+                    if (mEntire != null) mEntire.invalidate();
+                    // 页面已带上这一笔：通知批注浮层撤掉临时预览
+                    if (mRenderCompleteListener != null) {
+                        mRenderCompleteListener.onRenderComplete();
+                    }
+                } else {
+                    Debugger.d(TAG, "updatePatch fallback: page=" + renderPage + ", result=" + result);
+                }
+                if (mRenderPending) {
+                    mRenderPending = false;
+                    renderEntirePage(getWidth(), getHeight(), true);
+                }
+            }
+        };
+        mDrawEntire.execute();
     }
 
     public int getPage() {

@@ -27,7 +27,9 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Architecture
 
-Android library project wrapping MuPDF for PDF document rendering with annotation, signature, screenshot, and watermark features. Published via JitPack as `com.github.kelvin-panda:mupdf:6.0.37`.
+Android library project wrapping MuPDF for PDF document rendering with annotation, signature, screenshot, and watermark features. Published via JitPack as `com.github.kelvin-panda:mupdf` (latest release: 6.0.42).
+
+- **批注（Annotation）实现流程**详见 [`docs/annotation-flow.md`](docs/annotation-flow.md)：三层结构、会话生命周期、坐标换算、按页切分与提交链路、擦除/撤销/共享/落盘、关键不变量与已知坑。
 
 ### Modules
 
@@ -64,4 +66,4 @@ Android library project wrapping MuPDF for PDF document rendering with annotatio
 
 - Release publishing via `maven-publish` plugin (see `mupdf/build.gradle` `publishing` block).
 - JitPack CI configured in `jitpack.yml` (Java 11, OpenJDK).
-- Version defined in `mupdf/build.gradle` `version = '6.0.37'`.
+- Version is not hardcoded in Java: it comes from the JitPack `VERSION` environment variable (set from the pushed git tag) with a local fallback in `mupdf/build.gradle` (`jitpackVersion`), and is exposed at runtime as `R.string.mupdf_library_version`. Releases are cut by pushing a tag (see `.github/workflows/jitpack-tag.yml`).
