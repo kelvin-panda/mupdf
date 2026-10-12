@@ -93,6 +93,21 @@ public class AnnotationArtBoard extends View {
     private ReaderView docView;
     /** 当前文档滚动偏移（px），用于屏幕坐标→文档坐标的转换 */
     private int documentScrollY;
+    /**
+     * 位图内容烘焙时的文档滚动偏移（px）。
+     * 画板固定在屏幕上，而笔画提交后同时存在于 PDF 页面（文档坐标）中；
+     * onDraw 时按 (bitmapScrollY - 当前滚动) 平移位图，使浮层笔画与 PDF 批注始终重合。
+     */
+    private int bitmapScrollY;
+    /**
+     * 手指按下到抬起之间为 true。
+     */
+    private boolean isDrawing;
+    /**
+     * =true 表示有一笔已提交到 PDF、正在等页面重绘渲染出来，
+     * 期间浮层只显示这一笔的实时预览，页面重绘完成后撤掉，避免同一笔出现两份。
+     */
+    private boolean awaitAnnotationRender;
 
     // 双指滑动/缩放 PDF 上下文状态
     private boolean isMultiTouching;
@@ -189,6 +204,8 @@ public class AnnotationArtBoard extends View {
         mBitmap.eraseColor(Color.TRANSPARENT);
         mCanvas = new Canvas(mBitmap);
         mCanvas.drawColor(Color.TRANSPARENT);//设置画布的颜色
+        // 新位图为空，基准滚动位置与当前保持一致
+        bitmapScrollY = currentDocumentScrollY();
     }
 
     private void initPaint() {
@@ -232,11 +249,38 @@ public class AnnotationArtBoard extends View {
             case DRAW_LINE:
             case DRAW_TEXT:
                 mPaint.setColor(paintColor);// 颜色
+                // 预览线宽按“PDF 批注在屏幕上的实际宽度”换算，交接时粗细不跳变
+                mPaint.setStrokeWidth(resolvePreviewWidthPx());
                 break;
             case DRAW_ERASER:
                 mPaint.setColor(Color.WHITE);
                 break;
         }
+    }
+
+    /**
+     * PDF 批注的线宽（pt）。
+     * 与 {@code MuPdfDocumentActivity.addStrokeAnnotation} 中的 {@code paintSize = paintWidth / 3f} 保持一致。
+     */
+    private float annotationStrokeWidthPt() {
+        return paintWidth / 3.0f;
+    }
+
+    /**
+     * 把 PDF 线宽换算成当前页在屏幕上的像素宽度。
+     * 预览用 {@link #paintWidth} 像素、而写入 PDF 的是 {@link #annotationStrokeWidthPt()} 磅，
+     * 两者相差一个页面缩放比例；不换算的话“实时预览 → 页面批注”交接瞬间笔画会突然变粗（看着像闪屏）。
+     */
+    private float resolvePreviewWidthPx() {
+        if (docView == null) return paintWidth;
+        try {
+            int docY = isDrawing ? (int) startDocY : documentScrollY + screenHeight / 2;
+            float scale = docView.getPageDisplayScale(docView.findPageAtY(docY));
+            if (scale > 0f) return annotationStrokeWidthPt() * scale;
+        } catch (Exception e) {
+            Debugger.e(TAG, e);
+        }
+        return paintWidth;
     }
 
     public Bitmap getCanvasBmp() {
@@ -248,7 +292,17 @@ public class AnnotationArtBoard extends View {
     protected void onDraw(Canvas canvas) {
         // 在之前画板上画过得显示出来
         if (mBitmap != null && !mBitmap.isRecycled()) {
-            canvas.drawBitmap(mBitmap, 0, 0, mBitmapPaint);
+            // 位图里的笔画是“烘焙那一刻的屏幕坐标”，而它已经作为 PDF 批注存在于文档坐标中。
+            // 按滚动差平移，浮层笔画才会和 PDF 批注一起随文档移动（双指平移、页面重排同理）。
+            int offsetY = bitmapScrollY - currentDocumentScrollY();
+            if (offsetY != 0) {
+                canvas.save();
+                canvas.translate(0, offsetY);
+                canvas.drawBitmap(mBitmap, 0, 0, mBitmapPaint);
+                canvas.restore();
+            } else {
+                canvas.drawBitmap(mBitmap, 0, 0, mBitmapPaint);
+            }
         }
         if (mPath != null) {
             canvas.drawPath(mPath, mPaint);//实时的显示
@@ -260,6 +314,12 @@ public class AnnotationArtBoard extends View {
         // 双指或多指：平移/缩放底层 PDF 上下文
         if (event.getPointerCount() > 1 || isMultiTouching) {
             return handleMultiTouch(event);
+        }
+        // 单指落笔前冻结文档：批注画板在顶层拦截触摸，ReaderView 收不到 DOWN，
+        // 正在进行的惯性/翻页滚动动画会继续带着文档滑动，导致本笔坐标基准漂移。
+        if (event.getAction() == MotionEvent.ACTION_DOWN && docView != null) {
+            docView.stopScrollAnimation();
+            documentScrollY = docView.getDocumentScrollY();
         }
         if (drag) {
             drag(event);
@@ -277,9 +337,16 @@ public class AnnotationArtBoard extends View {
                 // 丢弃进行中的单指绘制
                 mPath = null;
                 points.clear();
+                isDrawing = false;
+                awaitAnnotationRender = false;
                 invalidate();
                 isMultiTouching = true;
-                if (docView != null) docView.setAnnotationMultiTouch(true);
+                if (docView != null) {
+                    // 双指接管前先冻结动画，之后仅由本画板驱动滚动
+                    docView.stopScrollAnimation();
+                    docView.setAnnotationMultiTouch(true);
+                    documentScrollY = docView.getDocumentScrollY();
+                }
                 multiTouchLastCX = get2CenterX(event);
                 multiTouchLastCY = get2CenterY(event);
                 break;
@@ -303,6 +370,8 @@ public class AnnotationArtBoard extends View {
                     documentScrollY = docView.scrollBy(dx, -dy);
                     multiTouchLastCX = cx;
                     multiTouchLastCY = cy;
+                    // 文档移动后需要重绘画板，否则浮层上已提交的笔画会停留在原屏幕位置
+                    invalidate();
                 }
                 break;
             case MotionEvent.ACTION_POINTER_UP:
@@ -422,6 +491,9 @@ public class AnnotationArtBoard extends View {
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
                 currentOperationId = MupdfOperationId.next();
                 erasedOperationIds.clear();
+                isDrawing = true;
+                // 新的笔画开始，上一笔的临时预览不再需要
+                awaitAnnotationRender = false;
                 startX = event.getX();
                 startY = event.getY();
                 startDocY = y + documentScrollY;
@@ -524,10 +596,12 @@ public class AnnotationArtBoard extends View {
                 break;
             case MotionEvent.ACTION_UP: {
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
+                isDrawing = false;
                 if (currentDrawGraphics == DRAW_ERASER) {
                     notifyEraseFinished();
                     points.clear();
                     mPath = null;
+                    awaitAnnotationRender = false;
                     invalidate();
                     break;
                 }
@@ -577,22 +651,31 @@ public class AnnotationArtBoard extends View {
                     annotationBeans.add(annotationBean);
                 }
                 if (mPath != null) {
-                    if (currentDrawGraphics != DRAW_TEXT && currentDrawGraphics != DRAW_ERASER
+                    boolean bakeable = currentDrawGraphics != DRAW_TEXT && currentDrawGraphics != DRAW_ERASER
                             && currentDrawGraphics != DRAW_FREETEXT
                             && currentDrawGraphics != DRAW_UNDERLINE
-                            && currentDrawGraphics != DRAW_STRIKEOUT) {
-                        drawPath = new DrawPath();
-                        drawPath.operid = operid;
-                        drawPath.path = new Path(mPath);
-                        drawPath.paint = new Paint(mPaint);
-                        pathList.add(drawPath);
+                            && currentDrawGraphics != DRAW_STRIKEOUT;
+                    if (bakeable && strokeListener != null) {
+                        // 即时保存模式：这一笔马上会写进 PDF，并在页面重绘时由 MuPDF 渲染出来。
+                        // 因此不再把它烘焙进浮层位图——浮层和页面是两套独立的光栅化，
+                        // 同一笔同时画两份永远无法像素级重合，看起来就是“两条线”。
+                        // 这里只保留这一笔的实时预览，等页面重绘完成后再撤掉（onAnnotationRendered）。
+                        awaitAnnotationRender = true;
+                    } else {
+                        if (bakeable) {
+                            drawPath = new DrawPath();
+                            drawPath.operid = operid;
+                            drawPath.path = new Path(mPath);
+                            drawPath.paint = new Paint(mPaint);
+                            pathList.add(drawPath);
+                            if (mCanvas != null) {
+                                mCanvas.drawPath(mPath, mPaint);
+                                // 记录烘焙时所在的文档滚动位置，供 onDraw 还原到文档空间
+                                bitmapScrollY = currentDocumentScrollY();
+                            }
+                        }
+                        mPath = null;
                     }
-                    if (mCanvas != null && currentDrawGraphics != DRAW_ERASER
-                            && currentDrawGraphics != DRAW_UNDERLINE
-                            && currentDrawGraphics != DRAW_STRIKEOUT) {
-                        mCanvas.drawPath(mPath, mPaint);
-                    }
-                    mPath = null;
                     invalidate();
                 }
                 //不管有没有同屏都要删除
@@ -606,11 +689,13 @@ public class AnnotationArtBoard extends View {
                 break;
             } // end ACTION_UP block
             case MotionEvent.ACTION_CANCEL:
+                isDrawing = false;
                 if (currentDrawGraphics == DRAW_ERASER) {
                     notifyEraseFinished();
                 }
                 points.clear();
                 mPath = null;
+                awaitAnnotationRender = false;
                 invalidate();
                 break;
             default:
@@ -759,6 +844,8 @@ public class AnnotationArtBoard extends View {
         invalidate();
         //已经退出共享后，点击清除将所有操作清空
         pathList.clear();
+        mPath = null;
+        awaitAnnotationRender = false;
     }
 
     /**
@@ -847,6 +934,8 @@ public class AnnotationArtBoard extends View {
                 drawZoomBmp(bitmap);
             }*/
         }
+        // 重绘相当于在当前屏幕位置重新烘焙，基准滚动位置同步为当前值
+        bitmapScrollY = currentDocumentScrollY();
         invalidate();
     }
 
@@ -867,7 +956,29 @@ public class AnnotationArtBoard extends View {
         this.documentScrollY = scrollY;
     }
 
+    /**
+     * 页面已把这一笔的批注渲染出来，撤掉浮层上的临时预览。
+     * 由页面重绘完成回调触发；若此时用户正在画下一笔则跳过，
+     * 避免误删正在绘制的预览（下一笔 ACTION_DOWN 时也会自行清理）。
+     */
+    public void onAnnotationRendered() {
+        if (!awaitAnnotationRender || isDrawing) return;
+        awaitAnnotationRender = false;
+        mPath = null;
+        invalidate();
+    }
+
     public int getDocumentScrollY() {
+        return documentScrollY;
+    }
+
+    /**
+     * 取当前文档滚动偏移：优先直接读 ReaderView，避免缓存值与实际滚动不同步。
+     */
+    private int currentDocumentScrollY() {
+        if (docView != null) {
+            documentScrollY = docView.getDocumentScrollY();
+        }
         return documentScrollY;
     }
 
@@ -957,6 +1068,8 @@ public class AnnotationArtBoard extends View {
     public void clearStrokes() {
         pathList.clear();
         annotationBeans.clear();
+        mPath = null;
+        awaitAnnotationRender = false;
         initCanvas();
         invalidate();
     }

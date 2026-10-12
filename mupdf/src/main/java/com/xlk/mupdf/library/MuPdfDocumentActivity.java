@@ -311,9 +311,24 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             if (mDocView == null || pageIndexes == null) return;
             for (int pageIdx : pageIndexes) {
                 PageView pv = (PageView) mDocView.getView(pageIdx);
-                if (pv != null) pv.update();
+                if (pv != null) {
+                    // 页面重绘完成后撤掉浮层临时预览，保证同一笔不会同时显示两份
+                    pv.setRenderCompleteListener(this::onAnnotationPageRendered);
+                    pv.update();
+                }
             }
+            // 页面重排可能改变滚动偏移，重绘画板让浮层笔画跟随文档
+            if (artBoard != null) artBoard.invalidate();
         });
+    }
+
+    /** 页面位图重绘完成（主线程）：撤掉批注浮层上等待中的临时预览 */
+    private void onAnnotationPageRendered() {
+        final AnnotationArtBoard board = artBoard;
+        if (board == null) return;
+        // 延后到下一帧再撤预览：确保新的页面位图已经画出来，
+        // 交接过程中不会出现“预览已撤、批注未现”的一帧空档（闪屏）
+        board.postOnAnimation(board::onAnnotationRendered);
     }
 
     private void scheduleAnnotationPagesUpdateWithRestore(final List<Integer> pageIndexes,
@@ -323,10 +338,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             if (mDocView == null || pageIndexes == null) return;
             for (int pageIdx : pageIndexes) {
                 PageView pv = (PageView) mDocView.getView(pageIdx);
-                if (pv != null) pv.update();
+                if (pv != null) {
+                    pv.setRenderCompleteListener(this::onAnnotationPageRendered);
+                    pv.update();
+                }
             }
             mDocView.restorePagePosition(anchorPageIndex, anchorPageScreenTop);
             Debugger.i("Restored page position: page=" + anchorPageIndex + ",top=" + anchorPageScreenTop);
+            if (artBoard != null) artBoard.invalidate();
         });
     }
 
@@ -1005,6 +1024,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 ViewGroup.LayoutParams.MATCH_PARENT);
         // 插入到最底层（索引0），使顶部栏和底部页码覆盖在文档之上
         rootView.addView(mDocView, 0, docLp);
+        // 文档滚动/页面重排后同步重绘批注画板，避免浮层笔画停留在旧屏幕位置
+        mDocView.setScrollChangeListener(() -> {
+            if (artBoard != null) artBoard.invalidate();
+        });
 
         applyWindowWatermark(mWindowWatermark);
         setContentView(mButtonsView);
@@ -1477,6 +1500,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //开启批注
         viewTopAnnotation.setOnClickListener(v -> {
             mDocView.savePosition();
+            // 进入批注前冻结文档：否则正在进行的惯性/翻页动画会在批注面板下继续滑动，
+            // 期间落笔的笔画坐标基准漂移，提交后与屏幕上的预览线错开
+            mDocView.stopScrollAnimation();
             hideButtons();
             showAnnotationViews();
             if (artBoard != null) {

@@ -584,6 +584,10 @@ public class PageView extends ViewGroup {
                     if (oldBitmap != null && oldBitmap != mEntireBm && !oldBitmap.isRecycled()) {
                         oldBitmap.recycle();
                     }
+                    // 页面位图已应用：通知外部（批注浮层据此撤掉临时预览，避免同一笔显示两份）
+                    if (mRenderCompleteListener != null) {
+                        mRenderCompleteListener.onRenderComplete();
+                    }
                 } else {
                     setRenderError(update ? "Error updating page" : "Error rendering page");
                 }
@@ -694,6 +698,20 @@ public class PageView extends ViewGroup {
 
     public int getPage() {
         return mPageNumber;
+    }
+
+    /**
+     * 页面位图重绘完成回调（在主线程触发）。
+     * 批注即时保存后，页面重绘会把批注画出来，浮层据此撤掉临时预览。
+     */
+    public interface RenderCompleteListener {
+        void onRenderComplete();
+    }
+
+    private RenderCompleteListener mRenderCompleteListener;
+
+    public void setRenderCompleteListener(RenderCompleteListener listener) {
+        mRenderCompleteListener = listener;
     }
 
     public boolean isBlankPage() {

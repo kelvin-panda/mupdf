@@ -99,6 +99,32 @@ public class ReaderView
      */
     private boolean isInAnnotation;
     /**
+     * 文档滚动/页面位置变化回调（批注画板用于同步重绘浮层笔画）
+     */
+    private Runnable mScrollChangeListener;
+
+    /** 设置文档滚动变化回调，可传 null 取消 */
+    public void setScrollChangeListener(Runnable listener) {
+        mScrollChangeListener = listener;
+    }
+
+    /**
+     * 立即停止正在进行的惯性滑动/翻页滚动动画。
+     * 批注画板接管触摸后 ReaderView 收不到 ACTION_DOWN，其 onDown 里的
+     * mScroller.forceFinished 不会执行，动画会带着文档在手指下继续滑，
+     * 导致笔画提交坐标与屏幕位置不一致（出现两条错开的线）。
+     */
+    public void stopScrollAnimation() {
+        if (mScroller != null && !mScroller.isFinished()) {
+            mScroller.forceFinished(true);
+        }
+        // 丢弃本帧尚未应用的滚动增量，把文档冻结在当前 mScrollY
+        mScrollerLastX = mScrollerLastY = 0;
+        mXScroll = 0;
+        mYScroll = 0;
+    }
+
+    /**
      * 批注画板正在双指滑动中，阻止 settle
      */
     private boolean mAnnotationMultiTouch;
@@ -295,6 +321,16 @@ public class ReaderView
     public int getPageDisplayHeight(int pageIndex) {
         recalculatePagePositions();
         return getPageHeight(pageIndex);
+    }
+
+    /**
+     * 指定页在屏幕上的显示比例（屏幕像素 / PDF 点）。
+     * 用于把 PDF 尺寸（如批注线宽）换算成屏幕尺寸，保证绘制预览与最终批注外观一致。
+     */
+    public float getPageDisplayScale(int pageIndex) {
+        PointF size = getCachedPageSize(pageIndex);
+        if (size == null || size.y <= 0) return 0f;
+        return (float) getPageHeight(pageIndex) / size.y;
     }
 
     /** 获取指定页缩放后像素宽度 */
@@ -850,6 +886,10 @@ public class ReaderView
 
         Debugger.i(TAG, "onLayout2: invalidate mCurrent=" + mCurrent + " mScrollY=" + mScrollY);
         invalidate();
+        // 文档位置已确定，通知批注浮层同步重绘（否则浮层笔画会停留在旧屏幕位置）
+        if (mScrollChangeListener != null) {
+            mScrollChangeListener.run();
+        }
         Debugger.i(TAG, "onLayout2: end");
     }
 
