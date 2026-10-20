@@ -27,9 +27,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Architecture
 
-Android library project wrapping MuPDF for PDF document rendering with annotation, signature, screenshot, and watermark features. Published via JitPack as `com.github.kelvin-panda:mupdf` (latest release: 6.0.42).
+Android library project wrapping MuPDF for PDF document rendering with annotation, signature, screenshot, and watermark features. Published via JitPack as `com.github.kelvin-panda:mupdf` (latest release: 7.0.0).
 
-- **批注（Annotation）实现流程**详见 [`docs/annotation-flow.md`](docs/annotation-flow.md)：三层结构、会话生命周期、坐标换算、按页切分与提交链路、擦除/撤销/共享/落盘、关键不变量与已知坑。
+- **批注（Annotation）实现流程**详见 [docs/annotation-flow.md](docs/annotation-flow.md)：三层结构、会话生命周期、坐标换算、按页切分与提交链路、擦除/撤销/共享/落盘、关键不变量与已知坑。
+- **6.x → 7.0.0 迁移**详见 [docs/eventbus-to-port-migration.md](docs/eventbus-to-port-migration.md)：EventBus → MupdfHost/MupdfSession、MupdfMacro 静态状态收编、逐调用点改造清单与遗留项。
 
 ### Modules
 
@@ -46,11 +47,11 @@ Android library project wrapping MuPDF for PDF document rendering with annotatio
 | `com.artifex.mupdf.util.*` | Shared utilities — screen utils, activity helpers, debug logging. |
 | `com.xlk.mupdf.library` | **Public API surface** — `MupdfConfig` (Builder-pattern config), `MuPdfDocumentActivity` (main viewer Activity). |
 | `com.xlk.mupdf.library.view.*` | Custom UI widgets — `MupdfColorPickerDialog`/`MupdfColorPickerView`, `SignatureBoard`, `ArtBoardDialog`, `ScalableView`. |
-| `com.xlk.mupdf.library.bus.*` | EventBus message types — `MupdfEventMessage`, `MupdfBusType`, `MupdfAnnotationBean`, `MupdfInkBean`. |
+| `com.xlk.mupdf.library.api.*` | **Host integration contract (7.0.0)** — `MupdfHost` (library→host port), `MupdfSession` (host→library handle), `MupdfSessions`, `MupdfInkBean`, `MupdfOperationId`, `MupdfExitReason`, `MupdfResult`. |
 
 ### Key Dependencies
 
-- **EventBus 3.3.1** — Inter-component communication within the viewer (annotation events, ink changes, UI state).
+- ~~EventBus 3.3.1~~ — **removed in 7.0.0**; hosts talk to the library through `api/MupdfHost` + `api/MupdfSession`, and the EventBus dependency is no longer published transitively.
 - **AndroidAutoSize v1.2.1** — Screen adaptation; `MuPdfDocumentActivity` implements `CancelAdapt` to opt out when host app uses this library.
 - **AppCompat 1.4.1, Material 1.5.0** — Standard Android UI.
 
@@ -59,7 +60,8 @@ Android library project wrapping MuPDF for PDF document rendering with annotatio
 - **`MupdfConfig`** (Builder pattern) is the single configuration entry point. Every feature (annotation, signature, screenshot, watermark, WPS integration, clarity mode, fullscreen) is toggled via this object.
 - **`MuPdfDocumentActivity`** is the main viewer Activity and contains the viewer/annotation customization layers. Callers use `MuPdfDocumentActivity.jump(context, config)`.
 - **Native .so libraries** for MuPDF rendering are bundled for `armeabi-v7a` and `arm64-v8a`. Consumers must handle ABI splits and `libc++_shared.so` conflicts (see README).
-- **Inter-activity communication** uses EventBus, not Intents, for complex UI state (annotation positions, color selections, ink strokes).
+- **Host ↔ library communication (7.0.0)** — the host implements MupdfHost (injected via MupdfConfig.Builder.host(...)) to receive main-thread callbacks, and drives the viewer through the MupdfSession handle obtained in onSessionReady. MupdfBus/MupdfBusType/MupdfEventMessage were deleted; jump() throws IllegalStateException when host is null.
+- **Session-scoped routing** — each open creates a session identified by MupdfConfig.sessionId(...), so concurrent viewers no longer cross-talk; MupdfSessions.find(id) is the only static entry point (explicit id, no broadcast).
 - **Version 6.0.18+** added `CancelAdapt` interface implementation on `MuPdfDocumentActivity` to prevent UI scaling conflicts when the host app uses AndroidAutoSize.
 
 ### Publishing

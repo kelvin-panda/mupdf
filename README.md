@@ -1,6 +1,25 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 7.0.0（破坏性更新）
+1. **移除 EventBus**：宿主与库之间改为「端口 + 会话句柄」
+   - 宿主实现 `api/MupdfHost`（全部方法 `default`，按需覆写），通过 `MupdfConfig.Builder.host(...)` 注入
+   - 库通过 `api/MupdfSession` 句柄下发指令（`receiveRemoteOperations` / `createSignatureTable` / `submitMemberSignature` / `requestHostSignature` / `close`）
+   - 删除 `bus/MupdfBus`、`bus/MupdfBusType`、`bus/MupdfEventMessage`，`org.greenrobot:eventbus` 不再作为传递依赖
+   - ⚠️ `host` 为 null 时 `jump()` 抛 `IllegalStateException`（fail-fast，避免回调静默丢失）
+2. **会话定向路由**：新增 `MupdfConfig.Builder.sessionId(...)`；`MupdfSessions.find(id)` 是唯一静态入口（按显式 id 查询，无广播），进程内多个阅读器不再串台
+3. **配置收编**：`MupdfConfig` 新增 `shareAnnotationEnabled(...)` / `hengXunStyle(...)`，替代 `MupdfMacro.shareAnnotationEnable` / `MupdfMacro.isHengXunVersion`
+4. **移除 `MupdfMacro` 的会话级静态状态**：`isSharing` / `sharingIds` / `launchSrcwbid` / `launchSrcmemid` / `currentMediaId` / `currentFilePath` / `currentUri` 及 `reset()` 全部删除
+   - 这些字段描述的是**宿主侧的会议会话**，所有权归还宿主；库内需要的信息改用 `MupdfSession#mediaId()` / `hasDocument(int)`
+   - 修复：库退出不再顺手清掉宿主状态（原 `onDestroy` → `reset()` 会导致共享批注被意外中断）
+5. **数据类迁移**：`bus/MupdfInkBean`、`bus/MupdfOperationId` → `api/`（`MupdfInkBean` 的包名变了，需要改 import）
+6. 新增 `api/MupdfExitReason`（会话结束原因）、`api/MupdfResult`（终态快照）
+7. 库不再判断"是否处于共享中"，`onLocalOperations` / `onAnnotationSessionExited` **一律回调**，是否发协议由宿主决定
+8. 新增 `MupdfHost#onSignatureTableCompleted()`：签名全部到齐由库判断并回调（替代宿主自行计数）
+9. 修复 `submit_member_signature` 成员不在名单时 `remove(indexOf(...))` 抛 `IndexOutOfBoundsException`
+10. 修复「外部打开 / 打开失败」先 `finish()` 再回调的顺序问题（原来依赖 EventBus 同步分发才没丢）
+11. 签名通知加幂等（重复通知不再重复弹签名画板）
+12. 恒迅版布局补齐 `viewInformSignature` 控件（签名通知入口）
 ## 6.0.43（未发布）
 1. 批注提交改为**局部 patch 重绘**：只重绘笔迹包围盒（实测 3–8ms，原整页重绘约 160ms），
    页面内容区与整页重绘逐像素一致；撤销/共享等其它刷新路径仍走整页重绘
@@ -107,7 +126,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:6.0.42")
+	        implementation("com.github.kelvin-panda:mupdf:7.0.0")
 	}
 ```
 **依赖方module**
@@ -133,14 +152,75 @@ android{
 
 **使用**
 
+> 7.0.0 起必须注入 `MupdfHost`；不注入会抛 `IllegalStateException`。
+> 只需要实现用得到的回调，其余保持接口的 `default` 空实现即可。
+
 ```java
-    private void openMupdf(Uri uri) {
-        MupdfConfig mupdfConfig = new MupdfConfig.Builder()
-                .fileUri(uri.toString())//文件uri
-                .build();
-        MuPdfDocumentActivity.jump(this, mupdfConfig);
+// 1) 实现端口（建议用 Application / 长生命周期对象，不要在每次打开时 new）
+public class PdfHost implements MupdfHost {
+    private MupdfSession session;
+
+    @Override public void onSessionReady(MupdfSession session) {
+        this.session = session;                 // 之后所有入站指令都走它
     }
+    @Override public void onSessionClosed(String sessionId, int reason) {
+        this.session = null;                    // 必须清，否则泄漏
+    }
+    @Override public void onUploadRequested(String savedPath, int uploadDirId) {
+        // 批注保存完成，交给自己的上传逻辑
+    }
+    @Override public void onLocalOperations(List<MupdfInkBean> ops) {
+        // 本地批注操作：是否转发给其它端由这里决定
+    }
+    @Override public void onOpenExternally(String filePath, String uri) {
+        // 用外部应用打开
+    }
+}
+
+// 2) 打开
+private void openMupdf(Uri uri) {
+    MupdfConfig mupdfConfig = new MupdfConfig.Builder()
+            .fileUri(uri.toString())        // 文件 uri
+            .sessionId("pdf-" + System.currentTimeMillis())   // 会话标识（并存路由键）
+            .host(pdfHost)                  // 必填
+            .build();
+    MuPdfDocumentActivity.jump(this, mupdfConfig);
+}
+
+// 3) 投递远端批注（任意线程）
+MupdfSession s = pdfHost.session;
+if (s != null && s.isActive()) {
+    s.receiveRemoteOperations(remoteOps);
+}
 ```
+
+# 从 6.x 迁移到 7.0.0
+
+7.0.0 是**破坏性**版本：EventBus 相关 API 全部删除，升级后旧代码无法编译（这是有意的，避免静默失效）。
+
+| 6.x | 7.0.0 |
+|---|---|
+| `EventBus.getDefault().register(this)` + `@Subscribe(MupdfEventMessage)` | `implements MupdfHost`，通过 `MupdfConfig.Builder.host(...)` 注入 |
+| `MupdfBus.post(MupdfBusType.receive_annotation_info, ops)` | `session.receiveRemoteOperations(ops)` |
+| `MupdfBus.post(MupdfBusType.close_mupdf)` | `session.close()` |
+| `MupdfBus.post(MupdfBusType.mupdf_create_signature_row, names, ids)` | `session.createSignatureTable(names, ids)` |
+| `MupdfBus.post(MupdfBusType.submit_member_signature, id, bmp)` | `session.submitMemberSignature(id, bmp)` |
+| `MupdfBus.post(MupdfBusType.receive_inform_signature)` | `session.requestHostSignature()` |
+| `MupdfMacro.isSharing` | 由宿主自己维护（库总是回调 `onLocalOperations`） |
+| `MupdfMacro.currentMediaId` | `MupdfSession#mediaId()` / `hasDocument(int)` |
+| `MupdfMacro.isHengXunVersion` | `MupdfConfig.Builder.hengXunStyle(true)` |
+| `MupdfMacro.shareAnnotationEnable` | `MupdfConfig.Builder.shareAnnotationEnabled(true)` |
+| `MupdfMacro.reset()` | 删除；由宿主在会话结束时自行清理 |
+| `com.xlk.mupdf.library.bus.MupdfInkBean` | `com.xlk.mupdf.library.api.MupdfInkBean` |
+
+**升级检查清单**
+
+- [ ] 删除所有 `EventBus.default().register/unregister` 与 `@Subscribe` 方法
+- [ ] 删除对 `MupdfBus` / `MupdfBusType` / `MupdfEventMessage` 的引用（编译期会报错）
+- [ ] 所有 `MupdfMacro.*` 赋值改为 `MupdfConfig.Builder`（或宿主自己的状态类）
+- [ ] 所有 `jump()` 调用点补 `.sessionId(...)` 与 `.host(...)`
+- [ ] `MupdfInkBean` 的 import 从 `bus.*` 改为 `api.*`
+- [ ] 若宿主自身也在用 EventBus，可保留自己的依赖（库不再传递它）
 
 **示例图**
 

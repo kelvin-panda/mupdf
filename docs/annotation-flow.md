@@ -110,7 +110,7 @@ else                                 →  draw()               // 绘制
    - 返回 **percentPoints（0~1 归一化坐标）**，用于跨端共享；
 7. **记录与广播**：
    `recordLocalOperation(MupdfInkBean.createAdd(opId, type, ptSize, color, segments))`；
-   若 `MupdfMacro.isSharing` → EventBus `inform_share_annotation`；
+   → `MupdfHost#onLocalOperations(List<MupdfInkBean>)`（7.0.0 起库不再判断是否共享，一律回调，由宿主决定是否外发）；
 8. **刷新页面**：`scheduleAnnotationPagesUpdate(changedPages, patchRects)`
    - 50ms 合并后按页刷新；**有 patch 记录的页走 `PageView.updatePatch()` 局部重绘**（只渲染这一笔的包围盒，
      实测 3–8ms），其余情况走 `PageView.update()` 整页重绘（约 160ms）；
@@ -148,7 +148,7 @@ else                                 →  draw()               // 绘制
 - `saveAndExit()`（后台线程）：
   `core.save(srcFilePath, annotationSavePath)`
   = 复制源文件到「批注保存目录」+ `doc.saveDoc(dest, "incremental")`（**增量保存**）；
-  成功后 EventBus `inform_upload(savePath, uploadDirId)`，由外部负责上传，随后 `finish()`；
+  成功后回调 `MupdfHost#onUploadRequested(savePath, uploadDirId)`，由外部负责上传，随后 `finish()`；
 - 水印、签名表、自由文本批注同样会置 `hadAnnotation = true`，共用这套保存判断。
 
 ---
@@ -183,7 +183,7 @@ else                                 →  draw()               // 绘制
 |---|---|---|
 | `AnnotationBean` | `annotation/AnnotationBean.java` | 一笔的数据：`key`(operationId)、`type`、`points`(文档坐标)、`paintSize`、`paintColor` |
 | `AnnotationArtBoard.DrawPath` | `AnnotationArtBoard` | 浮层已画路径（旧版共享模式遗留）+ 删除标记 |
-| `MupdfInkBean` | `bus/MupdfInkBean.java` | 可同步的批注操作：`OP_ADD / OP_ERASE / OP_UNDO` + `InkSegment`(百分比坐标) + `targetOperationIds` |
+| `MupdfInkBean` | `api/MupdfInkBean.java` | 可同步的批注操作：`OP_ADD / OP_ERASE / OP_UNDO` + `InkSegment`(百分比坐标) + `targetOperationIds` |
 | `PagePointSegment` / `PageLinePart` | `MuPdfDocumentActivity` | 按页裁剪的中间结果（每页一段及其点集） |
 | `MuPDFCore.SharedAnnotationData` | `MuPDFCore` | 写入远端批注的入参（pageNumber / type / strokeWidth / argb / 百分比点） |
 | `MuPDFCore.AnnotationPathBean` | `MuPDFCore` | 批注 → `Path` 的命中检测载体（`areaHit` 区分区域型批注） |
@@ -198,18 +198,24 @@ else                                 →  draw()               // 绘制
 ```
 本地一笔
   → recordLocalOperation(MupdfInkBean OP_ADD，segments 为百分比坐标)
-  → (isSharing) EventBus inform_share_annotation  → 外部网络层
+  → MupdfHost#onLocalOperations(List<MupdfInkBean>)  → 外部网络层
+     （7.0.0 起库不再判断"是否处于共享中"，一律回调，是否转发由宿主决定）
 
 远端操作到达
-  → EventBus receive_annotation_info
+  → MupdfSession#receiveRemoteOperations(List<MupdfInkBean>)
   → enqueueSharedOperations()   // 按 processedSharedOperationIds 去重、写入 pendingSharedOperations
-  → drainSharedOperations()     // 按 operationId 排序 + 批量处理
+  → drainSharedOperations()     // 按 operationId 排序 + 批量处理（120ms 合批）
       OP_ADD : addOperationToCore() → core.addSharedAnnotations()
                (百分比 → PDF点 → createAnnotation → 用同一 operationId 注册)
       OP_ERASE / OP_UNDO : 需要依赖的 OP_ADD 已到达
                (hasOperationTargets / hasUndoDependencies)，否则按次数重试
   → refreshAfterSharedChanges() / afterAnnotationPreservingScroll()
 ```
+
+> **7.0.0 变更**：原 `EventBus` 广播已移除。宿主实现 `api/MupdfHost` 接收回调、
+> 通过 `api/MupdfSession` 定向投递远端操作；会话状态（是否共享、参与人、发起人）
+> 由宿主持有，库内不再有 `MupdfMacro.isSharing` 等静态字段。
+> 迁移细节见 [`eventbus-to-port-migration.md`](eventbus-to-port-migration.md)。
 
 要点：
 - 共享坐标一律使用**百分比**，与设备分辨率、缩放无关；

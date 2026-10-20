@@ -1,9 +1,55 @@
 # EventBus → Port/Session 迁移设计稿
 
-> **状态**：设计稿（未落地任何代码）
+> **状态**：**已落地（P1~P3 完成，P2c 待做）** —— 见下方「实施状态」
 > **目标版本**：7.0.0（major，允许破坏性改动）
-> **前置决策**：① 允许破坏性改动；② 按"进程内可能并存多个会话"设计；③ 入站调用方是页面级
-> **本文档的用途**：作为 P1~P4 的施工图。第 3 章可直接落成代码骨架，第 4/5/6 章是逐点对照清单，第 7 章交给依赖端（宿主 App）团队。
+> **前置决策**：① 允许破坏性改动；② 按"进程内可能并存多个会话"设计；③ 入站调用方：设计阶段按"页面级"评估，实测为 **Service 持有的 app 级单例**（见实施状态 §D2）
+> **本文档的用途**：作为 P1~P4 的施工图。第 3 章是契约定义，第 4/5/6 章是逐点对照清单，第 7 章交给依赖端（宿主 App）团队。
+
+---
+
+## 实施状态
+
+### 已完成
+
+| 阶段 | 状态 | 产物 |
+|---|---|---|
+| P1 新增 `api` 包 | ✅ | `MupdfHost` / `MupdfSession` / `MupdfSessions` / `MupdfExitReason` / `MupdfResult`；`MupdfConfig` 新增 `sessionId` / `host` / `shareAnnotationEnabled` / `hengXunStyle` |
+| P2 Activity 接线 | ✅ | 13 个出站点改 `dispatchHost(...)`；`@Subscribe` → `SessionImpl`；`startSession()` / `sessionEnded(reason)`；`jump()` fail-fast |
+| P3 破坏性收尾 | ✅ | 删除 `bus/` 三个类与 `eventbus` 依赖；`MupdfInkBean`/`MupdfOperationId` 移入 `api`；移除 7 个会话级静态字段与 `reset()`；版本 → 7.0.0 |
+| P4 文档与示例 | ✅ | `example` 改为 `MupdfHost` 示范；`README` / `annotation-flow.md` / `AGENTS.md` / `CLAUDE.md` 更新 |
+
+### 未完成 / 已知遗留
+
+| 项 | 说明 |
+|---|---|
+| **P2c：显示类静态字段** | `MupdfMacro.clarityLimitMode` / `backgroundColor` / `brightness` 仍为 `public static`；`PageView` 有 8 个读取点（`setBackgroundColor` 4 处、`buildColorFilter()` 1 处、`clarityLimitMode` 3 处）。**实际影响**：进程内并存两个阅读器时纸张色/亮度/清晰度互相干扰。单会话场景无影响，因此未纳入 7.0.0 |
+| **`MupdfLauncher`** | 设计中的 `ActivityResultContract` 便利路径未实现；宿主统一走 `MupdfHost` 即可，`MupdfResult` 已预留 |
+| **`pdfArtBoardPicture` 等宿主侧协议** | 属于宿主 App 的协议层，不在本库范围（`hengxun` 已在自身 `JniHelper` 中补齐） |
+
+### 与设计稿的偏差（按实际实现修正）
+
+**D1. `MupdfSession` 比设计稿多了两个只读能力**
+
+实际实现增加了 `mediaId()` 与 `hasDocument(int)` —— 因为宿主原本靠 `MupdfMacro.currentMediaId` 判断"当前打开的是哪个文件"，删掉静态字段后必须有等价能力。
+
+**D2. 入站调用方不是"页面级"**
+
+原设计假设由宿主页面持有 `MupdfSession`。实测（`Paperless` 的 `PDFAnnotationEvent`）由 `FrontDeskService` 持有，是 **Service 级 app 单例**。
+这反而让设计更简单：**打开方 = 接收方**，`onSessionReady` 拿到的句柄可以一直持有到 `onSessionClosed`，`MupdfSessions.find()` 退化为"页面重建后重连"的可选兜底。
+
+**D3. `MupdfHost` 是接口、不能进 Bundle**
+
+`MupdfConfig.host(MupdfHost)` 无法经 Intent 传递，实际用 `PENDING_HOSTS`（`sessionId → host` 静态表）在 `jump()` 与 Activity 之间交接，Activity 重建后仍能取回同一个 host。
+一旦「宿主忘了调 `host(...)`」就变成运行时静默丢事件，因此在 `jump()` 里做了 fail-fast：`host == null` 直接抛 `IllegalStateException`。
+
+**D4. `onAnnotationSessionExited` 改为无条件回调**
+
+设计稿里它受 `MupdfMacro.isSharing` 保护；7.0.0 删掉该字段后改为**总是回调**（`sessionEnded()` 内部），由宿主判断是否发协议。
+⚠️ 副作用：Activity 重建（旋转 / `onNewIntent` → `recreate()`）也会走一次会话结束，宿主若直接发「退出共享」会误断。宿主侧需做「重建宽限」判断（`hengxun` 用 400ms 延迟 + 复查 `isActive()`）。
+
+**D5. 触摸事件不做节流**
+
+设计稿 O1 建议 1s 节流；实际按「库只做中性回调、节流交给宿主」实现，因为库无法判断宿主的用途（例如"悬浮控件隐藏时才需要唤醒"的边沿触发）。
 
 ---
 
