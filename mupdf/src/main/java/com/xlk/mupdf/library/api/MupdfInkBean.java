@@ -1,4 +1,4 @@
-package com.xlk.mupdf.library.bus;
+package com.xlk.mupdf.library.api;
 
 import com.artifex.mupdf.fitz.Point;
 
@@ -7,6 +7,14 @@ import java.util.Collections;
 import java.util.List;
 
 /**
+ * 可跨端同步的批注操作。
+ *
+ * <p>载荷经 {@link MupdfHost#onLocalOperations(List)} 发出、
+ * 经 {@link MupdfSession#receiveRemoteOperations(List)} 回到库内。</p>
+ *
+ * <p>坐标一律使用<b>百分比</b>（{@link InkSegment#getPoints()}，0~1），
+ * 与设备分辨率、缩放无关。</p>
+ *
  * @author : Administrator
  * created on 2025/6/23 17:56
  */

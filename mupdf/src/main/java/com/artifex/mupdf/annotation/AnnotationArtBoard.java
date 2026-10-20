@@ -20,7 +20,7 @@ import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.viewer.MuPDFCore;
 import com.artifex.mupdf.viewer.PageView;
 import com.artifex.mupdf.viewer.ReaderView;
-import com.xlk.mupdf.library.bus.MupdfOperationId;
+import com.xlk.mupdf.library.api.MupdfOperationId;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

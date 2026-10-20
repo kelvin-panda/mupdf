@@ -1,5 +1,9 @@
 package com.xlk.mupdf.library;
 
+import androidx.annotation.Nullable;
+
+import com.xlk.mupdf.library.api.MupdfHost;
+
 /**
  * 宏开关
  *
@@ -40,6 +44,18 @@ public class MupdfConfig {
     private final boolean backButtonEnabled;
     private final boolean informSignature;
     private final boolean shouldSignature;
+    /**
+     * 会话标识，用于并存会话的路由。见 {@link com.xlk.mupdf.library.api.MupdfSession#id()}。
+     */
+    private final String sessionId;
+    /**
+     * 库 → 宿主的能力端口，取代原先的 EventBus 出站事件。
+     */
+    private final MupdfHost host;
+    private final boolean shareAnnotationEnabled;
+    private final boolean shareAnnotationConfigured;
+    private final boolean hengXunStyle;
+    private final boolean hengXunStyleConfigured;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -75,6 +91,12 @@ public class MupdfConfig {
         this.backButtonEnabled = builder.backButtonEnabled;
         this.informSignature = builder.informSignature;
         this.shouldSignature = builder.shouldSignature;
+        this.sessionId = builder.sessionId;
+        this.host = builder.host;
+        this.shareAnnotationEnabled = builder.shareAnnotationEnabled;
+        this.shareAnnotationConfigured = builder.shareAnnotationConfigured;
+        this.hengXunStyle = builder.hengXunStyle;
+        this.hengXunStyleConfigured = builder.hengXunStyleConfigured;
     }
 
     public String getFilePath() {
@@ -209,6 +231,51 @@ public class MupdfConfig {
         return shouldSignature;
     }
 
+    /**
+     * 会话标识。宿主不设置时，库会按 {@code "mupdf-" + 自增序号} 自动生成一个并打告警日志。
+     */
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    /**
+     * 库 → 宿主的能力端口，详见 {@link MupdfHost}。
+     */
+    @Nullable
+    public MupdfHost getHost() {
+        return host;
+    }
+
+    /**
+     * 是否显示"邀请他人批注"入口（原 {@code MupdfMacro.shareAnnotationEnable}）。
+     */
+    public boolean isShareAnnotationEnabled() {
+        return shareAnnotationEnabled;
+    }
+
+    /**
+     * 宿主是否显式配置过 {@link #isShareAnnotationEnabled()}。
+     * 未配置时库回退读 {@code MupdfMacro.shareAnnotationEnable}，保证 6.x 行为不变。
+     */
+    public boolean isShareAnnotationConfigured() {
+        return shareAnnotationConfigured;
+    }
+
+    /**
+     * 是否使用恒迅版界面布局（原 {@code MupdfMacro.isHengXunVersion}）。
+     */
+    public boolean isHengXunStyle() {
+        return hengXunStyle;
+    }
+
+    /**
+     * 宿主是否显式配置过 {@link #isHengXunStyle()}。
+     * 未配置时库回退读 {@code MupdfMacro.isHengXunVersion}，保证 6.x 行为不变。
+     */
+    public boolean isHengXunStyleConfigured() {
+        return hengXunStyleConfigured;
+    }
+
     @Override
     public String toString() {
         return "MupdfConfig{" +
@@ -245,6 +312,12 @@ public class MupdfConfig {
                 ", backButtonEnabled=" + backButtonEnabled +
                 ", informSignature=" + informSignature +
                 ", shouldSignature=" + shouldSignature +
+                ", sessionId='" + sessionId + '\'' +
+                ", host=" + (host == null ? "null" : host.getClass().getName()) +
+                ", shareAnnotationEnabled=" + shareAnnotationEnabled +
+                ", shareAnnotationConfigured=" + shareAnnotationConfigured +
+                ", hengXunStyle=" + hengXunStyle +
+                ", hengXunStyleConfigured=" + hengXunStyleConfigured +
                 '}';
     }
 
@@ -318,6 +391,12 @@ public class MupdfConfig {
          * 参会端收到秘书的签名通知时并未打开打开文件，在下载完毕进行打开时设置为true
          */
         private boolean shouldSignature = false;
+        private String sessionId = "";
+        private MupdfHost host = null;
+        private boolean shareAnnotationEnabled = false;
+        private boolean shareAnnotationConfigured = false;
+        private boolean hengXunStyle = false;
+        private boolean hengXunStyleConfigured = false;
 
         /**
          * 设置PDF预览文件（文件绝对路径）。
@@ -554,6 +633,61 @@ public class MupdfConfig {
          */
         public Builder shouldSignature(boolean shouldSignature) {
             this.shouldSignature = shouldSignature;
+            return this;
+        }
+
+        /**
+         * 设置会话标识，用于并存会话的定向路由。
+         *
+         * <p>7.0.0 起库不再使用全局 EventBus 广播，每个阅读会话需要唯一标识。
+         * 不设置时库会自动生成并打告警日志，但宿主就无法用
+         * {@link com.xlk.mupdf.library.api.MupdfSessions#find(String)} 找回句柄。</p>
+         *
+         * <p>建议用业务主键或 {@code 文件路径 + 时间戳}，保证宿主进程内唯一。</p>
+         *
+         * @param sessionId 会话标识
+         */
+        public Builder sessionId(String sessionId) {
+            this.sessionId = sessionId == null ? "" : sessionId;
+            return this;
+        }
+
+        /**
+         * 注入库 → 宿主的能力端口，取代原先的 EventBus 事件订阅。
+         *
+         * @param host 端口实现，可为单例；库只在会话期间持有引用
+         * @see MupdfHost
+         */
+        public Builder host(MupdfHost host) {
+            this.host = host;
+            return this;
+        }
+
+        /**
+         * 是否显示"邀请他人批注"入口。
+         *
+         * <p>不调用本方法时，库回退读取 {@code MupdfMacro.shareAnnotationEnable}，
+         * 与 6.x 行为一致。</p>
+         *
+         * @param enable true or false
+         */
+        public Builder shareAnnotationEnabled(boolean enable) {
+            this.shareAnnotationEnabled = enable;
+            this.shareAnnotationConfigured = true;
+            return this;
+        }
+
+        /**
+         * 是否使用恒迅版界面布局。
+         *
+         * <p>不调用本方法时，库回退读取 {@code MupdfMacro.isHengXunVersion}，
+         * 与 6.x 行为一致。</p>
+         *
+         * @param enable true or false
+         */
+        public Builder hengXunStyle(boolean enable) {
+            this.hengXunStyle = enable;
+            this.hengXunStyleConfigured = true;
             return this;
         }
 

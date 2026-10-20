@@ -1,9 +1,11 @@
-package com.xlk.mupdf.library.bus;
+package com.xlk.mupdf.library.api;
 
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 生成微秒级且当前进程内单调递增的操作标识。
+ *
+ * @author : Administrator
  */
 public final class MupdfOperationId {
     private static final AtomicLong LAST_ID = new AtomicLong();

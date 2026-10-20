@@ -4,9 +4,6 @@ import android.graphics.Color;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.PointF;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * @author : Administrator
  * created on 2025/6/20 15:22
@@ -15,18 +12,10 @@ public class MupdfMacro {
     public static final String TAG = "MuPDF";
 
     //<editor-fold desc="功能开关">
-    /**
-     * 恒迅版本的图标不同
-     */
-    public static boolean isHengXunVersion = false;
-    /**
-     * 共享pdf批注开关，默认false
-     */
-    public static boolean shareAnnotationEnable = false;
-    /**
-     * 可删除之前的批注的开关，默认false
-     */
-    public static boolean delete_history_annotation = false;
+    // 7.0.0 起：isHengXunVersion / shareAnnotationEnable / delete_history_annotation 三个静态开关
+    // 已迁移到 MupdfConfig.Builder（hengXunStyle / shareAnnotationEnabled），
+    // 静态字段本身不再存在，避免"必须早于 jump() 赋值"的隐式时序契约。
+    // 尚未迁移：clarityLimitMode / backgroundColor / brightness（PageView 有 8 个读取点，见 P2c）。
 
     /**
      * <p>清晰度限制，取值范围[0,4]，小于0表示不限制</p>
@@ -236,32 +225,25 @@ public class MupdfMacro {
     public static final String bundle_key_back_button_enabled = "back_button_enabled";
     public static final String bundle_key_inform_signature = "bundle_key_inform_signature";
     public static final String bundle_key_shouldSignature = "bundle_key_shouldSignature";
+    /**
+     * 会话标识（7.0.0 起用于定向路由，替代 EventBus 广播）。
+     */
+    public static final String bundle_key_session_id = "bundle_key_session_id";
+    /**
+     * 恒迅版界面布局开关（原 {@code MupdfMacro.isHengXunVersion}）。
+     */
+    public static final String bundle_key_heng_xun_style = "bundle_key_heng_xun_style";
+    /**
+     * 共享批注入口开关（原 {@code MupdfMacro.shareAnnotationEnable}）。
+     */
+    public static final String bundle_key_share_annotation_enabled = "bundle_key_share_annotation_enabled";
 
     // 变量
-
-    //<editor-fold desc="共享批注相关">
-
-    /**
-     * 所有正在参与共享绘制的设备id
-     */
-    public static List<Integer> sharingIds = new ArrayList<>();
-    public static boolean isSharing;
-    public static long launchSrcwbid;//发起人的白板标识 取微秒级的时间作标识 白板标识使用
-    public static int launchSrcmemid;//发起人的人员ID
-    //</editor-fold>
-
-    public static int currentMediaId = -1;
-    public static String currentFilePath = "";
-    public static String currentUri = "";
-
-
-    public static void reset() {
-        sharingIds.clear();
-        isSharing = false;
-        launchSrcwbid = 0;
-        launchSrcmemid = 0;
-        currentMediaId = -1;
-        currentFilePath = "";
-        currentUri = "";
-    }
+    //
+    // 7.0.0 起，原先放在这里的会话级静态状态（isSharing / sharingIds / launchSrcwbid /
+    // launchSrcmempid / currentMediaId / currentFilePath / currentUri）已全部移除：
+    //   - 它们描述的是「宿主侧的会议白板会话」，所有权应归宿主，库不应读写，更不应在
+    //     onDestroy 里 reset()（那会把宿主状态一起清掉，见 docs/eventbus-to-port-migration.md D-A）；
+    //   - 库内需要的信息改由 MupdfSession#mediaId() / hasDocument(int) 提供；
+    //   - 是否转发共享批注由宿主决定（库总是回调 MupdfHost#onLocalOperations）。
 }

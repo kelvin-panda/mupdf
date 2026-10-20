@@ -25,29 +25,31 @@ import com.xlk.example.databinding.ActivityMainBinding;
 import com.xlk.mupdf.library.MuPdfDocumentActivity;
 import com.xlk.mupdf.library.MupdfClarityMode;
 import com.xlk.mupdf.library.MupdfConfig;
-import com.xlk.mupdf.library.MupdfMacro;
-import com.xlk.mupdf.library.bus.MupdfBusType;
-import com.xlk.mupdf.library.bus.MupdfEventMessage;
-
-import org.greenrobot.eventbus.EventBus;
-import org.greenrobot.eventbus.Subscribe;
-import org.greenrobot.eventbus.ThreadMode;
+import com.xlk.mupdf.library.api.MupdfHost;
+import com.xlk.mupdf.library.api.MupdfSession;
 
 import java.io.File;
+import java.util.List;
 
 import me.jessyan.autosize.internal.CancelAdapt;
 
-public class MainActivity extends AppCompatActivity implements CancelAdapt {
+/**
+ * 示例：7.0.0 起通过 {@link MupdfHost} 接收库的回调，不再使用 EventBus。
+ */
+public class MainActivity extends AppCompatActivity implements CancelAdapt, MupdfHost {
     private static final String TAG = "MainActivity";
     private int mode = MupdfClarityMode.UNRESTRICTED;
     private ActivityMainBinding bd;
+    /**
+     * 当前会话句柄。库在 onSessionReady 时给出，onSessionClosed 时失效。
+     */
+    private MupdfSession session;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         bd = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(bd.getRoot());
-        EventBus.getDefault().register(this);
         applyPermission();
         RadioGroup radioGroup = findViewById(R.id.radioGroup);
         radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
@@ -78,6 +80,54 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
         });
     }
 
+    //<editor-fold desc="MupdfHost（库 → 宿主）">
+
+    @Override
+    public void onSessionReady(MupdfSession session) {
+        this.session = session;
+        Log.d(TAG, "onSessionReady: id=" + session.id() + ", mediaId=" + session.mediaId());
+    }
+
+    @Override
+    public void onSessionClosed(String sessionId, int reason) {
+        this.session = null;
+        Log.d(TAG, "onSessionClosed: id=" + sessionId + ", reason=" + reason);
+    }
+
+    /**
+     * 用户选择外部应用打开（原 EventBus 的 {@code out_open_inform}）。
+     */
+    @Override
+    public void onOpenExternally(String filePath, String uri) {
+        Log.d(TAG, "onOpenExternally: filePath=" + filePath + ", uri=" + uri);
+        if (filePath == null || filePath.isEmpty()) {
+            Log.d(TAG, "onOpenExternally: uri=" + uri);
+            WpsUtil.openWps(this, Uri.parse(uri), true);
+        } else {
+            String destPath = getExternalCacheDir() + File.separator + FileUtils.getFileName(filePath);
+            boolean copy = FileUtils.copy(filePath, destPath);
+            Log.d(TAG, "onOpenExternally: filePath=" + filePath + ",destPath=" + destPath + ",copy=" + copy);
+            WpsUtil.openFile(this, destPath);
+        }
+    }
+
+    @Override
+    public void onScreenshotRequested(String docTitle) {
+        Log.d(TAG, "onScreenshotRequested: docTitle=" + docTitle);
+    }
+
+    @Override
+    public void onUploadRequested(String savedPath, int uploadDirId) {
+        Log.d(TAG, "onUploadRequested: savedPath=" + savedPath + ", dirId=" + uploadDirId);
+    }
+
+    @Override
+    public void onLocalOperations(List<com.xlk.mupdf.library.api.MupdfInkBean> operations) {
+        Log.d(TAG, "onLocalOperations: size=" + (operations == null ? 0 : operations.size()));
+    }
+
+    //</editor-fold>
+
     private final ActivityResultLauncher<Intent> applyPermission = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         int resultCode = result.getResultCode();
         if (Activity.RESULT_OK == resultCode) {
@@ -97,27 +147,6 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void eventBus(MupdfEventMessage msg) {
-        switch (msg.getType()) {
-            case MupdfBusType.out_open_inform: {
-                Object[] objects = msg.getObjects();
-                String filePath = (String) objects[0];
-                if (filePath.isEmpty()) {
-                    String uri = (String) objects[1];
-                    Log.d(TAG, "eventBus: uri=" + uri);
-                    WpsUtil.openWps(this, Uri.parse(uri), true);
-                } else {
-                    String destPath = getExternalCacheDir() + File.separator + FileUtils.getFileName(filePath);
-                    boolean copy = FileUtils.copy(filePath, destPath);
-                    Log.d(TAG, "eventBus: filePath=" + filePath + ",destPath=" + destPath + ",copy=" + copy);
-                    WpsUtil.openFile(this, destPath);
-                }
-                break;
-            }
-        }
-    }
-
     public void openPdfFile(View view) {
         pdfFileLauncher.launch("application/pdf");
     }
@@ -129,10 +158,12 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
             });
 
     private void openMupdf(Uri uri) {
-        MupdfMacro.delete_history_annotation = bd.cbDeleteAnnotation.isChecked();//清理批注
-        MupdfMacro.isHengXunVersion = bd.cbHengxun.isChecked();
         Log.d(TAG, "mode=" + mode);
         MupdfConfig mupdfConfig = new MupdfConfig.Builder()
+                // sessionId 是并存会话的路由键；Activity 重建后保持不变
+                .sessionId("example-" + System.currentTimeMillis())
+                // 注入能力端口，7.0.0 起必填（为 null 时 jump() 会抛 IllegalStateException）
+                .host(this)
                 .fileUri(uri.toString())
                 .clarityLimitMode(mode)                             //清晰度
                 .fullScreenEnable(bd.cbFull.isChecked())            //全屏
@@ -152,6 +183,8 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt {
                 .informSignature(bd.cbInformSignature.isChecked())  //通知签名（秘书端使用）
                 .shouldSignature(bd.cbShouldSignature.isChecked())  //打开后提交签名（参会端使用）
                 //界面水印
+                // 7.0.0：原 MupdfMacro.isHengXunVersion 静态开关迁到这里
+                .hengXunStyle(bd.cbHengxun.isChecked())
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);
     }
