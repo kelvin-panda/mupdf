@@ -89,4 +89,5 @@
 	<string name="mupdf_tip">提示</string>
 	<string name="mupdf_inform_signature">通知签名</string>
 
+    <string name="mupdf_signature_need_media_id">缺少文件ID，无法通知签名</string>
 </resources>

@@ -88,4 +88,5 @@
     <string name="mupdf_not_save">not save</string>
 	<string name="mupdf_tip">Tip</string>
 	<string name="mupdf_inform_signature">Sign Notice</string>
+    <string name="mupdf_signature_need_media_id">Missing file ID, cannot notify signature</string>
 </resources>

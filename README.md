@@ -1,6 +1,10 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 7.0.2
+1. 媒体 id 为 0 时「通知签名」入口**不显示**，点击也不再下发（加了 `Toast` 提示 `mupdf_signature_need_media_id`）
+   - 原因：签名通知依赖 `fileid` 定位文件，`mediaId == 0` 时对端无法处理
+2. 补充 `mupdf_signature_need_media_id` 中英文案
 ## 7.0.0（破坏性更新）
 1. **移除 EventBus**：宿主与库之间改为「端口 + 会话句柄」
    - 宿主实现 `api/MupdfHost`（全部方法 `default`，按需覆写），通过 `MupdfConfig.Builder.host(...)` 注入
@@ -126,7 +130,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:7.0.0")
+	        implementation("com.github.kelvin-panda:mupdf:7.0.2")
 	}
 ```
 **依赖方module**

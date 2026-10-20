@@ -1365,7 +1365,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         setViewShowState(viewTopAnnotation, annotationEnable);          //批注
         setViewShowState(viewArtFreeText, mAnnotationInputTextEnabled); //批注输入文本
         setViewShowState(btnBackButton, mBackButtonEnabled);            //返回按钮
-        setViewShowState(viewInformSignature, mInformSignatureEnabled); //通知签名（秘书端使用）
+        // 通知签名（秘书端使用）：媒体 id 为 0 时协议广播无效（对端拿不到文件），直接不显示
+        setViewShowState(viewInformSignature, mInformSignatureEnabled && mediaId != 0);
         if (isOnlyPreview) {
             setViewShowState(viewTopScreenshot, false);
             setViewShowState(viewTopSignature, false);
@@ -1486,6 +1487,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //秘书端通知参会人签名
         if (viewInformSignature != null) {
             viewInformSignature.setOnClickListener(v -> {
+                // 媒体 id 为 0：签名通知发出去对端也定位不到文件，直接提示
+                if (mediaId == 0) {
+                    Toast.makeText(MuPdfDocumentActivity.this,
+                            R.string.mupdf_signature_need_media_id, Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 if (signatureMemberIdList != null && !signatureMemberIdList.isEmpty()) {
                     return;
                 }
