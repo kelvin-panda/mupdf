@@ -1,8 +1,12 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
-## 7.0.3
-1. **业务规则：别人画的批注只能别人删除**
+## 7.0.4
+1. 修复「概率性擦不掉自己的笔画」：本地擦除的**命中测试**先排除共享来源（别人画的）批注
+   - 原因：两者位置重叠时 `findShouldDeleteAnnotation` 会一直命中别人的笔而被拦，
+     同一位置下自己的笔永远轮不到
+   - 现在橡皮只考虑可擦除的批注；别人的笔不再参与命中
+## 7.0.31. **业务规则：别人画的批注只能别人删除**
    - 共享通道写入的批注（`MuPDFCore.addSharedAnnotations`）登记为"共享来源"，
      本地擦除（`deleteAnnotationWithOperationIds`）不再命中它们，直接返回空结果并打日志
    - 避免"本地擦掉、其它端仍在、保存后分叉"

@@ -927,7 +927,17 @@ public class MuPDFCore {
             float realHeight = bounds.y1 - bounds.y0;
             float pdfX = realWidth / width * x;
             float pdfY = realHeight / height * y;
-            List<AnnotationPathBean> annotationPathBeans = annotations2path(annotations);
+            // 命中测试前先排除"不可擦"的候选（别人画的笔）：
+            // 否则两者重叠时橡皮会一直命中别人的笔而被拦，导致本机自己的笔永远擦不到。
+            List<PDFAnnotation> erasable = new ArrayList<>(annotations.length);
+            for (PDFAnnotation annotation : annotations) {
+                Long opId = operationIdByAnnotation.get(annotation);
+                if (opId != null && sharedOperationIds.contains(opId)) continue;
+                erasable.add(annotation);
+            }
+            if (erasable.isEmpty()) return new long[0];
+            List<AnnotationPathBean> annotationPathBeans =
+                    annotations2path(erasable.toArray(new PDFAnnotation[0]));
             PDFAnnotation pdfAnnotation = findShouldDeleteAnnotation(annotationPathBeans, pdfX, pdfY);
             if (pdfAnnotation != null) {
                 Long operationId = operationIdByAnnotation.get(pdfAnnotation);
