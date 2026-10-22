@@ -19,7 +19,7 @@
             android:layout_height="wrap_content"
             android:layout_alignParentTop="true"
             android:layout_centerHorizontal="true"
-            tools:visibility="visible">
+            tools:visibility="gone">
 
             <LinearLayout
                 android:id="@+id/mainBar"
@@ -501,7 +501,7 @@
             android:layout_height="wrap_content"
             android:background="@color/toolbar"
             android:visibility="invisible"
-            tools:visibility="gone">
+            tools:visibility="visible">
 
             <LinearLayout
                 android:id="@+id/inkOperationLayout"

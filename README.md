@@ -1,8 +1,15 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
-## 7.0.2
-1. 媒体 id 为 0 时「通知签名」入口**不显示**，点击也不再下发（加了 `Toast` 提示 `mupdf_signature_need_media_id`）
+## 7.0.3
+1. **业务规则：别人画的批注只能别人删除**
+   - 共享通道写入的批注（`MuPDFCore.addSharedAnnotations`）登记为"共享来源"，
+     本地擦除（`deleteAnnotationWithOperationIds`）不再命中它们，直接返回空结果并打日志
+   - 避免"本地擦掉、其它端仍在、保存后分叉"
+   - 远端下发删除 / 撤销（`deleteAnnotationsByOperationIds`、`applyRemoteOperation`）不受影响
+   - 本地"撤销擦除"恢复出来的笔通过 `MuPDFCore.markLocallyErasable` 恢复可擦除属性，
+     保证作者仍能删掉自己的内容
+## 7.0.21. 媒体 id 为 0 时「通知签名」入口**不显示**，点击也不再下发（加了 `Toast` 提示 `mupdf_signature_need_media_id`）
    - 原因：签名通知依赖 `fileid` 定位文件，`mediaId == 0` 时对端无法处理
 2. 补充 `mupdf_signature_need_media_id` 中英文案
 ## 7.0.0（破坏性更新）

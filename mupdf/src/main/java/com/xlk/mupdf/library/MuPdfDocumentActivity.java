@@ -2042,7 +2042,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             case MupdfInkBean.OP_UNDO:
                 if (!hasUndoDependencies(operation)) return false;
                 sharedOperationHistory.put(operation.getOperationId(), operation);
-                applyUndoOperation(operation, changedPages);
+                applyUndoOperation(operation, changedPages, false);
                 return true;
             default:
                 return true;
@@ -2076,7 +2076,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         return true;
     }
 
+    /**
+     * 默认按"本地操作"处理（本地撤销 / 取消批注）：恢复出来的笔仍属于本机，可以再次擦除。
+     */
     private void applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages) {
+        applyUndoOperation(undoOperation, changedPages, true);
+    }
+
+    /**
+     * @param local true = 本机发起的撤销（恢复的笔可再次擦除）；
+     *              false = 远端下发的撤销（恢复的是别人的笔，本地不可擦除）
+     */
+    private void applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages,
+                                    boolean local) {
         for (long targetOperationId : undoOperation.getTargetOperationIds()) {
             MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
             if (target == null) continue;
@@ -2089,6 +2101,10 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     if (erasedOperation != null
                             && erasedOperation.getOperationType() == MupdfInkBean.OP_ADD) {
                         addOperationToCore(erasedOperation, changedPages);
+                        if (local) {
+                            // 恢复的是本机内容：把"共享来源"标记去掉，作者仍能擦除
+                            core.markLocallyErasable(erasedOperationId);
+                        }
                     }
                 }
             }

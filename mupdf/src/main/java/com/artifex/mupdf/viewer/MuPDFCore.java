@@ -58,6 +58,14 @@ public class MuPDFCore {
      * PDF 批注与共享操作标识的映射，用于擦除和撤销。
      */
     private final Map<Long, List<PDFAnnotation>> annotationsByOperationId = new HashMap<>();
+
+    /**
+     * 由共享通道写入的批注（别人画的）。
+     *
+     * 业务规则：**别人批注的内容只能别人删除**，所以本地擦除不允许命中这些批注。
+     * 远端下发的删除（{@link #deleteAnnotationsByOperationIds}）不受此限制。
+     */
+    private final java.util.Set<Long> sharedOperationIds = new java.util.HashSet<>();
     private final Map<PDFAnnotation, Long> operationIdByAnnotation = new HashMap<>();
     private final Map<PDFAnnotation, Integer> pageIndexByAnnotation = new HashMap<>();
 
@@ -347,6 +355,7 @@ public class MuPDFCore {
                     if (annotation == null) continue;
                     annotation.update();
                     registerAnnotation(data.operationId, pageNum - 1, annotation);
+                    sharedOperationIds.add(data.operationId);
                     pageChanged = true;
                 }
                 if (pageChanged) pdfPage.update();
@@ -463,6 +472,16 @@ public class MuPDFCore {
             values[i * 2 + 1] = points[i].y;
         }
         return values;
+    }
+
+    /**
+     * 把某个操作标识标记为"本地可擦除"。
+     *
+     * 本地用户"撤销擦除"恢复自己的笔时，该笔会经共享通道重新写入（默认不可擦），
+     * 这里恢复其可擦除属性，保证作者仍能删掉自己的内容。
+     */
+    public synchronized void markLocallyErasable(long operationId) {
+        sharedOperationIds.remove(operationId);
     }
 
     private void registerAnnotation(long operationId, int pageIndex, PDFAnnotation annotation) {
@@ -913,6 +932,11 @@ public class MuPDFCore {
             if (pdfAnnotation != null) {
                 Long operationId = operationIdByAnnotation.get(pdfAnnotation);
                 if (operationId != null && operationId > 0) {
+                    // 别人批注的内容只能别人删除：本地擦除直接拒绝，避免本地删掉而其它端仍在
+                    if (sharedOperationIds.contains(operationId)) {
+                        Debugger.d(TAG + " erase blocked: operationId=" + operationId + " 属于其他参会人，只能由作者删除");
+                        return new long[0];
+                    }
                     deleteAnnotationsByOperationIds(new long[]{operationId});
                     return new long[]{operationId};
                 }
