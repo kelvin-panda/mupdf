@@ -1,7 +1,18 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
-## 7.0.11（本次发布）
+## 7.0.12
+1. **修复「共享批注时对端一操作，本机就闪屏刷新」**
+   - 原因：远端擦除 / 撤销没有笔迹包围盒，`refreshAfterSharedChanges()` 只能退回
+     `afterAnnotationPreservingScroll()` → `ReaderView#afterAnnotation()`，而它会
+     **移除并重建所有子 View**（`mAdapter.refresh()` + `mViewCache.clear()` + `requestLayout()` + `invalidate()`），
+     整屏重绘一次 → 肉眼就是闪一下。远端新增走的是 `updatePatch()` 局部重绘，所以不闪
+   - 现在 `MuPDFCore#deleteAnnotationsByOperationIds(...)` 会通过出参 `List<DeletedBounds>` 返回
+     被删批注的包围盒（PDF 点），宿主把它换算成页内显示像素并入 `sharedPatchRects`，
+     远端擦除 / 撤销也走 `updatePatch()` 局部重绘
+   - 即便个别情况下拿不到包围盒，也只重绘当前页的 `PageView`（`pv.update()`），不再整屏重建
+2. 新增日志：`远端操作：擦除 … 包围盒=N`、`共享批注当前页更新（无包围盒），按页重绘`
+## 7.0.11（已发布 tag）
 本次发布把 **7.0.5 ~ 7.0.10 的全部修复**合并成一个可依赖的版本（这几个版本只在本地产出过、没有单独打 tag），
 升级到 7.0.11 即等于拿到下面所有内容：
 
@@ -207,7 +218,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:7.0.11")
+	        implementation("com.github.kelvin-panda:mupdf:7.0.12")
 	}
 ```
 **依赖方module**

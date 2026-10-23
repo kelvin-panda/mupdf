@@ -767,11 +767,42 @@ public class MuPDFCore {
     }
 
     /**
+     * 被删除批注的包围盒（PDF 点），供宿主做局部重绘，避免整页重绘导致的闪烁。
+     */
+    public static class DeletedBounds {
+        public final int pageIndex;
+        public final float x0;
+        public final float y0;
+        public final float x1;
+        public final float y1;
+
+        DeletedBounds(int pageIndex, float x0, float y0, float x1, float y1) {
+            this.pageIndex = pageIndex;
+            this.x0 = x0;
+            this.y0 = y0;
+            this.x1 = x1;
+            this.y1 = y1;
+        }
+    }
+
+    /**
      * 删除一组共享操作创建的批注。
      *
      * @return 实际发生变化的页索引
      */
     public synchronized List<Integer> deleteAnnotationsByOperationIds(long[] operationIds) {
+        return deleteAnnotationsByOperationIds(operationIds, null);
+    }
+
+    /**
+     * 删除一组共享操作创建的批注。
+     *
+     * @param outDeletedBounds 可选：追加被删批注的包围盒（PDF 点），
+     *                         宿主据此只重绘这一小块，避免"对端一删我就整屏闪一下"
+     * @return 实际发生变化的页索引
+     */
+    public synchronized List<Integer> deleteAnnotationsByOperationIds(long[] operationIds,
+                                                                      List<DeletedBounds> outDeletedBounds) {
         List<Integer> changedPages = new ArrayList<>();
         if (operationIds == null || operationIds.length == 0) return changedPages;
         for (long operationId : operationIds) {
@@ -800,6 +831,7 @@ public class MuPDFCore {
                     if (annotations == null || annotations.isEmpty()) continue;
                     int deleteCount = 0;
                     for (PDFAnnotation annotation : new ArrayList<>(annotations)) {
+                        collectDeletedBounds(pageIndex, annotation, outDeletedBounds);
                         pdfPage.deleteAnnotation(annotation);
                         unregisterAnnotation(annotation);
                         deleteCount++;
@@ -817,6 +849,18 @@ public class MuPDFCore {
         }
         if (!changedPages.isEmpty()) invalidatePageCache();
         return changedPages;
+    }
+
+    private void collectDeletedBounds(int pageIndex, PDFAnnotation annotation,
+                                      List<DeletedBounds> out) {
+        if (out == null || annotation == null) return;
+        try {
+            Rect bounds = annotation.getBounds();
+            if (bounds == null) return;
+            out.add(new DeletedBounds(pageIndex, bounds.x0, bounds.y0, bounds.x1, bounds.y1));
+        } catch (Exception e) {
+            Debugger.e(TAG + " collectDeletedBounds Exception: " + e);
+        }
     }
 
     public synchronized boolean hasAnnotationsForOperation(long operationId) {

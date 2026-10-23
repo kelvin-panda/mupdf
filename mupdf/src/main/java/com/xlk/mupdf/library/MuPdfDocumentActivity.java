@@ -2050,11 +2050,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     return false;
                 }
                 sharedOperationHistory.put(operation.getOperationId(), operation);
+                List<MuPDFCore.DeletedBounds> erasedBounds = new ArrayList<>();
                 List<Integer> erasedPages = core.deleteAnnotationsByOperationIds(
-                        operation.getTargetOperationIds());
+                        operation.getTargetOperationIds(), erasedBounds);
+                // 记下被删批注的包围盒：远端擦除/撤销也走局部重绘，否则整页重绘会让对端"闪一下"
+                recordSharedPatchRects(erasedBounds);
                 Debugger.e("远端操作：擦除 targets="
                         + java.util.Arrays.toString(operation.getTargetOperationIds())
-                        + " 变更页=" + erasedPages);
+                        + " 变更页=" + erasedPages + " 包围盒=" + erasedBounds.size());
                 changedPages.addAll(erasedPages);
                 return true;
             case MupdfInkBean.OP_UNDO:
@@ -2115,8 +2118,12 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
             if (target == null) continue;
             if (target.getOperationType() == MupdfInkBean.OP_ADD) {
+                List<MuPDFCore.DeletedBounds> deletedBounds = new ArrayList<>();
                 List<Integer> pages = core.deleteAnnotationsByOperationIds(
-                        new long[]{targetOperationId});
+                        new long[]{targetOperationId}, deletedBounds);
+                // 撤销把某笔删掉时同样记录包围盒，让远端刷新走局部重绘
+                // （仅远端撤销：本地撤销的包围盒会污染下一次远端刷新的 patch 区域）
+                if (!local) recordSharedPatchRects(deletedBounds);
                 if (pages != null && !pages.isEmpty()) {
                     changedPages.addAll(pages);
                     changed = true;
@@ -2199,6 +2206,41 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         rememberLocalOperation(operation, true, true);
     }
 
+    /**
+     * 把被删批注的包围盒（PDF 点）转成页内显示像素，并入局部重绘区域。
+     *
+     * <p>远端擦除 / 撤销过去不记录包围盒，只能退回 {@code afterAnnotation()} 整屏重绘
+     * （它会移除并重建所有子 View），表现为"对端一操作我就闪一下"。</p>
+     */
+    private void recordSharedPatchRects(List<MuPDFCore.DeletedBounds> boundsList) {
+        if (boundsList == null || boundsList.isEmpty()) return;
+        for (MuPDFCore.DeletedBounds bounds : boundsList) {
+            recordSharedPatchRectForBounds(bounds);
+        }
+    }
+
+    private void recordSharedPatchRectForBounds(MuPDFCore.DeletedBounds bounds) {
+        if (bounds == null) return;
+        PointF pdfSize = getAnnotationPagePdfSize(bounds.pageIndex);
+        float pageW = getAnnotationPageWidth(bounds.pageIndex);
+        float pageH = getAnnotationPageHeight(bounds.pageIndex,
+                mDocView == null ? 0 : mDocView.getHeight());
+        if (pdfSize == null || pdfSize.x <= 0f || pdfSize.y <= 0f || pageW <= 0f || pageH <= 0f) {
+            return;
+        }
+        float scaleX = pageW / pdfSize.x;
+        float scaleY = pageH / pdfSize.y;
+        float half = 8f;
+        RectF rect = new RectF(bounds.x0 * scaleX - half, bounds.y0 * scaleY - half,
+                bounds.x1 * scaleX + half, bounds.y1 * scaleY + half);
+        RectF exist = sharedPatchRects.get(bounds.pageIndex);
+        if (exist == null) {
+            sharedPatchRects.put(bounds.pageIndex, rect);
+        } else {
+            exist.union(rect);
+        }
+    }
+
     private void rememberLocalOperation(MupdfInkBean operation,
                                         boolean addToUndoStack,
                                         boolean publish) {
@@ -2236,20 +2278,24 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         Map<Integer, RectF> patches = new HashMap<>(sharedPatchRects);
         sharedPatchRects.clear();
         boolean hasCurrentPatch = patches.containsKey(currentPageIndex);
-        if (currentPageChanged) {
-            if (mAnnotationVisible) {
-                Debugger.e("共享批注当前页有更新，批注中实时刷新页面");
-                afterAnnotationRefresh = true;
-                scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
-            } else if (hasCurrentPatch) {
-                // 远端新增笔迹落在当前页：只重绘笔迹包围盒（约 3~8ms），避免整页重绘闪屏
-                Debugger.e("共享批注当前页局部刷新（patch），避免整页重绘闪屏");
-                scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages), patches);
-            } else {
-                // 擦除/撤销等没有包围盒的操作，退回原来的整页刷新
-                afterAnnotationPreservingScroll();
-            }
+        if (currentPageChanged && mAnnotationVisible) {
+            // 批注中：页面被浮层盖住，直接重绘这一页即可
+            Debugger.e("共享批注当前页有更新，批注中实时刷新页面");
+            afterAnnotationRefresh = true;
+            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
+        } else if (currentPageChanged && hasCurrentPatch) {
+            // 远端新增/擦除落在当前页：只重绘变化的包围盒（约 3~8ms）
+            Debugger.e("共享批注当前页局部刷新（patch），避免整页重绘闪屏");
+            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages), patches);
+        } else if (currentPageChanged) {
+            // 没有包围盒（极少见，如目标在本机已不存在）：只重绘这一页的 View。
+            // 不能用 afterAnnotationPreservingScroll()：它会移除并重建所有子 View
+            //（mViewCache.clear() + requestLayout + invalidate），远端每次操作都整屏重绘一次，
+            // 就是"对端一操作、我这边就闪一下"的来源。
+            Debugger.e("共享批注当前页更新（无包围盒），按页重绘");
+            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
         } else {
+            // 变化的不是当前页：按页更新（有包围盒的页走局部重绘，其它页整页重绘）
             scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages), patches);
         }
     }
