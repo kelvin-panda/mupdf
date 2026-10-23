@@ -190,6 +190,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 由 {@link #recordPatchRect} 填写、笔画回调读取后用于 patch 刷新。
      */
     private final Map<Integer, RectF> strokePatchRects = new HashMap<>();
+
+    /**
+     * 远端（共享）新增笔迹的包围盒，按页记录。
+     *
+     * 用于"收到别人绘制且落在当前页"时走 {@link PageView#updatePatch} 局部重绘，
+     * 避免整页重绘（约 160ms）造成的闪屏。
+     */
+    private final Map<Integer, RectF> sharedPatchRects = new HashMap<>();
     private TextView viewArtSizeTv;
     private SeekBar viewArtSeekBar;
     private final int default_ink_size = 3;
@@ -271,6 +279,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      */
     private int annotationSessionStartIndex = 0;
     private int annotationOperationSessionStartIndex = 0;
+    /** 页面 PDF 尺寸缓存（页索引 → 点），用于把页宽换算成页高 */
+    private final Map<Integer, PointF> annotationPagePdfSizes = new HashMap<>();
     /**
      * 本机尚未撤销的操作，按完成顺序排列。
      */
@@ -2034,10 +2044,18 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private boolean applyRemoteOperation(MupdfInkBean operation, Set<Integer> changedPages) {
         switch (operation.getOperationType()) {
             case MupdfInkBean.OP_ERASE:
-                if (!hasOperationTargets(operation.getTargetOperationIds())) return false;
+                if (!hasOperationTargets(operation.getTargetOperationIds())) {
+                    Debugger.e("远端操作：擦除目标未就绪，等待重试 targets="
+                            + java.util.Arrays.toString(operation.getTargetOperationIds()));
+                    return false;
+                }
                 sharedOperationHistory.put(operation.getOperationId(), operation);
-                changedPages.addAll(core.deleteAnnotationsByOperationIds(
-                        operation.getTargetOperationIds()));
+                List<Integer> erasedPages = core.deleteAnnotationsByOperationIds(
+                        operation.getTargetOperationIds());
+                Debugger.e("远端操作：擦除 targets="
+                        + java.util.Arrays.toString(operation.getTargetOperationIds())
+                        + " 变更页=" + erasedPages);
+                changedPages.addAll(erasedPages);
                 return true;
             case MupdfInkBean.OP_UNDO:
                 if (!hasUndoDependencies(operation)) return false;
@@ -2079,28 +2097,38 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     /**
      * 默认按"本地操作"处理（本地撤销 / 取消批注）：恢复出来的笔仍属于本机，可以再次擦除。
      */
-    private void applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages) {
-        applyUndoOperation(undoOperation, changedPages, true);
+    private boolean applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages) {
+        return applyUndoOperation(undoOperation, changedPages, true);
     }
 
     /**
      * @param local true = 本机发起的撤销（恢复的笔可再次擦除）；
      *              false = 远端下发的撤销（恢复的是别人的笔，本地不可擦除）
+     * @return true 表示页面上确实有内容变化（撤销目标真的被删掉 / 恢复）。
+     *         注意不能拿 changedPages 的 size 变化来判断：一笔一页、多笔同页时
+     *         size 不变，会把后面那些"确实改了页面"的撤销漏掉，导致不转发给参与人。
      */
-    private void applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages,
-                                    boolean local) {
+    private boolean applyUndoOperation(MupdfInkBean undoOperation, Set<Integer> changedPages,
+                                       boolean local) {
+        boolean changed = false;
         for (long targetOperationId : undoOperation.getTargetOperationIds()) {
             MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
             if (target == null) continue;
             if (target.getOperationType() == MupdfInkBean.OP_ADD) {
-                changedPages.addAll(core.deleteAnnotationsByOperationIds(
-                        new long[]{targetOperationId}));
+                List<Integer> pages = core.deleteAnnotationsByOperationIds(
+                        new long[]{targetOperationId});
+                if (pages != null && !pages.isEmpty()) {
+                    changedPages.addAll(pages);
+                    changed = true;
+                }
             } else if (target.getOperationType() == MupdfInkBean.OP_ERASE) {
                 for (long erasedOperationId : target.getTargetOperationIds()) {
                     MupdfInkBean erasedOperation = sharedOperationHistory.get(erasedOperationId);
                     if (erasedOperation != null
                             && erasedOperation.getOperationType() == MupdfInkBean.OP_ADD) {
-                        addOperationToCore(erasedOperation, changedPages);
+                        if (addOperationToCore(erasedOperation, changedPages)) {
+                            changed = true;
+                        }
                         if (local) {
                             // 恢复的是本机内容：把"共享来源"标记去掉，作者仍能擦除
                             core.markLocallyErasable(erasedOperationId);
@@ -2109,11 +2137,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
             }
         }
+        return changed;
     }
 
-    private void addOperationToCore(MupdfInkBean operation, Set<Integer> changedPages) {
-        if (operation == null || operation.getOperationType() != MupdfInkBean.OP_ADD) return;
-        if (core.hasAnnotationsForOperation(operation.getOperationId())) return;
+    /**
+     * @return true 表示真的往页面里写入了标注（原本已存在则返回 false）
+     */
+    private boolean addOperationToCore(MupdfInkBean operation, Set<Integer> changedPages) {
+        if (operation == null || operation.getOperationType() != MupdfInkBean.OP_ADD) return false;
+        if (core.hasAnnotationsForOperation(operation.getOperationId())) return false;
         List<MuPDFCore.SharedAnnotationData> data = new ArrayList<>();
         for (MupdfInkBean.InkSegment segment : operation.getSegments()) {
             float[] points = segment.getPoints();
@@ -2121,9 +2153,46 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             data.add(new MuPDFCore.SharedAnnotationData(operation.getOperationId(),
                     segment.getPageNumber(), operation.getType(),
                     operation.getStrokeWidth(), operation.getArgb(), points));
-            changedPages.add(segment.getPageNumber() - 1);
+            int pageIdx = segment.getPageNumber() - 1;
+            changedPages.add(pageIdx);
+            recordSharedPatchRect(pageIdx, points, operation.getStrokeWidth());
         }
-        if (!data.isEmpty()) core.addSharedAnnotations(data);
+        if (data.isEmpty()) return false;
+        core.addSharedAnnotations(data);
+        return true;
+    }
+
+    /** 把远端笔迹的百分比坐标换算成页内显示像素的包围盒，供局部重绘使用。 */
+    private void recordSharedPatchRect(int pageIdx, float[] percentPoints, float strokeWidth) {
+        if (percentPoints == null || percentPoints.length < 2) return;
+        float pageW = getAnnotationPageWidth(pageIdx);
+        float pageH = mDocView == null ? 0f : mDocView.getPageDisplayHeight(pageIdx);
+        if (pageW <= 0f || pageH <= 0f) return;
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        for (int i = 0; i + 1 < percentPoints.length; i += 2) {
+            float x = percentPoints[i] * pageW;
+            float y = percentPoints[i + 1] * pageH;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+        if (minX > maxX) return;
+        float half = 6f;
+        try {
+            float scale = mDocView == null ? 0f : mDocView.getPageDisplayScale(pageIdx);
+            if (scale > 0f) half += strokeWidth * scale / 2f;
+        } catch (Exception e) {
+            Debugger.e(TAG, e);
+        }
+        RectF rect = new RectF(minX - half, minY - half, maxX + half, maxY + half);
+        RectF exist = sharedPatchRects.get(pageIdx);
+        if (exist == null) {
+            sharedPatchRects.put(pageIdx, rect);
+        } else {
+            exist.union(rect);
+        }
     }
 
     private void recordLocalOperation(MupdfInkBean operation) {
@@ -2153,9 +2222,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
             MupdfInkBean undoOperation = MupdfInkBean.createUndo(
                     com.xlk.mupdf.library.api.MupdfOperationId.next(), targetOperationId);
-            int changedCount = changedPages.size();
-            applyUndoOperation(undoOperation, changedPages);
-            if (changedPages.size() == changedCount) continue;
+            if (!applyUndoOperation(undoOperation, changedPages)) continue;
             rememberLocalOperation(undoOperation, false, true);
             break;
         }
@@ -2166,16 +2233,24 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private void refreshAfterSharedChanges(Set<Integer> changedPages) {
         boolean currentPageChanged = changedPages.contains(currentPageIndex);
+        Map<Integer, RectF> patches = new HashMap<>(sharedPatchRects);
+        sharedPatchRects.clear();
+        boolean hasCurrentPatch = patches.containsKey(currentPageIndex);
         if (currentPageChanged) {
             if (mAnnotationVisible) {
                 Debugger.e("共享批注当前页有更新，批注中实时刷新页面");
                 afterAnnotationRefresh = true;
                 scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
+            } else if (hasCurrentPatch) {
+                // 远端新增笔迹落在当前页：只重绘笔迹包围盒（约 3~8ms），避免整页重绘闪屏
+                Debugger.e("共享批注当前页局部刷新（patch），避免整页重绘闪屏");
+                scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages), patches);
             } else {
+                // 擦除/撤销等没有包围盒的操作，退回原来的整页刷新
                 afterAnnotationPreservingScroll();
             }
         } else {
-            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
+            scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages), patches);
         }
     }
 
@@ -2586,37 +2661,96 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         hideAnnotationViews(false, false);
     }
 
+    /**
+     * 取消批注（点 viewArtClose）：本次会话画的内容视为"不保存"。
+     *
+     * <p>除了本地丢弃，还必须把"丢弃"同步给参与人 —— 否则对端仍留着本机这次画的笔，
+     * 退出后就会变成"各自只剩对方的笔迹"。同步方式与撤销一致：为每条本机新增操作
+     * 生成一条 {@link MupdfInkBean#OP_UNDO}，由宿主转成 `(PDFWHITEBOARD, DEL)` 发出去。</p>
+     *
+     * <p>注意这里**不能**先撤销再走旧的"按页删最后一条"逻辑：
+     * 那段逻辑会额外多删一条（可能是对端后到的笔），并且用 changedPages 的 size 判断
+     * 是否变更会漏掉"多笔同页"的情况，导致部分笔没有同步出去。</p>
+     */
     private void cancelAnnotationAndHide() {
         Set<Integer> changedPages = new HashSet<>();
         List<MupdfInkBean> undoOperations = new ArrayList<>();
         int operationStartIndex = Math.max(0, Math.min(
                 annotationOperationSessionStartIndex, localOperationIds.size()));
-        for (int i = localOperationIds.size() - 1; i >= operationStartIndex; i--) {
-            long targetOperationId = localOperationIds.remove(i);
-            MupdfInkBean target = sharedOperationHistory.get(targetOperationId);
-            if (target == null) continue;
+        List<Long> sessionOperationIds = new ArrayList<>(
+                localOperationIds.subList(operationStartIndex, localOperationIds.size()));
+        localOperationIds.subList(operationStartIndex, localOperationIds.size()).clear();
+
+        // 本次会话里"本机画上去的笔"
+        Set<Long> sessionAddedIds = new HashSet<>();
+        for (long operationId : sessionOperationIds) {
+            MupdfInkBean operation = sharedOperationHistory.get(operationId);
+            if (operation != null && operation.getOperationType() == MupdfInkBean.OP_ADD) {
+                sessionAddedIds.add(operationId);
+            }
+        }
+
+        // 1) 本机新增的笔：本地删掉，并逐条把"删除"同步给参与人
+        for (long addedOperationId : sessionAddedIds) {
             MupdfInkBean undoOperation = MupdfInkBean.createUndo(
-                    com.xlk.mupdf.library.api.MupdfOperationId.next(), targetOperationId);
-            int changedCount = changedPages.size();
-            applyUndoOperation(undoOperation, changedPages);
-            if (changedPages.size() == changedCount) continue;
+                    com.xlk.mupdf.library.api.MupdfOperationId.next(), addedOperationId);
+            List<Integer> pages = core.deleteAnnotationsByOperationIds(
+                    new long[]{addedOperationId});
+            if (pages != null) changedPages.addAll(pages);
+            Debugger.e("取消批注：撤回本机笔 operationId=" + addedOperationId
+                    + " 变更页=" + pages + " 本机剩余登记=" + core.countRegisteredOperations());
+            // 本地可能已经不存在（本次会话里又被擦掉过），但**对端那一份仍然要删**，
+            // 所以无论本地有没有命中都发这条撤销。
             sharedOperationHistory.put(undoOperation.getOperationId(), undoOperation);
             processedSharedOperationIds.add(undoOperation.getOperationId());
             undoOperations.add(undoOperation);
         }
-        if (!undoOperations.isEmpty()) {
-            dispatchHost(h -> h.onLocalOperations(undoOperations));
+
+        // 2) 本次会话里擦掉的"历史笔"：按取消语义还原（用 markLocallyErasable 保证作者仍可再擦），
+        //    会话内自己画的笔已经在上一步整体删掉，这里跳过，避免"先还原再删除"的来回抖动。
+        for (long operationId : sessionOperationIds) {
+            MupdfInkBean operation = sharedOperationHistory.get(operationId);
+            if (operation == null
+                    || operation.getOperationType() != MupdfInkBean.OP_ERASE) {
+                continue;
+            }
+            boolean restored = false;
+            for (long erasedOperationId : operation.getTargetOperationIds()) {
+                if (sessionAddedIds.contains(erasedOperationId)) continue;
+                MupdfInkBean erasedOperation = sharedOperationHistory.get(erasedOperationId);
+                if (erasedOperation == null
+                        || erasedOperation.getOperationType() != MupdfInkBean.OP_ADD) {
+                    continue;
+                }
+                if (addOperationToCore(erasedOperation, changedPages)) restored = true;
+                core.markLocallyErasable(erasedOperationId);
+            }
+            if (!restored) continue;
+            MupdfInkBean undoOperation = MupdfInkBean.createUndo(
+                    com.xlk.mupdf.library.api.MupdfOperationId.next(), operationId);
+            sharedOperationHistory.put(undoOperation.getOperationId(), undoOperation);
+            processedSharedOperationIds.add(undoOperation.getOperationId());
+            undoOperations.add(undoOperation);
         }
 
-        int startIndex = Math.max(0, Math.min(annotationSessionStartIndex, savedAnnotationPages.size()));
-        for (int i = savedAnnotationPages.size() - 1; i >= startIndex; i--) {
+        if (!undoOperations.isEmpty()) {
+            Debugger.e("取消批注：本地撤回 " + undoOperations.size()
+                    + " 条本机操作，并把删除同步给参与人");
+            List<MupdfInkBean> batch = new ArrayList<>(undoOperations);
+            dispatchHost(h -> h.onLocalOperations(batch));
+        }
+
+        // 3) 兜底：没有操作标识的历史批注（老数据 / 即时保存模式），按页删"最后一笔本机批注"。
+        //    已被上面撤回逻辑处理过的页跳过，否则会多删一条。
+        int savedStartIndex = Math.max(0, Math.min(
+                annotationSessionStartIndex, savedAnnotationPages.size()));
+        for (int i = savedAnnotationPages.size() - 1; i >= savedStartIndex; i--) {
             List<Integer> pages = savedAnnotationPages.get(i);
             for (int j = pages.size() - 1; j >= 0; j--) {
                 int pageIdx = pages.get(j);
+                if (changedPages.contains(pageIdx)) continue;
                 core.deleteLastAnnotation(pageIdx);
-                if (!changedPages.contains(pageIdx)) {
-                    changedPages.add(pageIdx);
-                }
+                changedPages.add(pageIdx);
             }
             savedAnnotationPages.remove(i);
         }
@@ -3076,14 +3210,58 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private int getAnnotationPageWidth(int pageIdx) {
         int pageW = mDocView.getPageDisplayWidth(pageIdx);
-        if (pageW <= 0) pageW = mDocView.getWidth();
-        return pageW;
+        if (pageW > 0) return pageW;
+        // 兜底：按页面缩放比例换算，绝不能用屏幕宽度（屏幕是横屏、页面是竖版时完全不成比例）
+        float scale = mDocView.getPageDisplayScale(pageIdx);
+        PointF pdfSize = getAnnotationPagePdfSize(pageIdx);
+        if (scale > 0f && pdfSize != null && pdfSize.x > 0) {
+            return Math.max(1, Math.round(pdfSize.x * scale));
+        }
+        return mDocView.getWidth();
     }
 
+    /**
+     * 页面在屏幕上显示的像素高度。
+     *
+     * <p>必须与页面宽高比一致。历史实现里 `getPageDisplayHeight()` 返回 0 时直接返回屏幕高度
+     * （`fallbackHeight`），横屏设备上页面是竖版，屏幕高度和页高完全不成比例，
+     * 结果笔迹提交时纵坐标缩放错位（实测被缩小 2.6 倍 → 整体偏下）。
+     * 这里改成：只要与"页宽 × 页面宽高比"明显不符，就按宽高比修正。</p>
+     */
     private int getAnnotationPageHeight(int pageIdx, int fallbackHeight) {
         int pageH = mDocView.getPageDisplayHeight(pageIdx);
-        if (pageH <= 0) pageH = fallbackHeight;
-        return pageH;
+        int pageW = getAnnotationPageWidth(pageIdx);
+        PointF pdfSize = getAnnotationPagePdfSize(pageIdx);
+        if (pdfSize != null && pdfSize.x > 0 && pdfSize.y > 0 && pageW > 0) {
+            int expected = Math.max(1, Math.round(pageW * (pdfSize.y / pdfSize.x)));
+            int tolerance = Math.max(4, expected / 20);
+            if (pageH <= 0 || Math.abs(pageH - expected) > tolerance) {
+                Debugger.e("批注页高与宽高比不符，按宽高比修正：pageIdx=" + pageIdx
+                        + " 报告页高=" + pageH + " 页宽=" + pageW
+                        + " 修正页高=" + expected);
+                return expected;
+            }
+            return pageH;
+        }
+        return pageH > 0 ? pageH : fallbackHeight;
+    }
+
+    /** 页面 PDF 尺寸（点），用于把页宽换算成页高；按页缓存，避免反复加载页面 */
+    private PointF getAnnotationPagePdfSize(int pageIdx) {
+        PointF cached = annotationPagePdfSizes.get(pageIdx);
+        if (cached != null && cached.x > 0 && cached.y > 0) return cached;
+        if (core == null) return null;
+        PointF size = null;
+        try {
+            size = core.getPageSizeOf(pageIdx);
+        } catch (Exception e) {
+            Debugger.e(TAG, e);
+        }
+        if (size != null && size.x > 0 && size.y > 0) {
+            annotationPagePdfSizes.put(pageIdx, size);
+            return size;
+        }
+        return null;
     }
 
     private Point toPageLocalPoint(Point docPoint, int pageIdx) {

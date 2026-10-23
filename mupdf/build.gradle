@@ -5,7 +5,7 @@ plugins {
 
 // 版本唯一来源：JitPack 通过 git tag 注入 VERSION 环境变量；本地构建使用兜底值（与最近一次发布保持一致）
 def jitpackVersion = project.providers.environmentVariable("VERSION")
-        .orElse("7.0.4")
+        .orElse("7.0.11")
 
 android {
     namespace = "com.xlk.mupdf.library"
@@ -16,10 +16,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
-        // 运行时可读的库版本号（启动日志/问题排查用），与发布版本同一来源，避免各处硬编码
+        // 运行时可读的库版本号（启动日�?问题排查用），与发布版本同一来源，避免各处硬编码
         resValue "string", "mupdf_library_version", jitpackVersion.get()
 //        ndk {
-//            // 设置支持的SO库
+//            // 设置支持的SO�?
 //            abiFilters 'armeabi-v7a','arm64-v8a'
 //        }
     }
@@ -43,7 +43,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    //发布时提供jar包源码
+    //发布时提供jar包源�?
     publishing {
         singleVariant("release") {
             withSourcesJar()
@@ -56,7 +56,7 @@ dependencies {
 
     api 'androidx.appcompat:appcompat:1.4.1'
     api 'com.google.android.material:material:1.5.0'
-    // 7.0.0 起宿主与库之间不再走 EventBus，改为 api/MupdfHost + api/MupdfSession
+    // 7.0.0 起宿主与库之间不再走 EventBus，改�?api/MupdfHost + api/MupdfSession
     api 'com.github.JessYanCoding:AndroidAutoSize:v1.2.1'
 }
 

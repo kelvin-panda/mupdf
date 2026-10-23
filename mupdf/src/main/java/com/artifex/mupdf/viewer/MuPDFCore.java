@@ -46,6 +46,14 @@ import java.util.Map;
 
 public class MuPDFCore {
     private static final String TAG = "MuPDFCore";
+
+    /**
+     * 批注 /Contents 里保存操作标识的前缀。
+     *
+     * <p>用途：页面被换出重载后 native 批注对象会重建，登记表里的旧句柄失效，
+     * 必须能从**当前页面的批注**反查回它属于哪个操作。</p>
+     */
+    private static final String OPERATION_ID_PREFIX = "xlkop:";
     private int resolution;
     private Document doc;
     private Outline[] outline;
@@ -174,6 +182,26 @@ public class MuPDFCore {
     public synchronized PointF getPageSize(int pageNum) {
         gotoPage(pageNum);
         return new PointF(pageWidth, pageHeight);
+    }
+
+    /**
+     * 读取指定页的真实尺寸（PDF 点），不影响当前渲染页缓存之外的状态。
+     *
+     * <p>批注提交时用它把"页面显示宽度"换算成"页面显示高度"，
+     * 避免在 {@code ReaderView#getPageDisplayHeight} 拿不到正确值时退回屏幕高度造成笔迹错位。</p>
+     */
+    public synchronized PointF getPageSizeOf(int pageNum) {
+        if (doc == null) return null;
+        try {
+            Page loaded = doc.loadPage(pageNum);
+            if (loaded == null) return null;
+            Rect bounds = loaded.getBounds();
+            if (bounds == null) return null;
+            return new PointF(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+        } catch (Exception e) {
+            Debugger.e(TAG + " getPageSizeOf Exception: " + e);
+            return null;
+        }
     }
 
     public synchronized void drawPage(Bitmap bm, int pageNum,
@@ -353,6 +381,8 @@ public class MuPDFCore {
                     PDFAnnotation annotation = createAnnotation(pdfPage, data.type,
                             data.strokeWidth, data.argb, pdfPoints);
                     if (annotation == null) continue;
+                    // 操作标识写进 /Contents：页面重载后靠它重新定位这条批注
+                    markOperationId(annotation, data.operationId);
                     annotation.update();
                     registerAnnotation(data.operationId, pageNum - 1, annotation);
                     sharedOperationIds.add(data.operationId);
@@ -400,6 +430,8 @@ public class MuPDFCore {
             PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation pdfAnnotation = createAnnotation(pdfPage, type, paintSize, paintColor, inkList);
             if (pdfAnnotation == null) return null;
+            // 操作标识写进 /Contents：页面重载后靠它重新定位这条批注
+            markOperationId(pdfAnnotation, operationId);
             boolean update = pdfAnnotation.update();
             boolean update1 = pdfPage.update();
             registerAnnotation(operationId, pageNum, pdfAnnotation);
@@ -491,9 +523,66 @@ public class MuPDFCore {
             annotations = new ArrayList<>();
             annotationsByOperationId.put(operationId, annotations);
         }
-        annotations.add(annotation);
+        if (!annotations.contains(annotation)) annotations.add(annotation);
         operationIdByAnnotation.put(annotation, operationId);
         pageIndexByAnnotation.put(annotation, pageIndex);
+    }
+
+    /**
+     * 操作标识写在批注的 /Contents 里。
+     *
+     * <p>必须这样做：MuPDF 内页对象会被换出重载（我们的 {@code invalidatePageCache()} / 翻页渲染都会触发），
+     * 重载后页面批注会**重建为一组新的 native 对象**，之前登记表里保存的 {@link PDFAnnotation}
+     * 句柄随之失效 —— 拿它调 {@code pdfPage.deleteAnnotation()} 是**静默空操作**（不报错、也不删）。
+     * 表现出来就是：远端下发的删除"看起来执行了"，但页面上那条笔迹永远在。</p>
+     */
+    private void markOperationId(PDFAnnotation annotation, long operationId) {
+        if (annotation == null || operationId <= 0) return;
+        try {
+            annotation.setContents(OPERATION_ID_PREFIX + operationId);
+        } catch (Exception e) {
+            Debugger.e(TAG + " markOperationId Exception: " + e);
+        }
+    }
+
+    private long readOperationId(PDFAnnotation annotation) {
+        if (annotation == null) return 0L;
+        try {
+            String contents = annotation.getContents();
+            if (contents == null || !contents.startsWith(OPERATION_ID_PREFIX)) return 0L;
+            return Long.parseLong(contents.substring(OPERATION_ID_PREFIX.length()).trim());
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /**
+     * 按页面当前的真实批注对象重建这一页的登记关系。
+     *
+     * <p>调用前提：刚 {@code doc.loadPage(pageIndex)} 拿到最新的 {@link PDFPage}。
+     * 这一页之前的登记全部丢弃（旧句柄已失效），再用 /Contents 里的操作标识重新登记。</p>
+     */
+    private void refreshPageRegistrations(int pageIndex, PDFPage pdfPage) {
+        List<PDFAnnotation> stale = new ArrayList<>();
+        for (Map.Entry<PDFAnnotation, Integer> entry : pageIndexByAnnotation.entrySet()) {
+            Integer index = entry.getValue();
+            if (index != null && index == pageIndex) stale.add(entry.getKey());
+        }
+        for (PDFAnnotation annotation : stale) unregisterAnnotation(annotation);
+        if (pdfPage == null) return;
+        PDFAnnotation[] annotations;
+        try {
+            annotations = pdfPage.getAnnotations();
+        } catch (Exception e) {
+            Debugger.e(TAG + " refreshPageRegistrations getAnnotations Exception: " + e);
+            return;
+        }
+        if (annotations == null) return;
+        for (PDFAnnotation annotation : annotations) {
+            long operationId = readOperationId(annotation);
+            if (operationId <= 0) continue;
+            registerAnnotation(operationId, pageIndex, annotation);
+        }
     }
 
     private void unregisterAnnotation(PDFAnnotation annotation) {
@@ -645,15 +734,28 @@ public class MuPDFCore {
     }
 
     /**
-     * 删除指定页最后一条标注（用于撤销），返回删除条数（0或1）。
+     * 删除指定页"最后一条本机可删的标注"（用于撤销 / 取消批注），返回删除条数（0或1）。
+     *
+     * <p>必须跳过共享通道写入的批注（别人画的）：业务规则是"别人批注的内容只能别人删除"。
+     * 如果直接删数组最后一条，对端的笔迹后到时就会被撤销/取消误删，
+     * 表现出来就是"退出后各自只剩对方的笔"。</p>
      */
     public synchronized int deleteLastAnnotation(int pageNum) {
         try {
             Page page = doc.loadPage(pageNum);
             PDFPage pdfPage = (PDFPage) page;
+            // 页面可能被换出重载过：先按当前批注重建登记，否则"跳过他人批注"的判断会失效
+            refreshPageRegistrations(pageNum, pdfPage);
             PDFAnnotation[] anns = pdfPage.getAnnotations();
             if (anns == null || anns.length == 0) return 0;
-            PDFAnnotation annotation = anns[anns.length - 1];
+            PDFAnnotation annotation = null;
+            for (int i = anns.length - 1; i >= 0; i--) {
+                Long operationId = operationIdByAnnotation.get(anns[i]);
+                if (operationId != null && sharedOperationIds.contains(operationId)) continue;
+                annotation = anns[i];
+                break;
+            }
+            if (annotation == null) return 0;
             pdfPage.deleteAnnotation(annotation);
             unregisterAnnotation(annotation);
             invalidatePageCache();
@@ -674,37 +776,44 @@ public class MuPDFCore {
         if (operationIds == null || operationIds.length == 0) return changedPages;
         for (long operationId : operationIds) {
             if (operationId <= 0) continue;
-            List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
-            if (annotations == null || annotations.isEmpty()) continue;
-
-            Map<Integer, List<PDFAnnotation>> grouped = new LinkedHashMap<>();
-            for (PDFAnnotation annotation : new ArrayList<>(annotations)) {
-                Integer pageIndex = pageIndexByAnnotation.get(annotation);
-                if (pageIndex == null) continue;
-                List<PDFAnnotation> pageAnnotations = grouped.get(pageIndex);
-                if (pageAnnotations == null) {
-                    pageAnnotations = new ArrayList<>();
-                    grouped.put(pageIndex, pageAnnotations);
+            // 候选页来自登记表（页面重载后旧对象失效，但页索引不会变）
+            java.util.LinkedHashSet<Integer> candidatePages = new java.util.LinkedHashSet<>();
+            List<PDFAnnotation> registered = annotationsByOperationId.get(operationId);
+            if (registered != null) {
+                for (PDFAnnotation annotation : registered) {
+                    Integer pageIndex = pageIndexByAnnotation.get(annotation);
+                    if (pageIndex != null) candidatePages.add(pageIndex);
                 }
-                pageAnnotations.add(annotation);
             }
-            for (Map.Entry<Integer, List<PDFAnnotation>> entry : grouped.entrySet()) {
+            if (candidatePages.isEmpty()) {
+                Debugger.e(TAG + " [批注删除] operationId=" + operationId + " 本机无登记，跳过");
+                continue;
+            }
+
+            boolean removed = false;
+            for (int pageIndex : candidatePages) {
                 try {
-                    Page loadedPage = doc.loadPage(entry.getKey());
-                    PDFPage pdfPage = (PDFPage) loadedPage;
-                    for (PDFAnnotation annotation : entry.getValue()) {
+                    PDFPage pdfPage = (PDFPage) doc.loadPage(pageIndex);
+                    // 关键：先按页面当前的批注对象重建登记，否则拿失效句柄删是静默空操作
+                    refreshPageRegistrations(pageIndex, pdfPage);
+                    List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
+                    if (annotations == null || annotations.isEmpty()) continue;
+                    int deleteCount = 0;
+                    for (PDFAnnotation annotation : new ArrayList<>(annotations)) {
                         pdfPage.deleteAnnotation(annotation);
                         unregisterAnnotation(annotation);
+                        deleteCount++;
                     }
                     pdfPage.update();
-                    if (!changedPages.contains(entry.getKey())) {
-                        changedPages.add(entry.getKey());
-                    }
+                    removed = true;
+                    if (!changedPages.contains(pageIndex)) changedPages.add(pageIndex);
+                    Debugger.e(TAG + " [批注删除] operationId=" + operationId + " page=" + pageIndex
+                            + " 删除=" + deleteCount + " 剩余=" + countAnnotations(pageIndex));
                 } catch (Exception e) {
                     Debugger.e(TAG + " deleteAnnotationsByOperationId Exception", e);
                 }
             }
-            annotationsByOperationId.remove(operationId);
+            if (removed) annotationsByOperationId.remove(operationId);
         }
         if (!changedPages.isEmpty()) invalidatePageCache();
         return changedPages;
@@ -713,6 +822,27 @@ public class MuPDFCore {
     public synchronized boolean hasAnnotationsForOperation(long operationId) {
         List<PDFAnnotation> annotations = annotationsByOperationId.get(operationId);
         return annotations != null && !annotations.isEmpty();
+    }
+
+    /**
+     * 指定页当前批注条数（对账/排障用）。
+     */
+    public synchronized int countAnnotations(int pageNum) {
+        try {
+            Page page = doc.loadPage(pageNum);
+            PDFAnnotation[] annotations = ((PDFPage) page).getAnnotations();
+            return annotations == null ? 0 : annotations.length;
+        } catch (Exception e) {
+            Debugger.e(TAG + " countAnnotations Exception", e);
+            return -1;
+        }
+    }
+
+    /**
+     * 本机登记表里还剩多少条"来自某个操作"的批注（对账/排障用）。
+     */
+    public synchronized int countRegisteredOperations() {
+        return annotationsByOperationId.size();
     }
 
     public void logAnnotations(int pageNum) {
@@ -920,6 +1050,8 @@ public class MuPDFCore {
         try {
             Page page = doc.loadPage(pageIdx);
             PDFPage pdfPage = (PDFPage) page;
+            // 页面可能被换出重载过：先按当前批注重建登记，保证"共享来源"判断和后续删除都作用在有效对象上
+            refreshPageRegistrations(pageIdx, pdfPage);
             PDFAnnotation[] annotations = pdfPage.getAnnotations();
             if (annotations == null) return new long[0];
             Rect bounds = page.getBounds();

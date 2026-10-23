@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Architecture
 
-Android library project wrapping MuPDF for PDF document rendering with annotation, signature, screenshot, and watermark features. Published via JitPack as `com.github.kelvin-panda:mupdf` (latest release: 7.0.0).
+Android library project wrapping MuPDF for PDF document rendering with annotation, signature, screenshot, and watermark features. Published via JitPack as `com.github.kelvin-panda:mupdf` (latest release: 7.0.11).
 
 - **批注（Annotation）实现流程**详见 [docs/annotation-flow.md](docs/annotation-flow.md)：三层结构、会话生命周期、坐标换算、按页切分与提交链路、擦除/撤销/共享/落盘、关键不变量与已知坑。
 - **6.x → 7.0.0 迁移**详见 [docs/eventbus-to-port-migration.md](docs/eventbus-to-port-migration.md)：EventBus → MupdfHost/MupdfSession、MupdfMacro 静态状态收编、逐调用点改造清单与遗留项。

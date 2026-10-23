@@ -1,19 +1,85 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
+## 7.0.11（本次发布）
+本次发布把 **7.0.5 ~ 7.0.10 的全部修复**合并成一个可依赖的版本（这几个版本只在本地产出过、没有单独打 tag），
+升级到 7.0.11 即等于拿到下面所有内容：
+
+1. **取消批注（`viewArtClose`）会把本机的丢弃同步给参与人**
+   - 本次会话内本机新增的每一笔都生成 `OP_UNDO` 交给宿主 → `(PDFWHITEBOARD, DEL)`，对端同步删除；
+     本地那一笔即使已不存在（会话内被自己擦过）**也照发**，避免对端残留
+   - 修掉"多笔落在同一页时部分撤销不下发"（原用变更页集合 `size` 判断，同页第二笔起被误判为没改动）
+   - 修掉取消时"按页删最后一条"多删一笔（会误删对端后到的笔）：`deleteLastAnnotation` 跳过他人批注
+2. **修复"删除看起来执行了、但页面上那条笔永远在"**
+   - 页面被换出重载后 MuPDF 会重建 native 批注对象，旧 `PDFAnnotation` 句柄调 `deleteAnnotation()`
+     是**静默空操作**。现在批注写入 `/Contents = xlkop:<operationId>`，删除前先
+     `refreshPageRegistrations()` 用当前页面对象重建登记，再删；本地擦除/撤销同样先重建
+3. **修复批注笔迹错位 / 落到隔壁页**（横屏设备典型）
+   - 页高不再退回"屏幕高度"，统一按 `页宽 × 页面宽高比` 校验修正（新增 `MuPDFCore#getPageSizeOf`）
+   - `ReaderView#getPageHeight()` 也收口为"页宽 × 页面宽高比"，页顶坐标、`findPageAtY`、按页切分全部自洽；
+     否则页高失真会让一笔跨多个"虚拟页"，被切成几十条 `pageindex` 乱跳的消息，对端画到相邻页
+4. 共享批注刷新优化：当前页远端笔迹按笔迹包围盒局部重绘（`sharedPatchRects`），避免整页重绘闪屏
+5. 排障日志：`[批注删除] operationId=… 删除=N 剩余=M`（`剩余` 是删完后该页真实批注条数，
+   用来区分"没删掉"与"删了没刷新"）、`批注页高与宽高比不符，按宽高比修正`
+## 7.0.10
+1. **修复「A 端第 1 页的批注出现在 B 端第 2 页」，以及一笔被拆成几十条分段消息**
+   - 原因：`ReaderView#getPageHeight()` 优先用子 View 的测得高度，测得值 / `mScale` 与页宽不一致时，
+     整份文档的页顶坐标失真（实测页高被算成 1200，实际 2830）。一笔的 Y 范围因此跨了多个"虚拟页"，
+     `splitInkByPages` 把它切成 `pageindex=2 / 3` 交替的几十条消息，对端就在相邻页各画一堆碎片
+   - 现在页高统一由 `页宽 × 页面宽高比` 推导（页面尺寸取自 `PageAdapter#getPageSizeSync` 缓存），
+     页宽、页高、页顶坐标、`findPageAtY` 全部自洽
+## 7.0.9
+1. **修复「批注笔迹整体偏移（横屏设备上偏下）」**
+   - 原因：提交批注时用 `ReaderView#getPageDisplayHeight()` 取页面显示高度，拿不到（返回 0）就退回
+     **屏幕高度**。横屏设备（屏幕 2000×1200）上页面是竖版（显示 1999×2830），屏幕高度与页高完全不成比例，
+     纵坐标按错误比例换算（实测被缩小 2.6 倍）→ 笔迹整体下移。绘制预览走的是另一套几何，所以只有
+     **落笔后的批注**错位
+   - 现在 `getAnnotationPageHeight()` 按 `页宽 × 页面宽高比`（真实页尺寸由 `MuPDFCore#getPageSizeOf` 提供）
+     校验并修正页高，不符时打日志 `批注页高与宽高比不符，按宽高比修正`；页宽兜底也改为按页面缩放比例换算，
+     不再用屏幕宽度
+2. `MuPDFCore#getPageSizeOf(int)`：读取指定页真实尺寸（PDF 点），不影响当前渲染页
+## 7.0.8
+1. **修复「删除一条远端笔迹看起来执行了、但页面上那条笔永远在」**（表现为退出后对端残留某一笔）
+   - 原因：`MuPDFCore` 用 `Map<PDFAnnotation, …>` 保存"操作 → 批注对象"。页面被换出重载后
+     （`invalidatePageCache()`、翻页渲染都会触发），MuPDF 会把页面批注**重建为一组新的 native 对象**，
+     旧句柄随即失效；拿它调用 `pdfPage.deleteAnnotation()` 是**静默空操作**——不报错、也不删。
+     而登记关系同时被移除，于是那条批注再也删不掉，屏幕上一直留着
+   - 现在给批注写入 `/Contents = xlkop:<operationId>`，删除前先 `refreshPageRegistrations()`
+     用**当前页面**的批注对象重建登记，再执行删除；本地擦除 / 撤销
+     （`deleteAnnotationWithOperationIds`、`deleteLastAnnotation`）同样先重建，
+     保证"他人批注只能他人删除"的判断不会因句柄失效而失效
+2. 删除路径补数据级对账日志：`[批注删除] operationId=… 删除=N 剩余=M`
+   （`剩余` 是删完后该页真实批注条数，用来区分"没删掉"与"删了没刷新"）
+## 7.0.6
+1. **修复「取消批注（不保存）后两端各自只剩对方的笔迹」**：`viewArtClose` 现在会把自己的丢弃同步给参与人
+   - 取消批注时，本次会话内**本机新增**的每一笔都会生成一条 `MupdfInkBean.OP_UNDO` 交给宿主
+     （宿主转成 `(PDFWHITEBOARD, DEL)`），对端据此删除本机这次画的笔
+   - 即使本地那一笔已经不在了（本次会话里又被自己擦掉过），这条撤销**仍会下发**，保证对端不残留
+   - 本次会话里擦掉的"历史笔"按取消语义还原（`markLocallyErasable`，作者仍可再擦）；
+     擦掉的"本会话自己的笔"直接随第一步整体删除，不再"先还原再删除"
+2. **修复取消 / 撤销多删一笔**：`MuPDFCore.deleteLastAnnotation` 跳过共享来源（别人画的）批注，
+   只删"本机可删的最后一条"（原实现直接删数组最后一条，对端的笔迹后到时会被误删）
+3. **修复"多笔落在同一页时部分撤销不下发"**：改用 `applyUndoOperation` 的返回值判断是否真的改动了页面，
+   不再用变更页集合的 `size` 变化（同一页上的第二笔 `size` 不变，会被误判为"没改动"而不同步）
+4. 取消批注的兜底逻辑（无 operationId 的历史批注按页删最后一笔）只作用于"没有被撤回逻辑处理过"的页
+## 7.0.5
+1. 共享批注刷新优化：当前页收到远端笔迹时按**笔迹包围盒局部重绘**（`sharedPatchRects`），
+   批注中保持实时刷新，避免整页重绘导致的闪屏
 ## 7.0.4
 1. 修复「概率性擦不掉自己的笔画」：本地擦除的**命中测试**先排除共享来源（别人画的）批注
    - 原因：两者位置重叠时 `findShouldDeleteAnnotation` 会一直命中别人的笔而被拦，
      同一位置下自己的笔永远轮不到
    - 现在橡皮只考虑可擦除的批注；别人的笔不再参与命中
-## 7.0.31. **业务规则：别人画的批注只能别人删除**
+## 7.0.3
+1. **业务规则：别人画的批注只能别人删除**
    - 共享通道写入的批注（`MuPDFCore.addSharedAnnotations`）登记为"共享来源"，
      本地擦除（`deleteAnnotationWithOperationIds`）不再命中它们，直接返回空结果并打日志
    - 避免"本地擦掉、其它端仍在、保存后分叉"
    - 远端下发删除 / 撤销（`deleteAnnotationsByOperationIds`、`applyRemoteOperation`）不受影响
    - 本地"撤销擦除"恢复出来的笔通过 `MuPDFCore.markLocallyErasable` 恢复可擦除属性，
      保证作者仍能删掉自己的内容
-## 7.0.21. 媒体 id 为 0 时「通知签名」入口**不显示**，点击也不再下发（加了 `Toast` 提示 `mupdf_signature_need_media_id`）
+## 7.0.2
+1. 媒体 id 为 0 时「通知签名」入口**不显示**，点击也不再下发（加了 `Toast` 提示 `mupdf_signature_need_media_id`）
    - 原因：签名通知依赖 `fileid` 定位文件，`mediaId == 0` 时对端无法处理
 2. 补充 `mupdf_signature_need_media_id` 中英文案
 ## 7.0.0（破坏性更新）
@@ -141,7 +207,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:7.0.2")
+	        implementation("com.github.kelvin-panda:mupdf:7.0.11")
 	}
 ```
 **依赖方module**

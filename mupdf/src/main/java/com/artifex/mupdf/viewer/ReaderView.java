@@ -975,16 +975,23 @@ public class ReaderView
         return size;
     }
 
-    /** 获取指定页在当前缩放下像素高度 */
+    /**
+     * 获取指定页在当前缩放下像素高度。
+     *
+     * <p>页高必须由"页宽 × 页面宽高比"推导，不能只信测得高度 / {@code mScale}：
+     * 这两者一旦与页宽不一致，整份文档的页顶坐标都会失真，笔迹会被判到相邻页上
+     * （现象：A 端第 1 页的批注出现在 B 端第 2 页，且一笔被拆成几十条分段消息）。</p>
+     */
     private int getPageHeight(int pageIndex) {
+        PointF size = getCachedPageSize(pageIndex);
+        int pageWidth = getPageDisplayWidth(pageIndex);
+        if (size != null && size.x > 0 && size.y > 0 && pageWidth > 0) {
+            return Math.max(1, Math.round(pageWidth * (size.y / size.x)));
+        }
         Integer h = mPageHeights.get(pageIndex);
         if (h != null && h > 0) return h;
-        PointF size = getCachedPageSize(pageIndex);
-        if (size != null && size.x > 0) {
-            return (int)(getWidth() * (size.y / size.x) * mScale);
-        }
         // 兜底：假设页面宽高比 1:1
-        return (int)(getWidth() * mScale);
+        return Math.max(1, (int) (getWidth() * mScale));
     }
 
     /** 重新计算所有页面全局 Y 坐标 */
