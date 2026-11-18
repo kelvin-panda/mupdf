@@ -99,7 +99,7 @@
             android:layout_rowWeight="1"
             android:layout_columnWeight="1"
             android:checked="true"
-            android:text="恒迅版本" />
+            android:text="定制版本" />
 
         <CheckBox
             android:id="@+id/cbFull"

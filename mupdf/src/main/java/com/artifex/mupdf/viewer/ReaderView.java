@@ -23,6 +23,7 @@ import com.artifex.mupdf.fitz.Link;
 import com.artifex.mupdf.util.Debugger;
 import com.xlk.mupdf.library.R;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.NoSuchElementException;
 import java.util.Stack;
@@ -393,14 +394,22 @@ public class ReaderView
 
     public void setDisplayedViewIndex(int i) {
         if (mAdapter != null && 0 <= i && i < mAdapter.getCount()) {
+            int fromPage = mCurrent;
             onMoveOffChild(mCurrent);
             mCurrent = i;
             onMoveToChild(i);
+            // 丢弃尚未结算的滚动量/惯性动画，避免目标页位置被上一帧的增量顶偏
+            stopScrollAnimation();
             // 转为连续滚动：定位到目标页顶部
             recalculatePagePositions();
             mScrollY = mPagePositions.get(i, 0);
             mPendingCurrentAfterRestore = i;
-            mResetLayout = true;
+            // 注意：这里不再置 mResetLayout。
+            // 跳页时保留仍在缓冲范围内的子 View（连带它们已渲染的位图），
+            // 由 onLayout2 的 recycleOutside 增量回收/补齐：
+            // "上一页/下一页"通常只是缓冲窗口平移一格，一次渲染都不需要。
+            Debugger.i(TAG, "[Nav] jump page=" + (i + 1) + "/" + mAdapter.getCount()
+                    + " from=" + (fromPage + 1) + " scrollY=" + mScrollY);
             requestLayout();
         }
     }
@@ -482,6 +491,8 @@ public class ReaderView
         }
         mChildViews.clear();
         mViewCache.clear();
+        // 子 View 已全部归还缓存位图，这里把这些位图一并回收
+        if (mAdapter != null) mAdapter.releaseBitmaps();
     }
 
     /**
@@ -571,6 +582,8 @@ public class ReaderView
     public boolean onDown(MotionEvent arg0) {
         Debugger.i(TAG, "GestureDetector onDown ");
         mScroller.forceFinished(true);
+        // 用户接管滚动：放弃跳页时的重锚目标，避免下一次 layout 又把位置拉回目标页顶部
+        mPendingCurrentAfterRestore = -1;
         return true;
     }
 
@@ -811,7 +824,7 @@ public class ReaderView
         int lastVisible = findPageAtY(viewBottom);
 
         // --- 5. 回收缓冲区外的页面 ---
-        recycleOutside(firstVisible, lastVisible);
+        int[] recycled = recycleOutside(firstVisible, lastVisible);
 
         // --- 6. 加载、重算、布局可见范围内的页面 ---
         // 分三步：(a) 加载子View并测量 → 更新 mPageHeights
@@ -821,9 +834,26 @@ public class ReaderView
         int loadFirst = Math.max(0, firstVisible - buffer);
         int loadLast = Math.min(count - 1, lastVisible + buffer);
 
-        // (a) 加载所有子View（触发 measureView，更新 mPageHeights）
-        for (int i = loadFirst; i <= loadLast; i++) {
-            getOrCreateChild(i);
+        // (a) 加载子View（触发 measureView，更新 mPageHeights）
+        //     顺序很关键：AsyncTask 是串行执行的，按页序入队会让目标页的渲染任务排在
+        //     缓冲页之后（一次跳页要等前两页渲染完才轮到它）。这里从目标页向两侧扩散，
+        //     目标页最先入队，缓冲页在其后补齐。
+        int focus = mPendingCurrentAfterRestore >= 0 ? mPendingCurrentAfterRestore : findMostVisiblePage();
+        focus = Math.max(loadFirst, Math.min(loadLast, focus));
+        int[] loadOrder = buildLoadOrder(focus, loadFirst, loadLast);
+        int[] created = new int[loadOrder.length];
+        int createdCount = 0;
+        for (int idx : loadOrder) {
+            if (mChildViews.get(idx) == null) created[createdCount++] = idx;
+            getOrCreateChild(idx);
+        }
+        if (createdCount > 0 || recycled.length > 0) {
+            Debugger.i(TAG, "[Layout] visible=" + pageRange(firstVisible, lastVisible)
+                    + " window=" + pageRange(loadFirst, loadLast)
+                    + " focus=" + (focus + 1)
+                    + " created=" + pageList(created, createdCount)
+                    + " recycled=" + pageList(recycled, recycled.length)
+                    + " children=" + mChildViews.size());
         }
 
         // (b) 若子View加载改动了 mPageHeights（mPositionsDirty=true），
@@ -969,7 +999,14 @@ public class ReaderView
     private PointF getCachedPageSize(int pageIndex) {
         PointF size = mPageSizes.get(pageIndex);
         if (size == null && mAdapter != null) {
+            long started = SystemClock.uptimeMillis();
             size = mAdapter.getPageSizeSync(pageIndex);
+            long cost = SystemClock.uptimeMillis() - started;
+            if (cost > 50) {
+                // MuPDFCore 的方法是 synchronized：页面渲染持锁期间，这里会把主线程整段阻塞住
+                Debugger.i(TAG, "[Layout] getPageSizeSync page=" + (pageIndex + 1)
+                        + " 阻塞 " + cost + "ms（等 MuPDFCore 渲染锁）");
+            }
             if (size != null) mPageSizes.put(pageIndex, size);
         }
         return size;
@@ -1049,14 +1086,16 @@ public class ReaderView
         return new Rect(0, minY, 0, maxY);
     }
 
-    /** 回收视口缓冲区之外的子 View */
-    private void recycleOutside(int firstVisible, int lastVisible) {
+    /** 回收视口缓冲区之外的子 View，返回被回收的页索引（0 基，仅用于日志） */
+    private int[] recycleOutside(int firstVisible, int lastVisible) {
         int buffer = VISUAL_BUFFER_SCREENS;
         int keepFirst = Math.max(0, firstVisible - buffer);
         int keepLast = lastVisible + buffer;
         int num = mChildViews.size();
         int[] indices = new int[num];
         for (int i = 0; i < num; i++) indices[i] = mChildViews.keyAt(i);
+        int[] recycled = new int[num];
+        int recycledCount = 0;
         for (int idx : indices) {
             if (idx < keepFirst || idx > keepLast) {
                 View v = mChildViews.get(idx);
@@ -1065,9 +1104,52 @@ public class ReaderView
                     mViewCache.add(v);
                     removeViewInLayout(v);
                     mChildViews.remove(idx);
+                    recycled[recycledCount++] = idx;
                 }
             }
         }
+        return Arrays.copyOf(recycled, recycledCount);
+    }
+
+    /**
+     * 加载顺序：目标页 → 左右各一页 → 再外扩一页……
+     *
+     * <p>渲染任务走的是串行 AsyncTask，入队顺序就是渲染顺序，所以目标页必须最先入队。</p>
+     */
+    private int[] buildLoadOrder(int focus, int loadFirst, int loadLast) {
+        int total = loadLast - loadFirst + 1;
+        int[] order = new int[total];
+        int index = 0;
+        order[index++] = focus;
+        for (int offset = 1; index < total; offset++) {
+            boolean added = false;
+            if (focus - offset >= loadFirst) {
+                order[index++] = focus - offset;
+                added = true;
+            }
+            if (index < total && focus + offset <= loadLast) {
+                order[index++] = focus + offset;
+                added = true;
+            }
+            if (!added) break;
+        }
+        return order;
+    }
+
+    /** 日志用页范围：1 基，形如 "5..6" */
+    private static String pageRange(int first, int last) {
+        return (first + 1) + ".." + (last + 1);
+    }
+
+    /** 日志用页列表：1 基，形如 "[5,6]"，空列表为 "-" */
+    private static String pageList(int[] pages, int length) {
+        if (pages == null || length <= 0) return "-";
+        StringBuilder builder = new StringBuilder("[");
+        for (int i = 0; i < length; i++) {
+            if (i > 0) builder.append(',');
+            builder.append(pages[i] + 1);
+        }
+        return builder.append(']').toString();
     }
 
     private Rect getScrollBounds(int left, int top, int right, int bottom) {

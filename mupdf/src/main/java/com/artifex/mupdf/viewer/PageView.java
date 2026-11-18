@@ -17,6 +17,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.text.TextPaint;
 import android.view.View;
 import android.view.ViewGroup;
@@ -114,6 +115,10 @@ public class PageView extends ViewGroup {
      * 渲染任务进行中又收到渲染请求时置为 true，当前任务结束后自动补渲染，避免漏更新
      */
     private boolean mRenderPending;
+    /** 正在渲染的目标（页 + 尺寸），用于丢弃"同页同尺寸"的重复请求 */
+    private int mInflightPage = -1;
+    private int mInflightWidth;
+    private int mInflightHeight;
 
     private Quad mSearchBoxes[][];
     protected Link mLinks[];
@@ -128,6 +133,13 @@ public class PageView extends ViewGroup {
     private int mRenderedWidth;
     private int mRenderedHeight;
     private int mRenderedPage = -1;
+    /**
+     * 当前 {@link #mEntireBm} 是否由 {@link MuPDFCore#getPageBitmapCache()} 持有。
+     *
+     * <p>缓存位图只能显示、复用，本 View 不得 recycle，也不能把它当作另一页的渲染目标
+     * （否则会把缓存里的页画花）。</p>
+     */
+    private boolean mEntireBmCached;
 
     public PageView(Context c, MuPDFCore core, Point parentSize, String watermark) {
         super(c);
@@ -167,7 +179,41 @@ public class PageView extends ViewGroup {
         }
     }
 
+    private PageBitmapCache pageCache() {
+        return mCore.getPageBitmapCache();
+    }
+
+    /** 日志用页码：1 基，形如 5/8（page 参数本身是 0 基） */
+    private String pageLabel(int page) {
+        int total = mCore != null ? mCore.countPages() : 0;
+        return (page + 1) + "/" + total;
+    }
+
+    /**
+     * 归还缓存位图的持有权：清掉 ImageView 与字段引用，并通知缓存该位图已可重新使用/回收。
+     *
+     * <p>调用后 {@link #mEntireBm} 为 null，需要重新分配或再次命中缓存。</p>
+     */
+    private void detachCachedBitmap(boolean clearImage) {
+        if (!mEntireBmCached) return;
+        if (clearImage && mEntire != null) {
+            mEntire.setImageBitmap(null);
+            mEntire.invalidate();
+        }
+        Bitmap bitmap = mEntireBm;
+        mEntireBm = null;
+        mEntireBmCached = false;
+        mRenderedWidth = 0;
+        mRenderedHeight = 0;
+        mRenderedPage = -1;
+        pageCache().release(bitmap);
+    }
+
     private void clearEntireBitmap(boolean clearImage) {
+        if (mEntireBmCached) {
+            detachCachedBitmap(clearImage);
+            return;
+        }
         if (clearImage && mEntire != null) {
             mEntire.setImageBitmap(null);
             mEntire.invalidate();
@@ -182,6 +228,7 @@ public class PageView extends ViewGroup {
     }
 
     private boolean ensureEntireBitmap() {
+        if (mEntireBmCached) detachCachedBitmap(true);
         if (mEntireBm != null && !mEntireBm.isRecycled())
             return true;
         mEntireBm = createBitmapSafely(mParentSize.x, mParentSize.y);
@@ -191,6 +238,8 @@ public class PageView extends ViewGroup {
     private boolean ensureEntireBitmap(int width, int height) {
         int safeWidth = Math.max(1, width);
         int safeHeight = Math.max(1, height);
+        // 缓存位图不能当渲染目标：换页/换尺寸前先归还，否则会把缓存的内容画花
+        if (mEntireBmCached) detachCachedBitmap(true);
         if (mEntireBm != null && !mEntireBm.isRecycled()
                 && mEntireBm.getWidth() == safeWidth && mEntireBm.getHeight() == safeHeight)
             return true;
@@ -245,6 +294,9 @@ public class PageView extends ViewGroup {
     public void releaseResources() {
         reinit();
 
+        // 归还缓存位图：页面像素仍留在缓存里，翻回来可以直接命中，不必重渲染
+        detachCachedBitmap(true);
+
         if (mBusyIndicator != null) {
             removeView(mBusyIndicator);
             mBusyIndicator = null;
@@ -274,6 +326,8 @@ public class PageView extends ViewGroup {
             mEntire.setImageBitmap(null);
             mEntire.invalidate();
         }
+        // 归还缓存位图，避免它被复用作下一页的渲染目标
+        detachCachedBitmap(false);
         mRenderedWidth = 0;
         mRenderedHeight = 0;
         mRenderedPage = -1;
@@ -383,11 +437,6 @@ public class PageView extends ViewGroup {
         if (mErrorIndicator != null)
             return;
 
-        if (!ensureEntireBitmap(mSize.x, mSize.y)) {
-            setRenderError("Error allocating page bitmap");
-            return;
-        }
-
         if (mEntire == null) {
             mEntire = new OpaqueImageView(mContext, mWaterMark);
             mEntire.setScaleType(ImageView.ScaleType.MATRIX);
@@ -397,28 +446,29 @@ public class PageView extends ViewGroup {
         // filter whenever a cached view is assigned to another page.
         applyColorFilter(mEntire);
 
-        if (mRenderedPage != page) {
-            mEntire.setImageBitmap(null);
+        // 页位图缓存命中：直接复用上次的渲染结果，跳过 loadPage + toDisplayList + 光栅化
+        boolean bitmapCacheHit = restoreEntireFromCache(page);
+        Debugger.d(TAG, "[PageLoad] page=" + pageLabel(page)
+                + " setPage size=" + mSize.x + "x" + mSize.y
+                + " bitmapCache=" + (bitmapCacheHit ? "HIT" : "MISS"));
+        if (!bitmapCacheHit) {
+            if (!ensureEntireBitmap(mSize.x, mSize.y)) {
+                setRenderError("Error allocating page bitmap");
+                return;
+            }
+
+            if (mRenderedPage != page) {
+                mEntire.setImageBitmap(null);
+            }
+            mEntire.invalidate();
+
+            // 这里不渲染：mSize 是 fit-page 尺寸，而连续拼页的布局是"适宽"，
+            // 两者不一致时先用 mSize 渲染会白渲染一整页（实测每页多 30~160ms）。
+            // 真正的渲染交给 onMeasure()（拿到最终 View 尺寸时）触发。
+            mRenderedWidth = 0;
+            mRenderedHeight = 0;
+            mRenderedPage = -1;
         }
-        mEntire.invalidate();
-
-        // 在后台获取链接信息
-        /*mGetLinkInfo = new AsyncTask<Void, Void, Link[]>() {
-            protected Link[] doInBackground(Void... v) {
-                return getLinkInfo();
-            }
-
-            protected void onPostExecute(Link[] v) {
-                mLinks = v;
-                if (mSearchView != null)
-                    mSearchView.invalidate();
-            }
-        };
-
-        mGetLinkInfo.execute();*/
-
-        Debugger.d(TAG, "调用 renderEntirePage setPage page=" + page);
-        renderEntirePage(mSize.x, mSize.y, false);
 
         if (mSearchView == null) {
             mSearchView = new View(mContext) {
@@ -463,13 +513,68 @@ public class PageView extends ViewGroup {
         requestLayout();
     }
 
+    /**
+     * 尝试从页位图缓存恢复当前页。
+     *
+     * <p>先按当前 View 的尺寸查（{@code onLayout} / 渲染完成时用的就是它），未命中再按
+     * {@link #setPage} 算出的目标尺寸（fit-page）查。命中的位图直接贴到 ImageView 上，
+     * 完全跳过 MuPDF 渲染。</p>
+     *
+     * @return true 表示已贴上缓存位图，调用方不要再渲染
+     */
+    private boolean restoreEntireFromCache(int page) {
+        if (mEntire == null) return false;
+        PageBitmapCache cache = pageCache();
+        int hitW = getWidth();
+        int hitH = getHeight();
+        Bitmap cached = hitW > 0 && hitH > 0 ? cache.acquire(page, hitW, hitH) : null;
+        if (cached == null && (hitW != mSize.x || hitH != mSize.y)) {
+            hitW = mSize.x;
+            hitH = mSize.y;
+            cached = cache.acquire(page, hitW, hitH);
+        }
+        if (cached == null) return false;
+
+        if (mEntireBm != cached) {
+            // 处理上一张：缓存图归还缓存，自有的图 recycle，避免漏回收
+            clearEntireBitmap(true);
+            mEntireBm = cached;
+        }
+        mEntireBmCached = true;
+        mRenderedWidth = hitW;
+        mRenderedHeight = hitH;
+        mRenderedPage = page;
+        applyEntireBitmap();
+        return true;
+    }
+
+    /** 把 {@link #mEntireBm} 贴到 ImageView 上并缩放到 View 大小（View 未布局时由 onLayout 再校准） */
+    private void applyEntireBitmap() {
+        if (mEntire == null || mEntireBm == null || mEntireBm.isRecycled()) return;
+        mEntireMat.setScale(getWidth() / (float) mEntireBm.getWidth(),
+                getHeight() / (float) mEntireBm.getHeight());
+        mEntire.setImageMatrix(mEntireMat);
+        mEntire.setImageBitmap(mEntireBm);
+        mEntire.invalidate();
+    }
+
     private void renderEntirePage(final int width, final int height, final boolean update) {
         if (mIsBlank || width <= 0 || height <= 0)
             return;
 
         if (mDrawEntire != null) {
-            // 已有渲染任务在运行：记下待渲染标记，当前任务结束后自动补渲染，避免漏更新
-            mRenderPending = true;
+            // 已有渲染任务在运行：内容更新（update）必须补一次；
+            // "同页同尺寸"的布局请求则直接丢弃，不然会在渲染完成后再白跑一次整页
+            boolean sameTarget = mInflightPage == mPageNumber
+                    && mInflightWidth == width && mInflightHeight == height;
+            if (update || !sameTarget) {
+                mRenderPending = true;
+                Debugger.d(TAG, "[PageLoad] page=" + pageLabel(mPageNumber)
+                        + " deferred（已有渲染在跑，结束后补一次）");
+            } else {
+                Debugger.d(TAG, "[PageLoad] page=" + pageLabel(mPageNumber)
+                        + " skip duplicate（同页同尺寸已在渲染）");
+            }
             return;
         }
 
@@ -480,6 +585,10 @@ public class PageView extends ViewGroup {
                 && mEntireBm != null
                 && !mEntireBm.isRecycled()
                 && mRenderedPage == mPageNumber;
+        final long requestAt = SystemClock.uptimeMillis();
+        Debugger.i(TAG, "[PageLoad] page=" + pageLabel(mPageNumber)
+                + " render submit kind=" + (update ? "update" : "draw")
+                + " size=" + renderSize.x + "x" + renderSize.y);
         final Bitmap renderBitmap;
         if (quietUpdate) {
             renderBitmap = createBitmapSafely(renderSize.x, renderSize.y);
@@ -498,6 +607,9 @@ public class PageView extends ViewGroup {
         final int renderPage = mPageNumber;
         final int targetW = width;
         final int targetH = height;
+        mInflightPage = renderPage;
+        mInflightWidth = targetW;
+        mInflightHeight = targetH;
         final int renderW = renderSize.x;
         final int renderH = renderSize.y;
         final boolean swapBitmap = renderBitmap != mEntireBm;
@@ -522,6 +634,8 @@ public class PageView extends ViewGroup {
                 if (!bitmapAdopted[0] && renderBitmap != null && !renderBitmap.isRecycled()) {
                     renderBitmap.recycle();
                 }
+                // 正常完成 / 失败 / 取消都会走到这里，计数只需在这里减一次
+                mCore.endPageRender();
             }
         };
 
@@ -551,12 +665,16 @@ public class PageView extends ViewGroup {
             @Override
             public void onPostExecute(Boolean result) {
                 mDrawEntire = null;
+                mInflightPage = -1;
+                long cost = SystemClock.uptimeMillis() - requestAt;
                 if (mBusyIndicator != null)
                     removeView(mBusyIndicator);
                 mBusyIndicator = null;
 
                 if (mPageNumber != renderPage) {
                     mRenderPending = false;
+                    Debugger.d(TAG, "[PageLoad] page=" + pageLabel(renderPage)
+                            + " discarded cost=" + cost + "ms（View 已被复用）");
                     return;
                 }
 
@@ -565,6 +683,9 @@ public class PageView extends ViewGroup {
                     int viewW = getWidth();
                     int viewH = getHeight();
                     if (viewW > 0 && viewH > 0 && (viewW != targetW || viewH != targetH)) {
+                        Debugger.d(TAG, "[PageLoad] page=" + pageLabel(renderPage)
+                                + " re-render cost=" + cost + "ms（渲染尺寸 " + targetW + "x" + targetH
+                                + " → View " + viewW + "x" + viewH + "）");
                         renderEntirePage(viewW, viewH, false);
                         return;
                     }
@@ -572,25 +693,39 @@ public class PageView extends ViewGroup {
                     mRenderedHeight = targetH;
                     mRenderedPage = renderPage;
                     Bitmap oldBitmap = null;
+                    boolean oldBitmapCached = false;
                     if (swapBitmap) {
                         oldBitmap = mEntireBm;
+                        oldBitmapCached = mEntireBmCached;
                         mEntireBm = renderBitmap;
+                        mEntireBmCached = false;
                         bitmapAdopted[0] = true;
                     }
-                    if (mEntire != null && mEntireBm != null && !mEntireBm.isRecycled()) {
-                        mEntireMat.setScale(getWidth() / (float) mEntireBm.getWidth(), getHeight() / (float) mEntireBm.getHeight());
-                        mEntire.setImageMatrix(mEntireMat);
-                        mEntire.setImageBitmap(mEntireBm);
-                        mEntire.invalidate();
+                    applyEntireBitmap();
+                    // 渲染结果交给页位图缓存（所有权随之移交）：下次翻回这一页可以直接命中
+                    if (mEntireBm != null && !mEntireBm.isRecycled()) {
+                        mEntireBmCached = pageCache().put(renderPage, targetW, targetH, mEntireBm);
+                        // 自适应预算：至少覆盖"可视 ±2 缓冲 + 2 页余量"，避免缓存被在用页撑满后形同虚设
+                        pageCache().ensureBudgetForPage((long) targetW * targetH * 4L);
                     }
-                    if (oldBitmap != null && oldBitmap != mEntireBm && !oldBitmap.isRecycled()) {
-                        oldBitmap.recycle();
+                    if (oldBitmap != null && oldBitmap != mEntireBm) {
+                        // 旧图若来自缓存，只能归还给缓存，不能在这里 recycle
+                        if (oldBitmapCached) {
+                            pageCache().release(oldBitmap);
+                        } else if (!oldBitmap.isRecycled()) {
+                            oldBitmap.recycle();
+                        }
                     }
+                    Debugger.i(TAG, "[PageLoad] page=" + pageLabel(renderPage)
+                            + " DONE cost=" + cost + "ms bitmap=" + targetW + "x" + targetH
+                            + " kind=" + (update ? "update" : "draw"));
                     // 页面位图已应用：通知外部（批注浮层据此撤掉临时预览，避免同一笔显示两份）
                     if (mRenderCompleteListener != null) {
                         mRenderCompleteListener.onRenderComplete();
                     }
                 } else {
+                    Debugger.i(TAG, "[PageLoad] page=" + pageLabel(renderPage)
+                            + " FAILED cost=" + cost + "ms kind=" + (update ? "update" : "draw"));
                     setRenderError(update ? "Error updating page" : "Error rendering page");
                 }
                 setBackgroundColor(Color.TRANSPARENT);
@@ -606,6 +741,8 @@ public class PageView extends ViewGroup {
             }
         };
 
+        // 登记"页渲染排队中"：缩略图预取据此让路，避免抢锁拖慢正在排队的页面
+        mCore.beginPageRender();
         mDrawEntire.execute();
     }
 
@@ -640,6 +777,15 @@ public class PageView extends ViewGroup {
         }
 
         setMeasuredDimension(x, y);
+
+        // 拿到最终显示尺寸（ReaderView.measureView 按"适宽 × 缩放"给的 EXACTLY）时触发整页渲染。
+        // 不能放在 setPage()：那里只有 fit-page 的 mSize，与真实布局尺寸不一致时会先渲染一张废图。
+        boolean exactSpec = View.MeasureSpec.getMode(widthMeasureSpec) == View.MeasureSpec.EXACTLY
+                && View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.EXACTLY;
+        if (exactSpec && !mIsBlank && mErrorIndicator == null
+                && x > 0 && y > 0 && (mRenderedWidth != x || mRenderedHeight != y)) {
+            renderEntirePage(x, y, false);
+        }
 
         if (mBusyIndicator != null) {
             int limit = (int) (Math.min(mParentSize.x, mParentSize.y) / 2);
@@ -761,6 +907,8 @@ public class PageView extends ViewGroup {
             public void doCleanup() {
                 renderTask.doCleanup();
                 if (!patchBm.isRecycled()) patchBm.recycle();
+                // 补丁渲染也算一次页渲染：批注会话内的提交/缩略图让路都依赖这个计数
+                mCore.endPageRender();
             }
         };
 
@@ -788,6 +936,8 @@ public class PageView extends ViewGroup {
                 }
             }
         };
+        // 补丁渲染也算一次页渲染（与 renderEntirePage 一致），供批注会话提交/缩略图让路判断
+        mCore.beginPageRender();
         mDrawEntire.execute();
     }
 

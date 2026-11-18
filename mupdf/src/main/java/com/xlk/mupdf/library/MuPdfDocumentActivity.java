@@ -1,6 +1,7 @@
 package com.xlk.mupdf.library;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.ContentResolver;
@@ -19,6 +20,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.text.Editable;
 import android.text.InputType;
@@ -107,6 +109,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 
 import me.jessyan.autosize.AutoSizeCompat;
@@ -217,6 +220,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 是否正在手写签名，正在签名时需要进行拦截翻页、缩放、顶部功能菜单显示
      */
     private boolean isSigning;
+    /** 签名写入进行中（写 PDF 批注是 native 写，已放后台线程，期间禁止重复提交/取消） */
+    private boolean signatureSubmitting;
+    /** 批注会话内待提交的笔画：渲染队列忙时先排队，避免主线程等 native 锁 */
+    private final java.util.ArrayDeque<AnnotationBean> pendingStrokeCommits = new java.util.ArrayDeque<>();
+    private boolean strokeCommitDraining;
+    /** 提交笔画时用于兜底页高的画板高度（进入批注时记录） */
+    private int annotationFallbackHeight;
+    /** "等渲染空闲再写" 的单线程执行器（擦除/文本标记共用，保证写顺序且不堆线程） */
+    private final java.util.concurrent.ExecutorService idleWriteExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "mupdf-idle-write");
+                thread.setDaemon(true);
+                return thread;
+            });
     /**
      * 签名表创建时保存的参会人id列表-用于提交签名时获取对应的索引
      */
@@ -247,6 +264,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     private EditText mSearchText;
     private SearchTask mSearchTask;
     private ArrayList<OutlineActivity.Item> mFlatOutline;
+    /**
+     * 进入批注前等待"页渲染队列"空闲的最长时间；超时放弃本次进入（不硬等主线程）。
+     *
+     * <p>批注提交会在主线程调 {@link MuPDFCore} 的同步 native 方法，若此时后台在渲染页面
+     * （重文档一页 2~7s），主线程会等锁 → ANR。</p>
+     */
+    private static final long ANNOTATION_ENTRY_WAIT_MS = 8000L;
+    private boolean annotationEntryPending;
+    private boolean outlineLoading;
     private boolean mReturnToLibraryActivity = false;
     private DocumentLoadResult pendingDocumentState;
 
@@ -502,6 +528,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         bundle.putBoolean(MupdfMacro.bundle_key_only_preview, config.isOnlyPreview());
         bundle.putInt(MupdfMacro.bundle_key_page_index, config.getPageIndex());
         bundle.putInt(MupdfMacro.bundle_key_clarityLimitMode, config.getClarityLimitMode());
+        bundle.putLong(MupdfMacro.bundle_key_page_bitmap_cache_bytes, config.getPageBitmapCacheBytes());
+        bundle.putInt(MupdfMacro.bundle_key_page_bitmap_cache_pages, config.getPageBitmapCachePages());
         bundle.putBoolean(MupdfMacro.bundle_key_full_screen, config.isFullScreenEnable());
         bundle.putInt(MupdfMacro.bundle_key_background_color, config.getBackgroundColor());
         bundle.putBoolean(MupdfMacro.bundle_key_background_color_configured, config.isBackgroundColorConfigured());
@@ -696,10 +724,16 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             }
             if (!nameList.isEmpty()) {
                 signTableTotalNames = nameList.size();
-                core.createSignatureTable(nameList.toArray(new String[0]),
-                        "姓名", "时间", "签名");
-                hadAnnotation = true;
-                refreshDocumentAndShowPage(core.countPages() - 1);
+                final String[] names = nameList.toArray(new String[0]);
+                final MuPDFCore targetCore = core;
+                // 追加签名表页是 native 文档写操作：后台执行，主线程只负责刷新
+                targetCore.postNative(() -> {
+                    targetCore.createSignatureTable(names, "姓名", "时间", "签名");
+                    postToMain(() -> {
+                        hadAnnotation = true;
+                        if (core != null) refreshDocumentAndShowPage(core.countPages() - 1);
+                    });
+                });
             }
         }
     }
@@ -759,18 +793,30 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             rgb[i * 3 + 1] = (byte) ((px >> 8) & 0xFF);
             rgb[i * 3 + 2] = (byte) (px & 0xFF);
         }
-        core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
-        hadAnnotation = true;
-        refreshDocumentAndShowPage(targetPage);
-        Toast.makeText(MuPdfDocumentActivity.this,
-                getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
-                Toast.LENGTH_SHORT).show();
+        final int targetPageFinal = targetPage;
+        final int rowIndexFinal = rowIndex;
+        final String timeFinal = timeStr;
+        final int wFinal = w;
+        final int hFinal = h;
+        final byte[] rgbFinal = rgb;
+        final MuPDFCore targetCore = core;
         bmp.recycle();
-        // 全部提交完毕由库判断并通知宿主，替代宿主自行维护计数
-        if (signatureMemberIdList.isEmpty()) {
-            Debugger.d("签名表已全部提交完成");
-            dispatchHost(MupdfHost::onSignatureTableCompleted);
-        }
+        // 写签名行是 native 文档写操作：后台执行，主线程只负责刷新与完成回调
+        targetCore.postNative(() -> {
+            targetCore.setSignatureRow(rowIndexFinal, timeFinal, rgbFinal, wFinal, hFinal, signTableTotalNames);
+            postToMain(() -> {
+                hadAnnotation = true;
+                refreshDocumentAndShowPage(targetPageFinal);
+                Toast.makeText(MuPdfDocumentActivity.this,
+                        getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
+                        Toast.LENGTH_SHORT).show();
+                // 全部提交完毕由库判断并通知宿主，替代宿主自行维护计数
+                if (signatureMemberIdList.isEmpty()) {
+                    Debugger.d("签名表已全部提交完成");
+                    dispatchHost(MupdfHost::onSignatureTableCompleted);
+                }
+            });
+        });
     }
     //</editor-fold>
 
@@ -881,6 +927,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         state.uploadDirId = bundle.getInt(MupdfMacro.bundle_key_upload_dirId, MupdfMacro.DEFAULT_UPLOAD_DIR_ID);
         state.srcPageIndex = bundle.getInt(MupdfMacro.bundle_key_page_index, 0);
         state.clarityLimitMode = bundle.getInt(MupdfMacro.bundle_key_clarityLimitMode, MupdfClarityMode.UNRESTRICTED);
+        state.pageBitmapCacheBytes = bundle.getLong(MupdfMacro.bundle_key_page_bitmap_cache_bytes, 0L);
+        state.pageBitmapCachePages = bundle.getInt(MupdfMacro.bundle_key_page_bitmap_cache_pages, 0);
         state.isFullScreen = bundle.getBoolean(MupdfMacro.bundle_key_full_screen, true);
 
         SharedPreferences displayPrefs = getDisplaySettingsPrefs();
@@ -1048,6 +1096,27 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private void applyDocumentState(DocumentLoadResult state) {
         core = state.core;
+        // 页位图缓存预算：0 = 自适应；调到能覆盖整份文档即为"整份页缓存"
+        if (core != null && state.pageBitmapCacheBytes > 0) {
+            core.getPageBitmapCache().setMaxBytes(state.pageBitmapCacheBytes);
+        }
+        if (core != null) {
+            // 低内存设备：位图缓存的自适应上限降到 64MB（宿主显式配置的预算不受影响）
+            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            boolean lowRam = am != null && am.isLowRamDevice();
+            core.getPageBitmapCache().setLowRamDevice(lowRam);
+            // 回看深度：字节数优先（setMaxBytes 会关掉自适应），否则用页数
+            if (state.pageBitmapCachePages > 0) {
+                core.getPageBitmapCache().setAutoCoverPages(state.pageBitmapCachePages);
+            }
+            Debugger.i(TAG, "[Open] pages=" + core.countPages()
+                    + " bitmapCacheBudget=" + core.getPageBitmapCache().getMaxBytes()
+                    + " auto=" + core.getPageBitmapCache().isAutoBudget()
+                    + " coverPages=" + core.getPageBitmapCache().getAutoCoverPages()
+                    + " lowRam=" + lowRam
+                    + " configuredBytes=" + state.pageBitmapCacheBytes
+                    + " configuredPages=" + state.pageBitmapCachePages);
+        }
         mDocTitle = state.docTitle;
         mDocKey = state.docKey;
         srcFilePath = state.srcFilePath;
@@ -1126,6 +1195,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         int uploadDirId;
         int srcPageIndex;
         int clarityLimitMode;
+        long pageBitmapCacheBytes;
+        int pageBitmapCachePages;
         int backgroundColor;
         int brightness;
         int configuredZoomPercent;
@@ -1160,6 +1231,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                     return;
                 currentPageIndex = i;
                 mPageNumberView.setText(String.format(Locale.ROOT, "%d / %d", i + 1, core.countPages()));
+                // 页码加载完成：界面上"第几页/共几页"已经更新
+                Debugger.i(TAG, "[PageLoad] page=" + (i + 1) + "/" + core.countPages()
+                        + " visible label=" + mPageNumberView.getText());
 
                 if (thumbnailAdapter != null) {
                     thumbnailAdapter.setCurrentPage(i);
@@ -1474,7 +1548,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         viewTopRefresh.setOnClickListener(v -> {
             if (System.currentTimeMillis() - lastClickTime > 3000) {
                 lastClickTime = System.currentTimeMillis();
-                mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                // 跳页已改为增量刷新（ReaderView.setDisplayedViewIndex 不再整屏重建），
+                // 这里的"重新加载当前页"改为直接重绘当前页，语义保持不变
+                View displayed = mDocView.getDisplayedView();
+                if (displayed instanceof PageView) {
+                    ((PageView) displayed).update();
+                } else {
+                    mDocView.setDisplayedViewIndex(mDocView.mCurrent);
+                }
                 core.logAnnotations(mDocView.mCurrent);
             }
         });
@@ -1556,44 +1637,58 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //提交签名
         tv_submit_signature.setOnClickListener(v -> {
             if (mScalableView == null || mCurPageView == null) return;
-            List<SignatureBoard.DrawPath> drawPaths = mScalableView.getDrawPaths();
-            PageView pageView = mCurPageView;
-            int signaturePageIndex = pageView.getPage();
-            int width = pageView.getWidth();
-            int height = pageView.getHeight();
-
-            List<MupdfInkBean> annotationBeans = new ArrayList<>();
-            for (SignatureBoard.DrawPath drawPath : drawPaths) {
-                PointF[] points = drawPath.points;
-                Point[] array = new Point[points.length];
-                for (int i = 0; i < points.length; i++) {
-                    float x = points[i].x;
-                    float y = points[i].y;
-                    array[i] = new Point(x, y);
+            if (signatureSubmitting) return;
+            final List<SignatureBoard.DrawPath> drawPaths = mScalableView.getDrawPaths();
+            final PageView pageView = mCurPageView;
+            final int signaturePageIndex = pageView.getPage();
+            final int width = pageView.getWidth();
+            final int height = pageView.getHeight();
+            final MuPDFCore targetCore = core;
+            if (targetCore == null) return;
+            signatureSubmitting = true;
+            tv_submit_signature.setEnabled(false);
+            tv_cancel_signature.setEnabled(false);
+            // 签名写入的是 PDF 批注（native 写，内部 synchronized）：放后台线程，
+            // 否则页面渲染持锁期间（重文档一页可达数秒）主线程会等锁 → ANR
+            targetCore.postNative(() -> {
+                final List<MupdfInkBean> annotationBeans = new ArrayList<>();
+                for (SignatureBoard.DrawPath drawPath : drawPaths) {
+                    PointF[] points = drawPath.points;
+                    Point[] array = new Point[points.length];
+                    for (int i = 0; i < points.length; i++) {
+                        array[i] = new Point(points[i].x, points[i].y);
+                    }
+                    long operationId = com.xlk.mupdf.library.api.MupdfOperationId.next();
+                    //points是经过core.addAnnotation方法计算后的实际坐标
+                    Point[] percentPoints = targetCore.addAnnotation(signaturePageIndex, width, height,
+                            PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array, operationId);
+                    if (percentPoints == null) continue;
+                    List<MupdfInkBean.InkSegment> segments = new ArrayList<>(1);
+                    segments.add(new MupdfInkBean.InkSegment(signaturePageIndex + 1,
+                            pointsToFloatArray(percentPoints)));
+                    annotationBeans.add(MupdfInkBean.createAdd(operationId,
+                            PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, segments));
                 }
-                long operationId = com.xlk.mupdf.library.api.MupdfOperationId.next();
-                Point[] percentPoints = core.addAnnotation(signaturePageIndex, width, height,
-                        PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, array, operationId);
-                if (percentPoints == null) continue;
-                //points是经过core.addAnnotation方法计算后的实际坐标
-                List<MupdfInkBean.InkSegment> segments = new ArrayList<>(1);
-                segments.add(new MupdfInkBean.InkSegment(signaturePageIndex + 1,
-                        pointsToFloatArray(percentPoints)));
-                annotationBeans.add(MupdfInkBean.createAdd(operationId,
-                        PDFAnnotation.TYPE_INK, 5 / 3.0f, drawPath.color, segments));
-                hadAnnotation = true;
-            }
-            if (!annotationBeans.isEmpty()) {
-                dispatchHost(h -> h.onLocalOperations(annotationBeans));
-            }
-
-            mCurPageView.removeView(mScalableView);
-            mScalableView = null;
-            mCurPageView = null;
-            ll_signature_layout.setVisibility(View.GONE);
-            isSigning = false;
-            mDocView.setSigning(false);
-            pageView.update();
+                postToMain(() -> {
+                    signatureSubmitting = false;
+                    tv_submit_signature.setEnabled(true);
+                    tv_cancel_signature.setEnabled(true);
+                    if (isFinishing()) return;
+                    if (!annotationBeans.isEmpty()) {
+                        hadAnnotation = true;
+                        dispatchHost(h -> h.onLocalOperations(annotationBeans));
+                    }
+                    if (mScalableView != null && pageView != null) {
+                        pageView.removeView(mScalableView);
+                    }
+                    mScalableView = null;
+                    mCurPageView = null;
+                    ll_signature_layout.setVisibility(View.GONE);
+                    isSigning = false;
+                    if (mDocView != null) mDocView.setSigning(false);
+                    pageView.update();
+                });
+            });
         });
         //取消签名
         tv_cancel_signature.setOnClickListener(v -> {
@@ -1702,20 +1797,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
 
         if (core.hasOutline()) {
-            viewTopBookmark.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) {
-                    if (mFlatOutline == null)
-                        mFlatOutline = core.getOutline();
-                    if (mFlatOutline != null) {
-                        Intent intent = new Intent(MuPdfDocumentActivity.this, OutlineActivity.class);
-                        Bundle bundle = new Bundle();
-                        bundle.putInt("POSITION", mDocView.getDisplayedViewIndex());
-                        bundle.putSerializable("OUTLINE", mFlatOutline);
-                        intent.putExtra("PALLETBUNDLE", Pallet.sendBundle(bundle));
-                        startActivityForResult(intent, OUTLINE_REQUEST);
-                    }
-                }
-            });
+            // 大纲在后台线程读：getOutline() 是同步 native 调用，缓冲页渲染时会让主线程等锁
+            viewTopBookmark.setOnClickListener(v -> openOutlineAsync());
         } else {
             viewTopBookmark.setVisibility(View.GONE);
         }
@@ -1723,6 +1806,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //<editor-fold desc="批注">
         //开启批注
         viewTopAnnotation.setOnClickListener(v -> {
+            // 先等页渲染队列空闲：批注提交会在主线程调 MuPDFCore 的同步 native 方法，
+            // 后台渲染持锁期间（重文档 2~7s/页）主线程会等锁 → ANR。等待在后台线程进行，不占主线程。
+            if (waitForRenderIdleThen(v::performClick)) return;
             mDocView.savePosition();
             // 进入批注前冻结文档：否则正在进行的惯性/翻页动画会在批注面板下继续滑动，
             // 期间落笔的笔画坐标基准漂移，提交后与屏幕上的预览线错开
@@ -1742,48 +1828,45 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             annotationSessionStartIndex = savedAnnotationPages.size();
             annotationOperationSessionStartIndex = localOperationIds.size();
             artBoard = new AnnotationArtBoard(this, core, mDocView, artW, artH);
+            // 擦除也是 native 文档写：注入调度器，渲染队列忙时先等空闲，避免主线程等锁
+            artBoard.setWriteScheduler(this::runOnMainWhenRenderIdle);
             artBoard.setDocumentScrollY(mDocView.getDocumentScrollY());
             artBoard.setPaintWidth(default_ink_size);
+            annotationFallbackHeight = artH;
             // 即时保存：每笔松开即提交到 PDF，避免滚动时标注视觉偏移
-            artBoard.setStrokeListener(bean -> {
-                List<MupdfInkBean.InkSegment> segments = new ArrayList<>();
-                List<Integer> changedPages = addStrokeAnnotation(bean, artH, segments);
-                if (changedPages.isEmpty() || segments.isEmpty()) return;
-                hadAnnotation = true;
-                recordLocalOperation(MupdfInkBean.createAdd(bean.getKey(), bean.getType(),
-                        bean.getPaintSize() / 3.0f, bean.getPaintColor(), segments));
-                // 只刷新这一笔覆盖的区域（拷贝一份，供延迟执行的刷新读取）
-                scheduleAnnotationPagesUpdate(changedPages, new HashMap<>(strokePatchRects));
-            });
+            // 提交走 commitStrokeSafely：会话内的补丁刷新渲染在跑时先排队，避免主线程等 native 锁
+            artBoard.setStrokeListener(this::commitStrokeSafely);
             artBoard.setEraseListener((operationId, targetOperationIds) ->
                     recordLocalOperation(MupdfInkBean.createErase(
                             operationId, targetOperationIds)));
             artBoard.setFreeTextListener(pos -> {
                 showFreeTextDialog(pos);
             });
-            artBoard.setTextMarkupListener((type, start, end, color, strokeWidth) -> {
-                if (core == null) return;
-                // 点已在文档空间
-                int pageIdx = mDocView.findPageAtY((int) start.y);
-                int pageTop = mDocView.getPageDocTop(pageIdx);
-                int pageLeft = mDocView.getPageScreenLeft(pageIdx);
-                int pageW = getAnnotationPageWidth(pageIdx);
-                int pageH = mDocView.getPageDisplayHeight(pageIdx);
-                if (pageH <= 0) pageH = artH;
-                Point localStart = new Point(start.x - pageLeft, start.y - pageTop);
-                Point localEnd = new Point(end.x - pageLeft, end.y - pageTop);
-                float[] c = core.parseColor(color);
-                PDFAnnotation added = core.addTextMarkupAnnotation(pageIdx, pageW, pageH,
-                        type, localStart, localEnd, c, mDisplayDPI, mDisplayDPI);
-                if (added == null) return;
-                hadAnnotation = true;
-                // 下划线/删除线/高亮同样计入文档修改：记录变更页，供保存判断、撤销与取消批注使用
-                List<Integer> pages = new ArrayList<>();
-                pages.add(pageIdx);
-                savedAnnotationPages.add(pages);
-                PageView pv = (PageView) mDocView.getView(pageIdx);
-                if (pv != null) schedulePageUpdate(() -> pv.update());
-            });
+            // 高亮/下划线/删除线也是 native 文档写：会话内的补丁刷新在跑时先等队列空闲，避免主线程等锁
+            artBoard.setTextMarkupListener((type, start, end, color, strokeWidth) ->
+                    runOnMainWhenRenderIdle(() -> {
+                        if (core == null) return;
+                        // 点已在文档空间
+                        int pageIdx = mDocView.findPageAtY((int) start.y);
+                        int pageTop = mDocView.getPageDocTop(pageIdx);
+                        int pageLeft = mDocView.getPageScreenLeft(pageIdx);
+                        int pageW = getAnnotationPageWidth(pageIdx);
+                        int pageH = mDocView.getPageDisplayHeight(pageIdx);
+                        if (pageH <= 0) pageH = artH;
+                        Point localStart = new Point(start.x - pageLeft, start.y - pageTop);
+                        Point localEnd = new Point(end.x - pageLeft, end.y - pageTop);
+                        float[] c = core.parseColor(color);
+                        PDFAnnotation added = core.addTextMarkupAnnotation(pageIdx, pageW, pageH,
+                                type, localStart, localEnd, c, mDisplayDPI, mDisplayDPI);
+                        if (added == null) return;
+                        hadAnnotation = true;
+                        // 下划线/删除线/高亮同样计入文档修改：记录变更页，供保存判断、撤销与取消批注使用
+                        List<Integer> pages = new ArrayList<>();
+                        pages.add(pageIdx);
+                        savedAnnotationPages.add(pages);
+                        PageView pv = (PageView) mDocView.getView(pageIdx);
+                        if (pv != null) schedulePageUpdate(() -> pv.update());
+                    }));
             rootView.addView(artBoard, 1); // index=1：在 mDocView(0) 之上，mButtonsView(2) 之下
             artBoard.layout(0, 0, artW, artH);
         });
@@ -2458,11 +2541,23 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     public void relayoutDocument() {
-        int loc = core.layout(mDocView.mCurrent, mLayoutW, mLayoutH, mLayoutEM);
-        mFlatOutline = null;
-        mDocView.mHistory.clear();
-        mDocView.refresh();
-        mDocView.setDisplayedViewIndex(loc);
+        if (core == null || mDocView == null) return;
+        final MuPDFCore targetCore = core;
+        final int currentPage = mDocView.mCurrent;
+        final int layoutW = mLayoutW;
+        final int layoutH = mLayoutH;
+        final int layoutEM = mLayoutEM;
+        // 重排版是 native 文档操作（synchronized）：放后台线程，避免旋转时主线程等渲染锁 → ANR
+        targetCore.postNative(() -> {
+            final int loc = targetCore.layout(currentPage, layoutW, layoutH, layoutEM);
+            postToMain(() -> {
+                if (core == null || mDocView == null || isFinishing()) return;
+                mFlatOutline = null;
+                mDocView.mHistory.clear();
+                mDocView.refresh();
+                mDocView.setDisplayedViewIndex(loc);
+            });
+        });
     }
 
     private final List<View> ibs = new ArrayList<>();
@@ -3041,6 +3136,75 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }).start();
     }
 
+    /**
+     * 提交一笔批注（画笔/直线等）：若页渲染队列正忙，先排队，等空闲再在主线程提交。
+     *
+     * <p>批注提交要在主线程做几何换算并调 {@code MuPDFCore} 的同步 native 写，而渲染持锁期间
+     * （重文档的补丁刷新 0.5~2s、整页刷新更久）主线程会等锁。这里把"等"放到后台线程，
+     * 提交仍然在主线程执行（几何计算依赖 ReaderView 状态，不能跨线程）。</p>
+     */
+    private void commitStrokeSafely(AnnotationBean bean) {
+        if (bean == null || core == null) return;
+        if (core.isPageRenderBusy()) {
+            Debugger.i(TAG, "[Stroke] 页渲染进行中（" + core.pendingPageRenderCount() + "），笔画先排队");
+        }
+        synchronized (pendingStrokeCommits) {
+            pendingStrokeCommits.addLast(bean);
+        }
+        drainStrokeCommits();
+    }
+
+    private void drainStrokeCommits() {
+        if (strokeCommitDraining) return;
+        strokeCommitDraining = true;
+        new Thread(() -> {
+            try {
+                while (true) {
+                    final AnnotationBean bean;
+                    synchronized (pendingStrokeCommits) {
+                        bean = pendingStrokeCommits.pollFirst();
+                    }
+                    if (bean == null) break;
+                    // 等渲染队列空闲（最多 8s），超时也提交，避免笔画一直不落盘
+                    long deadline = SystemClock.uptimeMillis() + ANNOTATION_ENTRY_WAIT_MS;
+                    while (core != null && core.isPageRenderBusy()
+                            && SystemClock.uptimeMillis() < deadline) {
+                        SystemClock.sleep(30);
+                    }
+                    final CountDownLatch done = new CountDownLatch(1);
+                    postToMain(() -> {
+                        try {
+                            commitStrokeNow(bean);
+                        } finally {
+                            done.countDown();
+                        }
+                    });
+                    // 等这一笔真正提交完再处理下一笔，保证顺序
+                    if (!done.await(ANNOTATION_ENTRY_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                        Debugger.i(TAG, "笔画提交等待超时，继续处理后续笔画");
+                    }
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                postToMain(() -> strokeCommitDraining = false);
+            }
+        }, "mupdf-stroke-commit").start();
+    }
+
+    /** 真正提交一笔（主线程：几何换算 + native 写 + 记录操作 + 局部刷新） */
+    private void commitStrokeNow(AnnotationBean bean) {
+        if (core == null || mDocView == null || isFinishing()) return;
+        List<MupdfInkBean.InkSegment> segments = new ArrayList<>();
+        List<Integer> changedPages = addStrokeAnnotation(bean, annotationFallbackHeight, segments);
+        if (changedPages.isEmpty() || segments.isEmpty()) return;
+        hadAnnotation = true;
+        recordLocalOperation(MupdfInkBean.createAdd(bean.getKey(), bean.getType(),
+                bean.getPaintSize() / 3.0f, bean.getPaintColor(), segments));
+        // 只刷新这一笔覆盖的区域（拷贝一份，供延迟执行的刷新读取）
+        scheduleAnnotationPagesUpdate(changedPages, new HashMap<>(strokePatchRects));
+    }
+
     private List<Integer> addStrokeAnnotation(AnnotationBean bean, int fallbackHeight) {
         return addStrokeAnnotation(bean, fallbackHeight, null);
     }
@@ -3369,10 +3533,22 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 if (width <= 0 || height <= 0) return;
                 float[] color = core.parseColor(artBoard != null ? artBoard.getPaintColor() : Color.RED);
                 Point localPosition = new Point(position.x - pageLeft, position.y - pageTop);
-                core.addFreeTextAnnotation(pageIdx, width, height,
-                        localPosition, text, "Helv", 16f, color);
-                hadAnnotation = true;
-                if (pageView != null) schedulePageUpdate(() -> pageView.update());
+                final MuPDFCore targetCore = core;
+                final int pageIdxFinal = pageIdx;
+                final int widthFinal = width;
+                final int heightFinal = height;
+                final Point positionFinal = localPosition;
+                final String textFinal = text;
+                final float[] colorFinal = color;
+                // 加自由文本批注是 native 文档写操作：后台执行，主线程只负责刷新
+                targetCore.postNative(() -> {
+                    targetCore.addFreeTextAnnotation(pageIdxFinal, widthFinal, heightFinal,
+                            positionFinal, textFinal, "Helv", 16f, colorFinal);
+                    postToMain(() -> {
+                        hadAnnotation = true;
+                        if (pageView != null) schedulePageUpdate(() -> pageView.update());
+                    });
+                });
             }
             dialog.dismiss();
         });
@@ -3448,7 +3624,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         int pageCount = core.countPages();
         if (pageCount <= 0) return FIT_WIDTH_ZOOM_PERCENT;
         int pageIndex = Math.max(0, Math.min(pageCount - 1, mDocView.getDisplayedViewIndex()));
-        PointF pageSize = core.getPageSize(pageIndex);
+        // 这里只需要"页宽高比"。必须用无锁的 getPageSizeIfKnown：getPageSize 会等 MuPDFCore 的渲染锁，
+        // 首页渲染期间（重文档可达数秒）会把主线程卡住 → ANR。
+        PointF pageSize = core.getPageSizeIfKnown(pageIndex);
         int viewWidth = mDocView.getWidth() > 0 ? mDocView.getWidth() : ScreenUtils.getScreenWidth(this);
         int viewHeight = mDocView.getHeight() > 0 ? mDocView.getHeight() : ScreenUtils.getScreenHeight(this);
         if (pageSize == null || pageSize.x <= 0 || pageSize.y <= 0 || viewWidth <= 0 || viewHeight <= 0) {
@@ -3732,11 +3910,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         Toast.makeText(this, R.string.mupdf_watermark_text_hint, Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    float[] color = new float[]{0.82f, 0.20f, 0.18f};
-                    core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
-                    hadAnnotation = true;
-                    afterAnnotationPreservingScroll();
-                    Toast.makeText(this, getString(R.string.mupdf_watermark_pdf) + " " + getString(R.string.mupdf_art_done), Toast.LENGTH_SHORT).show();
+                    final float[] color = new float[]{0.82f, 0.20f, 0.18f};
+                    final String watermarkText = text;
+                    final MuPDFCore targetCore = core;
+                    // PDF 水印要遍历所有页写入：后台执行，避免主线程等 native 锁
+                    targetCore.postNative(() -> {
+                        targetCore.addContentWatermark(watermarkText, 0f, 45f, 0.15f, color, 1.5f);
+                        postToMain(() -> {
+                            hadAnnotation = true;
+                            afterAnnotationPreservingScroll();
+                            Toast.makeText(MuPdfDocumentActivity.this,
+                                    getString(R.string.mupdf_watermark_pdf) + " " + getString(R.string.mupdf_art_done),
+                                    Toast.LENGTH_SHORT).show();
+                        });
+                    });
                 }
             });
             root.addView(applyWatermarkBtn);
@@ -3806,13 +3993,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         alert.setButton(AlertDialog.BUTTON_POSITIVE, getString(R.string.mupdf_ensure), (dialog, which) -> {
             String text = editText.getText().toString().trim();
             if (!text.isEmpty() && core != null) {
-                float[] color = new float[]{0.82f, 0.20f, 0.18f};
-                core.addContentWatermark(text, 0f, 45f, 0.15f, color, 1.5f);
-                hadAnnotation = true;
-                afterAnnotationPreservingScroll();
-                Toast.makeText(MuPdfDocumentActivity.this,
-                        getString(R.string.mupdf_watermark) + " " + getString(R.string.mupdf_art_done),
-                        Toast.LENGTH_SHORT).show();
+                final String watermarkText = text;
+                final float[] color = new float[]{0.82f, 0.20f, 0.18f};
+                final MuPDFCore targetCore = core;
+                // PDF 水印要遍历所有页写入，是最重的 native 写：后台执行，主线程只负责刷新
+                targetCore.postNative(() -> {
+                    targetCore.addContentWatermark(watermarkText, 0f, 45f, 0.15f, color, 1.5f);
+                    postToMain(() -> {
+                        hadAnnotation = true;
+                        afterAnnotationPreservingScroll();
+                        Toast.makeText(MuPdfDocumentActivity.this,
+                                getString(R.string.mupdf_watermark) + " " + getString(R.string.mupdf_art_done),
+                                Toast.LENGTH_SHORT).show();
+                    });
+                });
             }
             dialog.dismiss();
         });
@@ -3843,13 +4037,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 }
                 if (!nameList.isEmpty()) {
                     signTableTotalNames = nameList.size();
-                    core.createSignatureTable(nameList.toArray(new String[0]),
-                            "姓名", "时间", "签名");
-                    hadAnnotation = true;
-                    refreshDocumentAndShowPage(core.countPages() - 1);
-                    Toast.makeText(MuPdfDocumentActivity.this,
-                            getString(R.string.mupdf_sign_table) + " " + getString(R.string.mupdf_art_done),
-                            Toast.LENGTH_SHORT).show();
+                    final String[] tableNames = nameList.toArray(new String[0]);
+                    final MuPDFCore targetCore = core;
+                    // 追加签名表页是 native 文档写操作：后台执行，主线程只负责刷新
+                    targetCore.postNative(() -> {
+                        targetCore.createSignatureTable(tableNames, "姓名", "时间", "签名");
+                        postToMain(() -> {
+                            hadAnnotation = true;
+                            if (core != null) refreshDocumentAndShowPage(core.countPages() - 1);
+                            Toast.makeText(MuPdfDocumentActivity.this,
+                                    getString(R.string.mupdf_sign_table) + " " + getString(R.string.mupdf_art_done),
+                                    Toast.LENGTH_SHORT).show();
+                        });
+                    });
                 }
             }
             dialog.dismiss();
@@ -3904,13 +4104,25 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                                 rgb[i * 3 + 1] = (byte) ((px >> 8) & 0xFF);
                                 rgb[i * 3 + 2] = (byte) (px & 0xFF);
                             }
-                            core.setSignatureRow(rowIndex, timeStr, rgb, w, h, signTableTotalNames);
-                            hadAnnotation = true;
-                            refreshDocumentAndShowPage(targetPage);
-                            Toast.makeText(MuPdfDocumentActivity.this,
-                                    getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
-                                    Toast.LENGTH_SHORT).show();
+                            final int wFinal = w;
+                            final int hFinal = h;
+                            final byte[] rgbFinal = rgb;
+                            final int rowIndexFinal = rowIndex;
+                            final String timeFinal = timeStr;
+                            final MuPDFCore targetCore = core;
                             bmp.recycle();
+                            // 写签名行是 native 文档写操作：后台执行，主线程只负责刷新
+                            targetCore.postNative(() -> {
+                                targetCore.setSignatureRow(rowIndexFinal, timeFinal, rgbFinal,
+                                        wFinal, hFinal, signTableTotalNames);
+                                postToMain(() -> {
+                                    hadAnnotation = true;
+                                    refreshDocumentAndShowPage(targetPage);
+                                    Toast.makeText(MuPdfDocumentActivity.this,
+                                            getString(R.string.mupdf_sign_row) + " " + getString(R.string.mupdf_art_done),
+                                            Toast.LENGTH_SHORT).show();
+                                });
+                            });
                         }
                     }
                 }).show();
@@ -3960,6 +4172,11 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     public void onDestroy() {
         Debugger.i(TAG, "---onDestroy---start");
+        try {
+            idleWriteExecutor.shutdown();
+        } catch (Exception e) {
+            Debugger.e(TAG, e);
+        }
         if (mSearchTask != null) {
             mSearchTask.stop();
             mSearchTask = null;
@@ -3979,22 +4196,164 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             Debugger.i(TAG, "---onDestroy---ReaderView releaseAllBitmaps");
             mDocView.releaseAllBitmaps();
         }
-        if (core != null) {
-            Debugger.i(TAG, "---onDestroy---MuPDFCore");
-            core.onDestroy();
-        }
+        final MuPDFCore coreToClose = core;
         core = null;
-        if (deleteFileWhenExit) {
-            if (srcFilePath != null && !srcFilePath.isEmpty()) {
-                File file = new File(srcFilePath);
-                if (file.exists()) {
-                    boolean delete = file.delete();
-                    Debugger.i("退出pdf预览时删除源文件：" + delete);
-                }
+        if (coreToClose != null) {
+            if (coreToClose.isPageRenderBusy()) {
+                // native 渲染不可中断，onDestroy 内的同步方法要等它跑完（重文档可到数秒）。
+                // 放到后台线程销毁，否则关闭阅读器时会 ANR。
+                Debugger.i(TAG, "---onDestroy---MuPDFCore 仍有页渲染，转后台线程销毁");
+                new Thread(() -> {
+                    coreToClose.onDestroy();
+                    deleteSourceFileOnExit();
+                    Debugger.i(TAG, "---onDestroy---MuPDFCore 后台销毁完成");
+                }, "mupdf-core-destroy").start();
+            } else {
+                Debugger.i(TAG, "---onDestroy---MuPDFCore");
+                coreToClose.onDestroy();
+                deleteSourceFileOnExit();
             }
+        } else {
+            deleteSourceFileOnExit();
         }
         Debugger.i(TAG, "---onDestroy---end");
         super.onDestroy();
+    }
+
+    /** 退出时按配置删除源文件（可能在后台线程调用） */
+    private void deleteSourceFileOnExit() {
+        if (!deleteFileWhenExit) return;
+        if (srcFilePath == null || srcFilePath.isEmpty()) return;
+        File file = new File(srcFilePath);
+        if (!file.exists()) return;
+        boolean delete = file.delete();
+        Debugger.i("退出pdf预览时删除源文件：" + delete);
+    }
+
+    /**
+     * 若"页渲染队列"仍忙，异步等它空闲后再执行 {@code action}，并返回 true；
+     * 已经空闲则返回 false，让调用方直接执行。
+     *
+     * <p>MuPDFCore 的 native 访问全在同一把锁里，渲染一页可能要几秒。批注提交、读大纲这类
+     * UI 触发的同步 native 调用若撞上渲染就会让主线程等锁 → ANR。这里在**后台线程**轮询，
+     * 空闲后再回主线程执行，最多等 {@link #ANNOTATION_ENTRY_WAIT_MS}。</p>
+     */
+    private boolean waitForRenderIdleThen(Runnable action) {
+        if (core == null || !core.isPageRenderBusy()) return false;
+        if (annotationEntryPending) return true;
+        annotationEntryPending = true;
+        Debugger.i(TAG, "等待页渲染队列空闲（" + core.pendingPageRenderCount() + "）后再继续");
+        new Thread(() -> {
+            long started = SystemClock.uptimeMillis();
+            long deadline = started + ANNOTATION_ENTRY_WAIT_MS;
+            boolean tipShown = false;
+            while (core != null && core.isPageRenderBusy() && SystemClock.uptimeMillis() < deadline) {
+                if (!tipShown && SystemClock.uptimeMillis() - started > 400) {
+                    tipShown = true;
+                    // 等超过 400ms 才提示，避免正常情况下一闪而过的 toast
+                    toast(getString(R.string.mupdf_page_rendering_wait));
+                }
+                SystemClock.sleep(50);
+            }
+            postToMain(() -> {
+                annotationEntryPending = false;
+                if (isFinishing() || core == null) return;
+                if (core.isPageRenderBusy()) {
+                    Debugger.i(TAG, "渲染队列仍未空闲，放弃本次操作");
+                    return;
+                }
+                action.run();
+            });
+        }, "mupdf-wait-render-idle").start();
+        return true;
+    }
+
+    /**
+     * 渲染队列忙时先等空闲（后台轮询，最多 {@link #ANNOTATION_ENTRY_WAIT_MS}），再回主线程执行；
+     * **超时也执行**，不丢操作。
+     *
+     * <p>与 {@link #waitForRenderIdleThen} 的区别：那个用于"进入批注"这类可放弃的动作（超时中止），
+     * 这个用于文档写操作（高亮/下划线/删除线/擦除），必须落地。</p>
+     *
+     * <p>所有等待都排进**单线程**执行器：擦除一次手势可能触发几十次写，如果每次新开线程
+     * 会瞬间堆出几十个等待线程，而且不保证写顺序。</p>
+     */
+    private void runOnMainWhenRenderIdle(Runnable action) {
+        if (action == null) return;
+        if (core == null || !core.isPageRenderBusy()) {
+            action.run();
+            return;
+        }
+        Debugger.i(TAG, "[Write] 页渲染进行中（" + core.pendingPageRenderCount() + "），写操作等空闲后执行");
+        try {
+            idleWriteExecutor.execute(() -> {
+                long deadline = SystemClock.uptimeMillis() + ANNOTATION_ENTRY_WAIT_MS;
+                while (core != null && core.isPageRenderBusy() && SystemClock.uptimeMillis() < deadline) {
+                    SystemClock.sleep(30);
+                }
+                final CountDownLatch done = new CountDownLatch(1);
+                postToMain(() -> {
+                    try {
+                        action.run();
+                    } finally {
+                        done.countDown();
+                    }
+                });
+                try {
+                    // 等这一笔真正执行完再处理下一笔，保证写顺序
+                    if (!done.await(ANNOTATION_ENTRY_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                        Debugger.i(TAG, "[Write] 等待执行超时，继续处理后续写操作");
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // 执行器已关闭（Activity 正在销毁）：直接执行，避免丢写
+            action.run();
+        }
+    }
+
+    /**
+     * 后台线程读大纲再打开列表。
+     *
+     * <p>{@code core.getOutline()} 是同步 native 调用，缓冲页渲染期间会把主线程卡住（重文档可达数秒）。</p>
+     */
+    private void openOutlineAsync() {
+        if (mFlatOutline != null) {
+            showOutlineActivity(mFlatOutline);
+            return;
+        }
+        if (core == null || outlineLoading) return;
+        outlineLoading = true;
+        core.postNative(() -> {
+            ArrayList<OutlineActivity.Item> outline = null;
+            try {
+                outline = core.getOutline();
+            } catch (Exception e) {
+                Debugger.e(TAG, e);
+            }
+            final ArrayList<OutlineActivity.Item> result = outline;
+            postToMain(() -> {
+                outlineLoading = false;
+                if (isFinishing() || result == null || result.isEmpty()) {
+                    Debugger.i(TAG, "大纲为空，忽略本次打开");
+                    return;
+                }
+                mFlatOutline = result;
+                showOutlineActivity(result);
+            });
+        });
+    }
+
+    private void showOutlineActivity(ArrayList<OutlineActivity.Item> outline) {
+        if (mDocView == null) return;
+        Intent intent = new Intent(MuPdfDocumentActivity.this, OutlineActivity.class);
+        Bundle bundle = new Bundle();
+        bundle.putInt("POSITION", mDocView.getDisplayedViewIndex());
+        bundle.putSerializable("OUTLINE", outline);
+        intent.putExtra("PALLETBUNDLE", Pallet.sendBundle(bundle));
+        startActivityForResult(intent, OUTLINE_REQUEST);
     }
 
 }

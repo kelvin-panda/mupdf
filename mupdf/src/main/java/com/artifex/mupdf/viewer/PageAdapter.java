@@ -47,10 +47,13 @@ public class PageAdapter extends BaseAdapter {
     }
 
     public void releaseBitmaps() {
+        if (mCore != null) mCore.getPageBitmapCache().clear();
     }
 
     public void refresh() {
         mPageSizes.clear();
+        // 尺寸/缩放/页面内容变化后，旧的渲染结果不再可用
+        if (mCore != null) mCore.getPageBitmapCache().clear();
     }
 
     public View getView(final int position, View convertView, ViewGroup parent) {

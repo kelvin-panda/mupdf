@@ -192,6 +192,14 @@ public class MupdfMacro {
      */
     public static final String bundle_key_clarityLimitMode = "clarityLimitMode";
     /**
+     * 页位图缓存预算（字节），0 = 自适应
+     */
+    public static final String bundle_key_page_bitmap_cache_bytes = "page_bitmap_cache_bytes";
+    /**
+     * 页位图缓存覆盖的页数（回看深度），0 = 自适应默认
+     */
+    public static final String bundle_key_page_bitmap_cache_pages = "page_bitmap_cache_pages";
+    /**
      * 自动缩放成全屏
      */
     public static final String bundle_key_full_screen = "full_screen";

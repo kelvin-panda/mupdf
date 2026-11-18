@@ -28,6 +28,22 @@ public class MupdfConfig {
     private final boolean onlyPreview;
     private final int pageIndex;
     private final int clarityLimitMode;
+    /**
+     * 页位图缓存预算（字节）。{@code 0}（默认）表示**自适应**：起步 24MB，
+     * 首帧渲染后按单页位图大小抬到"覆盖可视 ±2 缓冲 + 2 页余量"（普通设备上限 192MB，
+     * 低内存设备 64MB）。大于 0 时以宿主值为准，自适应关闭。
+     *
+     * <p>调到能覆盖整份文档时，看过的页不再被淘汰，等于"整份 PDF 页缓存"。
+     * 估算：1080×1400 一页约 6MB，50 页约 300MB；横屏适宽 1999×2830 一页约 21.6MB。</p>
+     */
+    private final long pageBitmapCacheBytes;
+    /**
+     * 页位图缓存覆盖的页数（"回看深度"）。{@code 0}（默认）= 自适应默认 7 页
+     * （可视 ±2 的 5 页 + 2 页回看余量）；大于 0 时按该页数算预算，且不受自适应上限约束。
+     *
+     * <p>优先级：{@link #pageBitmapCacheBytes} &gt; 本项 &gt; 自适应默认。</p>
+     */
+    private final int pageBitmapCachePages;
     private final boolean fullScreenEnable;
     private final int backgroundColor;
     private final int brightness;
@@ -75,6 +91,8 @@ public class MupdfConfig {
         this.onlyPreview = builder.onlyPreview;
         this.pageIndex = builder.pageIndex;
         this.clarityLimitMode = builder.clarityLimitMode;
+        this.pageBitmapCacheBytes = builder.pageBitmapCacheBytes;
+        this.pageBitmapCachePages = builder.pageBitmapCachePages;
         this.fullScreenEnable = builder.fullScreenEnable;
         this.backgroundColor = builder.backgroundColor;
         this.brightness = builder.brightness;
@@ -165,6 +183,16 @@ public class MupdfConfig {
 
     public int getClarityLimitMode() {
         return clarityLimitMode;
+    }
+
+    /** 页位图缓存预算（字节）；{@code 0} 表示自适应（覆盖可视缓冲，低内存设备封顶 64MB） */
+    public long getPageBitmapCacheBytes() {
+        return pageBitmapCacheBytes;
+    }
+
+    /** 页位图缓存覆盖的页数（回看深度）；{@code 0} 表示自适应默认 7 页 */
+    public int getPageBitmapCachePages() {
+        return pageBitmapCachePages;
     }
 
     public boolean isFullScreenEnable() {
@@ -296,6 +324,8 @@ public class MupdfConfig {
                 ", onlyPreview=" + onlyPreview +
                 ", pageIndex=" + pageIndex +
                 ", clarityLimitMode=" + clarityLimitMode +
+                ", pageBitmapCacheBytes=" + pageBitmapCacheBytes +
+                ", pageBitmapCachePages=" + pageBitmapCachePages +
                 ", fullScreenEnable=" + fullScreenEnable +
                 ", backgroundColor=" + backgroundColor +
                 ", brightness=" + brightness +
@@ -368,7 +398,15 @@ public class MupdfConfig {
         /**
          * 加载时的清晰度【默认不限制】
          */
-        private int clarityLimitMode = MupdfClarityMode.UNRESTRICTED;
+        private int clarityLimitMode = MupdfClarityMode.LIMIT_720P;
+        /**
+         * 页位图缓存预算（字节），{@code 0} = 自适应（覆盖可视缓冲，低内存设备封顶 64MB）
+         */
+        private long pageBitmapCacheBytes = 0L;
+        /**
+         * 页位图缓存覆盖的页数（回看深度），{@code 0} = 自适应默认 7 页
+         */
+        private int pageBitmapCachePages = 0;
         /**
          * 打开后是否全屏
          */
@@ -515,6 +553,40 @@ public class MupdfConfig {
 
         public Builder clarityLimitMode(@MupdfClarityMode int clarityLimitMode) {
             this.clarityLimitMode = clarityLimitMode;
+            return this;
+        }
+
+        /**
+         * 设置页位图缓存预算（字节）。默认 {@code 0} = **自适应**：起步 24MB，首帧后按单页位图
+         * 抬到"覆盖可视 ±2 缓冲 + 2 页余量"（普通设备上限 192MB，低内存设备 64MB）；
+         * 传大于 0 的值则以宿主值为准并关闭自适应。
+         *
+         * <p>预算调到能覆盖整份文档时，看过的页不再被淘汰，等于"整份 PDF 页缓存"，
+         * 来回翻页/跳页可以直接贴图。估算：1080×1400 一页约 6MB，50 页约 300MB；
+         * 横屏适宽（1999×2830）一页约 21.6MB。位图在 API 21~25 占 native 内存，
+         * 请按设备内存留足余量。</p>
+         *
+         * @param bytes 预算字节数，{@code <= 0} 表示使用自适应
+         */
+        public Builder pageBitmapCacheBytes(long bytes) {
+            this.pageBitmapCacheBytes = bytes;
+            return this;
+        }
+
+        /**
+         * 设置页位图缓存覆盖的页数（"回看深度"）。默认 {@code 0} = 自适应 7 页
+         * （可视 ±2 的 5 页 + 2 页回看余量）。
+         *
+         * <p>按"页数 × 单页位图字节数"算预算，**不受自适应上限约束**；单页位图大小随屏幕/页面
+         * 尺寸变化（1080×1400 约 6MB，横屏适宽 1999×2830 约 21.6MB），所以页数比字节数更直观：
+         * 想要"翻回去 10 页都不重渲染"就传 14（10 页回看 + 可视 ±2）。</p>
+         *
+         * <p>优先级：{@link #pageBitmapCacheBytes(long)} &gt; 本项 &gt; 自适应默认。</p>
+         *
+         * @param pages 覆盖页数，{@code <= 0} 表示使用自适应默认
+         */
+        public Builder pageBitmapCachePages(int pages) {
+            this.pageBitmapCachePages = pages;
             return this;
         }
 

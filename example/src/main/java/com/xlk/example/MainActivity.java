@@ -6,6 +6,9 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
@@ -30,6 +33,8 @@ import com.xlk.mupdf.library.api.MupdfSession;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import me.jessyan.autosize.internal.CancelAdapt;
 
@@ -51,6 +56,7 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt, Mupd
         bd = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(bd.getRoot());
         applyPermission();
+        handleTestIntent(getIntent());
         RadioGroup radioGroup = findViewById(R.id.radioGroup);
         radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override
@@ -149,6 +155,70 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt, Mupd
 
     public void openPdfFile(View view) {
         pdfFileLauncher.launch("application/pdf");
+    }
+
+    /**
+     * 自动化测试入口（绕过系统文件选择器，直接按路径打开）：
+     * <pre>
+     * adb shell am start -n com.xlk.example/.MainActivity \
+     *     --es pdf_path /sdcard/documents/abcde.pdf [--el cache_bytes 0]
+     * </pre>
+     */
+    private void handleTestIntent(Intent intent) {
+        if (intent == null) return;
+        String path = intent.getStringExtra("pdf_path");
+        if (path == null || path.isEmpty()) return;
+        long cacheBytes = intent.getLongExtra("cache_bytes", 0L);
+        if (intent.getBooleanExtra("watchdog", false)) {
+            startMainThreadWatchdog();
+        }
+        Log.i(TAG, "[Test] open pdf_path=" + path + ",cacheBytes=" + cacheBytes);
+        MupdfConfig.Builder builder = new MupdfConfig.Builder()
+                .sessionId("example-test-" + System.currentTimeMillis())
+                .host(this)
+                .filePath(path)
+                .clarityLimitMode(mode)
+                .annotationEnable(intent.getBooleanExtra("annotation", false))
+                .annotationInputText(intent.getBooleanExtra("text", false))
+                .watermarkEnable(intent.getBooleanExtra("watermark", false))
+                .watermarkContent("测试水印")
+                .signatureEnable(intent.getBooleanExtra("signature", false))
+                .captureEnable(false)
+                .wpsOpenEnable(false)
+                .watermarkEnable(false)
+                .pageBitmapCacheBytes(cacheBytes)
+                .pageBitmapCachePages(intent.getIntExtra("cache_pages", 0));
+        MuPdfDocumentActivity.jump(this, builder.build());
+    }
+
+    /**
+     * 排障用：主线程超过 1.5s 没响应就把它的调用栈打到 logcat（`[Watchdog]`）。
+     * 只在本 Intent 带 {@code --ez watchdog true} 时启动。
+     */
+    private void startMainThreadWatchdog() {
+        final Thread mainThread = Looper.getMainLooper().getThread();
+        Thread watchdog = new Thread(() -> {
+            while (true) {
+                final CountDownLatch latch = new CountDownLatch(1);
+                new Handler(Looper.getMainLooper()).post(latch::countDown);
+                boolean responded;
+                try {
+                    responded = latch.await(1500, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                if (!responded) {
+                    StringBuilder builder = new StringBuilder("[Watchdog] 主线程卡住 >1500ms，栈：");
+                    for (StackTraceElement element : mainThread.getStackTrace()) {
+                        builder.append("\n    at ").append(element);
+                    }
+                    Log.e(TAG, builder.toString());
+                }
+                SystemClock.sleep(300);
+            }
+        }, "main-thread-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
     }
 
     private final ActivityResultLauncher<String> pdfFileLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(),

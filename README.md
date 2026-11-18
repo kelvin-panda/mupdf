@@ -12,6 +12,35 @@
      远端擦除 / 撤销也走 `updatePatch()` 局部重绘
    - 即便个别情况下拿不到包围盒，也只重绘当前页的 `PageView`（`pv.update()`），不再整屏重建
 2. 新增日志：`远端操作：擦除 … 包围盒=N`、`共享批注当前页更新（无包围盒），按页重绘`
+3. **翻页/跳页性能：三层缓存，手动点"上一页/下一页"基本不再重新渲染**
+   - 跳页改为**增量刷新**：`ReaderView#setDisplayedViewIndex` 不再 `mResetLayout = true` 整屏重建，
+     只重锚滚动位置，由 `recycleOutside` 增量回收/补齐；缓冲窗口内来回翻**一次渲染都不需要**
+   - 新增**页位图 LRU 缓存**（`PageBitmapCache`）：预算默认**自适应**——起步 24MB，
+     首帧渲染后按单页位图抬到"覆盖可视 ±2 缓冲 + 2 页余量"（普通设备上限 192MB，低内存设备 64MB），
+     避免固定小预算被在用页撑满后形同虚设；`MupdfConfig.Builder.pageBitmapCachePages(int)` 按页数指定
+     回看深度（512MB 硬上限），`pageBitmapCacheBytes(long)` 按字节指定（优先级最高）
+   - 新增**页显示列表（矢量）LRU 缓存**（`MuPDFCore`，32 页上限）：跳页/缩放只重光栅化，
+     省掉 `loadPage + toDisplayList`；批注/水印/重排版后自动失效。缩略图渲染不入缓存（缓存与线程绑定）
+   - 缓冲页改为**从当前页向两侧扩散加载**：`AsyncTask` 串行执行，目标页的渲染任务现在最先入队
+   - 页尺寸缓存（`MuPDFCore#pageSizeCache`）不再被 `refresh()` 清空，旋转/重置不再重新 `loadPage` 整本文档
+4. **修复 ANR（重文档必现）**：115MB 文档打开时，`getFitPageZoomPercent()` 调 `MuPDFCore#getPageSize()`
+   （synchronized）撞上首页 7.4s 的渲染，主线程等锁 → ANR
+   - `pageSizeCache` 改 `ConcurrentHashMap`，`getPageSize`/`getPageSizeOf` 增加**无锁快路径**，新增 `getPageSizeIfKnown`
+   - `MuPDFCore#postNative(Runnable)`：UI 触发的 native 调用统一走后台线程（大纲、PDF 水印、
+     签名表创建/填写签名行、**签名提交**、自由文本批注已改，签名提交期间禁用提交/取消按钮防重复）；
+     进入批注前在后台等待"页渲染队列"空闲（最多 8s，超过 400ms 弹"正在渲染页面，请稍候…"），
+     避免提交批注时主线程等锁
+   - 退出时若仍有页在渲染，`MuPDFCore#onDestroy()` 转后台线程执行（主线程 1ms 返回）
+   - **批注会话内笔画提交排队**（`commitStrokeSafely`）：会话中的补丁刷新渲染在跑时，笔画先入队，
+     由后台线程等渲染队列空闲后再在主线程逐笔提交，主线程不再等 native 锁
+   - **文本标记与擦除同样走"等空闲再写"**（`runOnMainWhenRenderIdle`，单线程调度保证顺序）；
+     擦除按手势合并成批提交（`[Write]` 从 8+ 次降到 1 次），擦除完成回调会等写落地后再上报
+   - reflowable 重排版（`core.layout()`）搬后台线程，旋转 EPUB 不再等渲染锁
+5. 缩略图预取让路：页面渲染排队/进行中时暂停缩略图（后台轮询，最多 3s），
+   实测 115MB 文档里 4 张缩略图曾把下一页渲染推迟约 2.8s
+6. 日志分级 + 架构文档：每页记账日志（`[PageLoad] setPage / render submit / deferred / discarded`）降为 `d`，
+   只保留 `[PageLoad] DONE`（含耗时）、`[Render]`（三段耗时）、`[Nav]`、`[Layout]` 在 `i`；
+   新增 [docs/paging-cache.md](docs/paging-cache.md)（三层缓存 / 所有权 / `postNative` 契约 / 排障对照）
 ## 7.0.11（已发布 tag）
 本次发布把 **7.0.5 ~ 7.0.10 的全部修复**合并成一个可依赖的版本（这几个版本只在本地产出过、没有单独打 tag），
 升级到 7.0.11 即等于拿到下面所有内容：

@@ -89,4 +89,5 @@
 	<string name="mupdf_tip">Tip</string>
 	<string name="mupdf_inform_signature">Sign Notice</string>
     <string name="mupdf_signature_need_media_id">Missing file ID, cannot notify signature</string>
+    <string name="mupdf_page_rendering_wait">Rendering page, please wait…</string>
 </resources>

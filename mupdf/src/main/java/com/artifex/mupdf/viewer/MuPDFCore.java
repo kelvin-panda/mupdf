@@ -15,6 +15,7 @@ import android.graphics.Path;
 import android.graphics.PathMeasure;
 import android.graphics.PointF;
 import android.graphics.RectF;
+import android.os.SystemClock;
 
 import com.artifex.mupdf.fitz.Cookie;
 import com.artifex.mupdf.fitz.DisplayList;
@@ -40,9 +41,15 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MuPDFCore {
     private static final String TAG = "MuPDFCore";
@@ -62,6 +69,128 @@ public class MuPDFCore {
     private Page page;
     private float pageWidth;
     private float pageHeight;
+    /**
+     * 已渲染页位图缓存。与 {@link #page}（同一时刻只有一页 native 对象）互补：
+     * 手动跳页/回看时可以直接贴图，不必重新 loadPage + toDisplayList + 光栅化。
+     */
+    private final PageBitmapCache pageBitmapCache = new PageBitmapCache();
+
+    /**
+     * 页尺寸缓存（PDF 点）。
+     *
+     * <p>页尺寸是静态元数据，第一次 {@code loadPage} 之后就没必要再查。没有它时，
+     * {@code ReaderView.refresh()}（旋转、缩放重置）会把整本文档重新 {@code loadPage} 一遍来重排版，
+     * 大文档在旋转时会明显卡一下。</p>
+     *
+     * <p>用 {@link ConcurrentHashMap} 是为了让 UI 线程可以**无锁**读：
+     * {@code MuPDFCore} 的同步方法是"渲染持锁"，主线程一旦去读就可能等整页渲染（实测 7.4s）而 ANR。</p>
+     */
+    private final ConcurrentHashMap<Integer, PointF> pageSizeCache = new ConcurrentHashMap<>();
+
+    /**
+     * 每页的绘制次数（只用于排障日志 {@code [Render] ... draw#n}）：
+     * 同一页在没有任何交互的情况下出现 draw#2，就说明发生了重复渲染。
+     */
+    private final Map<Integer, Integer> pageDrawCount = new HashMap<>();
+
+    /**
+     * 已排队 / 正在执行的页渲染任务数。
+     *
+     * <p>缩略图预取据此让路：{@link MuPDFCore} 的渲染是"一把锁 + 串行"，缩略图一旦插进来，
+     * 正在排队的页面渲染就得等它跑完（实测 115MB 文档里 4 张缩略图把下一页推迟了近 3 秒）。</p>
+     */
+    private final AtomicInteger pendingPageRenders = new AtomicInteger();
+
+    /** UI 触发的 native 调用专用后台线程（单线程，与渲染任务串行抢同一把锁，但不占 UI 线程） */
+    private final ExecutorService nativeExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "mupdf-native");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    /** 页渲染任务开始排队（{@link PageView} 提交渲染任务时调用） */
+    public void beginPageRender() {
+        pendingPageRenders.incrementAndGet();
+    }
+
+    /**
+     * 页渲染任务结束（完成 / 失败 / 取消都会走到 {@code CancellableTaskDefinition#doCleanup}）。
+     */
+    public void endPageRender() {
+        while (true) {
+            int current = pendingPageRenders.get();
+            if (current <= 0) return;
+            if (pendingPageRenders.compareAndSet(current, current - 1)) {
+                // 队列清空的心跳：缩略图让路逻辑依赖这个计数能归零
+                if (current == 1) {
+                    Debugger.d(TAG, "[Render] 页渲染队列已清空");
+                }
+                return;
+            }
+        }
+    }
+
+    /** 是否还有页渲染在排队或执行中 */
+    public boolean isPageRenderBusy() {
+        return pendingPageRenders.get() > 0;
+    }
+
+    /** 排队中的页渲染任务数（日志用） */
+    public int pendingPageRenderCount() {
+        return pendingPageRenders.get();
+    }
+
+    /**
+     * 把"UI 触发的 native 调用"丢到后台线程执行。
+     *
+     * <p>本类所有 native 访问都在同一个锁里，而渲染一页可能要几秒。UI 线程直接调
+     * {@code getOutline()} / 批注写入这类同步方法，就会等渲染锁 → ANR。统一走这里：
+     * 调用本身在后台排队（可能等锁），UI 线程只负责把结果 post 回去。</p>
+     */
+    public void postNative(Runnable task) {
+        if (task == null) return;
+        try {
+            nativeExecutor.execute(task);
+        } catch (RejectedExecutionException e) {
+            Debugger.e(TAG, "postNative rejected:" + e);
+        }
+    }
+
+    private void shutdownNativeExecutor() {
+        try {
+            // 只拒绝新任务：正在跑的 native 调用不能被打断，让它自然结束
+            nativeExecutor.shutdown();
+        } catch (Exception e) {
+            Debugger.e(TAG, "shutdownNativeExecutor:" + e);
+        }
+    }
+
+    /**
+     * 页显示列表缓存（LRU，按页计上限）。
+     *
+     * <p>{@code page.toDisplayList()} 把页面内容解析成矢量显示列表，是复杂页渲染里最贵的一步。
+     * 缓存后跳页/缩放只需用不同的 CTM 重放 {@code DisplayList.run}，省掉
+     * {@code loadPage + toDisplayList}；而且显示列表与分辨率无关，缩放同样受益。</p>
+     *
+     * <p>DisplayList 是 native 对象，只允许创建它的线程使用，因此缓存项记录 owner 线程：
+     * 换线程一律按未命中处理，缩略图这类"每页只画一次"的渲染路径直接不入缓存。</p>
+     */
+    private static final int MAX_DISPLAY_LISTS = 32;
+    private final LinkedHashMap<Integer, DisplayListCacheItem> displayListCache =
+            new LinkedHashMap<>(16, 0.75f, true);
+
+    private static final class DisplayListCacheItem {
+        final DisplayList displayList;
+        final Rect bounds;
+        final Thread owner;
+
+        DisplayListCacheItem(DisplayList displayList, Rect bounds, Thread owner) {
+            this.displayList = displayList;
+            this.bounds = bounds;
+            this.owner = owner;
+        }
+    }
+
     /**
      * PDF 批注与共享操作标识的映射，用于擦除和撤销。
      */
@@ -106,6 +235,11 @@ public class MuPDFCore {
         return doc;
     }
 
+    /** 页位图缓存：{@link PageView} 用它跳过重复渲染 */
+    public PageBitmapCache getPageBitmapCache() {
+        return pageBitmapCache;
+    }
+
     public String getTitle() {
         return doc.getMetaData(Document.META_INFO_TITLE);
     }
@@ -129,6 +263,10 @@ public class MuPDFCore {
             currentPage = -1;
             pageCount = doc.countPages();
             outline = null;
+            // 重排版后页内容全变了：位图与显示列表缓存都不能再用
+            pageBitmapCache.clear();
+            pageSizeCache.clear();
+            clearDisplayListCache();
             try {
                 outline = doc.loadOutline();
             } catch (Exception ex) {
@@ -167,6 +305,9 @@ public class MuPDFCore {
                     Rect b = page.getBounds();
                     pageWidth = b.x1 - b.x0;
                     pageHeight = b.y1 - b.y0;
+                    if (pageWidth > 0 && pageHeight > 0) {
+                        pageSizeCache.put(pageNum, new PointF(pageWidth, pageHeight));
+                    }
                     Debugger.i(TAG, "gotoPage: pageNum:" + pageNum + ",pageWidth:" + pageWidth + ",pageHeight:" + pageHeight);
                 } else {
                     Debugger.i(TAG, "gotoPage: doc is null");
@@ -179,7 +320,29 @@ public class MuPDFCore {
         }
     }
 
-    public synchronized PointF getPageSize(int pageNum) {
+    /**
+     * 页尺寸（PDF 点）。
+     *
+     * <p><b>已探明的页不加锁直接返回</b>：本类所有 native 访问都在同一个锁里，渲染一页可能要几秒，
+     * UI 线程若走同步路径就会被整段阻塞（115MB 文档实测 7.4s → ANR）。未探明时才进同步路径。</p>
+     */
+    public PointF getPageSize(int pageNum) {
+        PointF cached = getPageSizeIfKnown(pageNum);
+        if (cached != null) return cached;
+        return getPageSizeBlocking(pageNum);
+    }
+
+    /** 已探明的页尺寸；未探明返回 null，**不加锁、不触发 native 载页**（UI 线程可安全调用） */
+    public PointF getPageSizeIfKnown(int pageNum) {
+        PointF cached = pageSizeCache.get(pageNum);
+        if (cached == null || cached.x <= 0 || cached.y <= 0) return null;
+        return new PointF(cached.x, cached.y);
+    }
+
+    private synchronized PointF getPageSizeBlocking(int pageNum) {
+        // 等锁期间别的线程可能已经探明，再查一次
+        PointF cached = getPageSizeIfKnown(pageNum);
+        if (cached != null) return cached;
         gotoPage(pageNum);
         return new PointF(pageWidth, pageHeight);
     }
@@ -190,17 +353,40 @@ public class MuPDFCore {
      * <p>批注提交时用它把"页面显示宽度"换算成"页面显示高度"，
      * 避免在 {@code ReaderView#getPageDisplayHeight} 拿不到正确值时退回屏幕高度造成笔迹错位。</p>
      */
-    public synchronized PointF getPageSizeOf(int pageNum) {
+    public PointF getPageSizeOf(int pageNum) {
+        PointF cached = getPageSizeIfKnown(pageNum);
+        if (cached != null) return cached;
+        return getPageSizeOfBlocking(pageNum);
+    }
+
+    private synchronized PointF getPageSizeOfBlocking(int pageNum) {
+        PointF cached = getPageSizeIfKnown(pageNum);
+        if (cached != null) return cached;
         if (doc == null) return null;
+        Page loaded = null;
         try {
-            Page loaded = doc.loadPage(pageNum);
+            loaded = doc.loadPage(pageNum);
             if (loaded == null) return null;
             Rect bounds = loaded.getBounds();
             if (bounds == null) return null;
-            return new PointF(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0);
+            float width = bounds.x1 - bounds.x0;
+            float height = bounds.y1 - bounds.y0;
+            if (width > 0 && height > 0) {
+                pageSizeCache.put(pageNum, new PointF(width, height));
+            }
+            return new PointF(width, height);
         } catch (Exception e) {
             Debugger.e(TAG + " getPageSizeOf Exception: " + e);
             return null;
+        } finally {
+            // 只为读尺寸而载的页对象，读完就释放，避免 native 页对象堆积到 GC 才回收
+            if (loaded != null) {
+                try {
+                    loaded.destroy();
+                } catch (Exception e) {
+                    Debugger.e(TAG + " getPageSizeOf destroy Exception: " + e);
+                }
+            }
         }
     }
 
@@ -209,6 +395,19 @@ public class MuPDFCore {
                                       int patchX, int patchY,
                                       int patchW, int patchH,
                                       Cookie cookie) {
+        drawPage(bm, pageNum, pageW, pageH, patchX, patchY, patchW, patchH, cookie, true);
+    }
+
+    /**
+     * @param cacheDisplayList 是否使用/填充页显示列表缓存。
+     *                         缩略图这类"每页只画一次"的渲染传 false：既省不下时间，
+     *                         还会把缓存（与线程绑定）占满。
+     */
+    public synchronized void drawPage(Bitmap bm, int pageNum,
+                                      int pageW, int pageH,
+                                      int patchX, int patchY,
+                                      int patchW, int patchH,
+                                      Cookie cookie, boolean cacheDisplayList) {
         if (bm == null || bm.isRecycled() || pageW <= 0 || pageH <= 0 || patchW <= 0 || patchH <= 0) {
             Debugger.e(TAG, "drawPage invalid args pageNum:" + pageNum
                     + ", pageW:" + pageW + ", pageH:" + pageH
@@ -217,60 +416,82 @@ public class MuPDFCore {
             return;
         }
         DisplayList localDL = null;
+        boolean releaseLocalDL = false;
+        final long requestAt = SystemClock.uptimeMillis();
+        boolean fromCache = false;
+        long loadMs = 0;
+        long buildMs = 0;
+        long runMs = 0;
         try {
             Debugger.d(TAG, "---drawPage start pageNum:" + pageNum);
-            gotoPage(pageNum);
 
-            if (page != null)
-                try {
-                    localDL = page.toDisplayList();
-                } catch (Exception ex) {
-                    localDL = null;
+            Rect bounds;
+            DisplayListCacheItem cached = cacheDisplayList ? getCachedDisplayList(pageNum) : null;
+            if (cached != null) {
+                // 命中：跳过 gotoPage(loadPage/destroy) 与 toDisplayList，直接重放显示列表
+                localDL = cached.displayList;
+                bounds = cached.bounds;
+                fromCache = true;
+            } else {
+                long loadAt = SystemClock.uptimeMillis();
+                gotoPage(pageNum);
+                loadMs = SystemClock.uptimeMillis() - loadAt;
+
+                long buildAt = SystemClock.uptimeMillis();
+                if (page != null)
+                    try {
+                        localDL = page.toDisplayList();
+                    } catch (Exception ex) {
+                        localDL = null;
+                    }
+                buildMs = SystemClock.uptimeMillis() - buildAt;
+
+                if (localDL == null || page == null)
+                    return;
+                bounds = new Rect(page.getBounds());
+                releaseLocalDL = true;
+                // 放进缓存后所有权归缓存，本次调用不得再 destroy
+                if (cacheDisplayList && putCachedDisplayList(pageNum, localDL, bounds)) {
+                    releaseLocalDL = false;
                 }
-
-            if (localDL == null || page == null)
-                return;
+            }
             float zoom = resolution / 72;
             Matrix ctm = new Matrix(zoom, zoom);
-            Rect bounds = page.getBounds();
-            RectI bbox = new RectI(bounds.transform(ctm));
+            // Rect.transform() 是就地修改：必须用副本，否则会把缓存里的页面 bounds 反复乘 zoom
+            Rect transformedBounds = new Rect(bounds);
+            RectI bbox = new RectI(transformedBounds.transform(ctm));
             float xscale = (float) pageW / (float) (bbox.x1 - bbox.x0);
             float yscale = (float) pageH / (float) (bbox.y1 - bbox.y0);
             ctm.scale(xscale, yscale);
-            Debugger.e(TAG, "drawPage: pageNum:" + pageNum
-                    + "\npageW:" + pageW + ",pageH:" + pageH
-                    + "\npatchW:" + patchW + ",patchH:" + patchH
-                    + "\npatchX:" + patchX + ",patchY:" + patchY
-                    + "\nbounds:" + bounds
-                    + "\nbbox:" + bbox
-                    + "\nctm:" + ctm
-                    + "\nxscale:" + xscale + ",yscale:" + yscale
-                    + "\nbm:" + bm.getWidth() + "," + bm.getHeight());
-            Debugger.i(TAG, "drawPage AndroidDrawDevice start pageNum:" + pageNum);
             AndroidDrawDevice dev = new AndroidDrawDevice(bm, patchX, patchY, true);
-            Debugger.i(TAG, "drawPage AndroidDrawDevice end--- pageNum:" + pageNum);
+            long runAt = SystemClock.uptimeMillis();
             try {
-                Debugger.i(TAG, "drawPage displayList.run start--- pageNum:" + pageNum);
                 localDL.run(dev, ctm, cookie);
-                Debugger.i(TAG, "drawPage displayList.run end--- pageNum:" + pageNum);
                 dev.close();
-                Debugger.i(TAG, "drawPage dev.close() end--- pageNum:" + pageNum);
             } finally {
                 dev.destroy();
+                runMs = SystemClock.uptimeMillis() - runAt;
             }
         } catch (Throwable e) {
             String fullStackTrace = Debugger.getFullStackTrace(e);
             Debugger.e(TAG, "drawPage Throwable:" + fullStackTrace);
+            // 渲染失败时丢掉这一页的显示列表，避免缓存里留一份"画不出来"的列表被反复命中
+            if (cacheDisplayList) removeCachedDisplayList(pageNum);
         } finally {
-            if (localDL != null) {
-                try {
-                    localDL.destroy();
-                } catch (Throwable e) {
-                    Debugger.e(TAG, "drawPage displayList destroy failed:" + Debugger.getFullStackTrace(e));
-                }
+            if (releaseLocalDL && localDL != null) {
+                Debugger.d(TAG, "drawPage displayList destroy pageNum:" + pageNum);
+                destroyDisplayList(localDL);
             }
         }
-        Debugger.i(TAG, "drawPage end--- pageNum:" + pageNum);
+        // 汇总一行：dl 命中与否 + 三段耗时（载页 / 建显示列表 / 光栅化）+ 该页第几次绘制
+        Integer previous = pageDrawCount.get(pageNum);
+        int drawNo = previous == null ? 1 : previous + 1;
+        pageDrawCount.put(pageNum, drawNo);
+        Debugger.i(TAG, "[Render] page=" + (pageNum + 1) + "/" + pageCount
+                + " dl=" + (fromCache ? "hit" : "build")
+                + " load=" + loadMs + "ms build=" + buildMs + "ms run=" + runMs + "ms"
+                + " total=" + (SystemClock.uptimeMillis() - requestAt) + "ms"
+                + " draw#" + drawNo + " " + pageW + "x" + pageH);
     }
 
     public synchronized void updatePage(Bitmap bm, int pageNum,
@@ -279,6 +500,73 @@ public class MuPDFCore {
                                         int patchW, int patchH,
                                         Cookie cookie) {
         drawPage(bm, pageNum, pageW, pageH, patchX, patchY, patchW, patchH, cookie);
+    }
+
+    /** 取缓存中的显示列表；跨线程一律按未命中处理（DisplayList 不能跨线程使用） */
+    private DisplayListCacheItem getCachedDisplayList(int pageNum) {
+        DisplayListCacheItem item = displayListCache.get(pageNum);
+        if (item == null) return null;
+        if (item.owner != Thread.currentThread()) return null;
+        return item;
+    }
+
+    /**
+     * 把新建的显示列表放进缓存。
+     *
+     * @return true 表示缓存接管了所有权，调用方不得再 destroy
+     */
+    private boolean putCachedDisplayList(int pageNum, DisplayList displayList, Rect bounds) {
+        if (displayList == null || bounds == null) return false;
+        Thread current = Thread.currentThread();
+        DisplayListCacheItem exist = displayListCache.get(pageNum);
+        if (exist != null) {
+            // 同一页已有别的线程缓存的显示列表：不覆盖，避免跨线程 drop
+            if (exist.owner != current) return false;
+            displayListCache.remove(pageNum);
+            destroyDisplayList(exist.displayList);
+        }
+        DisplayListCacheItem item = new DisplayListCacheItem(displayList, bounds, current);
+        displayListCache.put(pageNum, item);
+        if (displayListCache.size() > MAX_DISPLAY_LISTS) {
+            // accessOrder 的队首就是最久未用的；跳过刚插入的这份
+            Iterator<Map.Entry<Integer, DisplayListCacheItem>> iterator = displayListCache.entrySet().iterator();
+            while (iterator.hasNext()) {
+                DisplayListCacheItem old = iterator.next().getValue();
+                if (old == item) continue;
+                iterator.remove();
+                destroyDisplayList(old.displayList);
+                break;
+            }
+        }
+        return true;
+    }
+
+    /** 丢弃某一页的显示列表缓存（只处理当前线程持有的那份，跨线程的交给原线程淘汰） */
+    private void removeCachedDisplayList(int pageNum) {
+        DisplayListCacheItem item = displayListCache.get(pageNum);
+        if (item == null || item.owner != Thread.currentThread()) return;
+        displayListCache.remove(pageNum);
+        destroyDisplayList(item.displayList);
+    }
+
+    /** 页面内容/文档结构变化后，缓存的显示列表全部作废 */
+    private void clearDisplayListCache() {
+        if (displayListCache.isEmpty()) return;
+        int size = displayListCache.size();
+        for (DisplayListCacheItem item : displayListCache.values()) {
+            destroyDisplayList(item.displayList);
+        }
+        displayListCache.clear();
+        Debugger.i(TAG, "clearDisplayListCache: pages=" + size);
+    }
+
+    private void destroyDisplayList(DisplayList displayList) {
+        if (displayList == null) return;
+        try {
+            displayList.destroy();
+        } catch (Throwable e) {
+            Debugger.e(TAG, "destroyDisplayList failed:" + Debugger.getFullStackTrace(e));
+        }
     }
 
     public synchronized Link[] getPageLinks(int pageNum) {
@@ -661,7 +949,7 @@ public class MuPDFCore {
         return null;
     }
 
-    private void invalidatePageCache() {
+    private synchronized void invalidatePageCache() {
         if (page != null) {
             page.destroy();
             page = null;
@@ -669,6 +957,11 @@ public class MuPDFCore {
         currentPage = -1;
         pageWidth = 0;
         pageHeight = 0;
+        // 页面内容变了（批注/水印/签名表格…），已渲染的位图与显示列表全部作废
+        if (pageBitmapCache.size() > 0) {
+            pageBitmapCache.clear();
+        }
+        clearDisplayListCache();
     }
 
     /**
@@ -978,7 +1271,6 @@ public class MuPDFCore {
                     int length = points.length;
                     for (int j = 0; j < length; j++) {
                         Point point = points[j];
-                        System.out.print(point + "  ");
                         float x = point.x, y = point.y;
                         if (j == 0) {
                             path = new Path();
@@ -1180,6 +1472,9 @@ public class MuPDFCore {
     public synchronized void onDestroy() {
         Debugger.i(TAG, "onDestroy: start");
         try {
+            shutdownNativeExecutor();
+            pageBitmapCache.clear();
+            clearDisplayListCache();
             if (page != null)
                 page.destroy();
             page = null;

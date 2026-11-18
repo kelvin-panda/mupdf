@@ -75,6 +75,94 @@ public class AnnotationArtBoard extends View {
     private List<AnnotationArtBoard.DrawPath> pathList = new ArrayList<>();
     private long currentOperationId;
     private final Set<Long> erasedOperationIds = new LinkedHashSet<>();
+    /** 已提交但还没执行完的擦除写操作数（用于把"擦除完成"回调推迟到写操作真正落地后） */
+    private int pendingEraseWrites;
+
+    /**
+     * 主线程写调度器：由宿主注入（`MuPdfDocumentActivity#runOnMainWhenRenderIdle`），
+     * 让擦除这类 native 文档写在"页渲染队列忙"时先等空闲，避免主线程等锁。
+     */
+    public interface WriteScheduler {
+        void runOnMainWhenRenderIdle(Runnable action);
+    }
+
+    private WriteScheduler writeScheduler;
+
+    public void setWriteScheduler(WriteScheduler scheduler) {
+        this.writeScheduler = scheduler;
+    }
+
+    /** 走调度器执行写操作；没有调度器时退化为直接执行 */
+    private void runWrite(Runnable action) {
+        if (writeScheduler != null) {
+            writeScheduler.runOnMainWhenRenderIdle(action);
+        } else {
+            action.run();
+        }
+    }
+
+    /** 待执行的擦除点（一次手势内合并提交） */
+    private static final class ErasePoint {
+        final int page;
+        final int pageWidth;
+        final int pageHeight;
+        final float x;
+        final float y;
+
+        ErasePoint(int page, int pageWidth, int pageHeight, float x, float y) {
+            this.page = page;
+            this.pageWidth = pageWidth;
+            this.pageHeight = pageHeight;
+            this.x = x;
+            this.y = y;
+        }
+    }
+
+    private final List<ErasePoint> pendingErasePoints = new ArrayList<>();
+    private boolean eraseWriteScheduled;
+
+    /**
+     * 把当前累积的擦除点合并成一批提交（走调度器，主线程执行）。
+     *
+     * <p>擦除手势一次会产生几十个 MOVE 事件，逐点提交会排几十次 native 写、几十次整页刷新；
+     * 这里保证同一时刻只有一批在排队，批内一次循环删完，每页只刷新一次。</p>
+     */
+    private void scheduleEraseWrite() {
+        if (eraseWriteScheduled) return;
+        eraseWriteScheduled = true;
+        pendingEraseWrites++;
+        runWrite(() -> {
+            try {
+                if (core == null) return;
+                List<ErasePoint> batch = new ArrayList<>(pendingErasePoints);
+                pendingErasePoints.clear();
+                Set<Integer> changedPages = new LinkedHashSet<>();
+                for (ErasePoint point : batch) {
+                    long[] deletedOperationIds = core.deleteAnnotationWithOperationIds(
+                            point.page, point.pageWidth, point.pageHeight, point.x, point.y);
+                    for (long operationId : deletedOperationIds) {
+                        if (operationId > 0) {
+                            erasedOperationIds.add(operationId);
+                            changedPages.add(point.page);
+                        }
+                    }
+                }
+                for (int pageIdx : changedPages) {
+                    View pv = docView != null ? docView.getView(pageIdx) : null;
+                    if (pv instanceof PageView) ((PageView) pv).update();
+                }
+            } catch (Exception e) {
+                Debugger.e(TAG, e);
+            } finally {
+                eraseWriteScheduled = false;
+                pendingEraseWrites--;
+                // 等待期间又攒了新点：再排一批
+                if (!pendingErasePoints.isEmpty()) {
+                    scheduleEraseWrite();
+                }
+            }
+        });
+    }
     private Paint mBitmapPaint;
     private Bitmap mBitmap;
     private Canvas mCanvas;
@@ -576,15 +664,9 @@ public class AnnotationArtBoard extends View {
                             int pageH = docView.getPageDisplayHeight(pageIdx);
                             if (pageH <= 0) pageH = screenHeight;
                             float localY = y + docView.getDocumentScrollY() - pageTop;
-                            long[] deletedOperationIds = core.deleteAnnotationWithOperationIds(
-                                    pageIdx, pageW, pageH, x - pageLeft, localY);
-                            if (deletedOperationIds.length > 0) {
-                                for (long operationId : deletedOperationIds) {
-                                    if (operationId > 0) erasedOperationIds.add(operationId);
-                                }
-                                View pv = docView.getView(pageIdx);
-                                if (pv instanceof PageView) ((PageView) pv).update();
-                            }
+                            // 一次手势内的擦除点合并成一批提交：避免每个 MOVE 都排一次 native 写 + 一次刷新
+                            pendingErasePoints.add(new ErasePoint(pageIdx, pageW, pageH, x - pageLeft, localY));
+                            scheduleEraseWrite();
                         }
                         break;
                     default:
@@ -598,7 +680,7 @@ public class AnnotationArtBoard extends View {
                 if (docView != null) documentScrollY = docView.getDocumentScrollY();
                 isDrawing = false;
                 if (currentDrawGraphics == DRAW_ERASER) {
-                    notifyEraseFinished();
+                    flushEraseWritesThenNotify();
                     points.clear();
                     mPath = null;
                     awaitAnnotationRender = false;
@@ -691,7 +773,7 @@ public class AnnotationArtBoard extends View {
             case MotionEvent.ACTION_CANCEL:
                 isDrawing = false;
                 if (currentDrawGraphics == DRAW_ERASER) {
-                    notifyEraseFinished();
+                    flushEraseWritesThenNotify();
                 }
                 points.clear();
                 mPath = null;
@@ -701,6 +783,15 @@ public class AnnotationArtBoard extends View {
             default:
                 break;
         }
+    }
+
+    /** 等还在排队的擦除写操作落地后再回报（否则对端会漏删） */
+    private void flushEraseWritesThenNotify() {
+        if (pendingEraseWrites > 0) {
+            postDelayed(this::flushEraseWritesThenNotify, 50);
+            return;
+        }
+        notifyEraseFinished();
     }
 
     private void notifyEraseFinished() {
