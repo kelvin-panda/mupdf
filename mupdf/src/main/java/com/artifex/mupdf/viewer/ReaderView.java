@@ -533,7 +533,9 @@ public class ReaderView
         Debugger.i("ReaderView refresh");
         mResetLayout = true;
 
-        mScale = mDefaultScale;
+        // 复位到默认缩放：必须重新 clamp，否则横屏存的 42% 转到竖屏后会小于最小缩放
+        // （竖屏适页 = 适宽时最小值就是 100%）
+        mScale = clampScale(mDefaultScale);
         mXScroll = mYScroll = 0;
         mScrollY = 0;
 
@@ -628,6 +630,9 @@ public class ReaderView
         Debugger.i(TAG, "ReaderView.defaultScale: " + scale);
         float previousScale = mScale;
         mScale = clampScale(scale);
+        // 宿主/设置页显式指定的"默认缩放"要记住：refresh()（首次 onSizeChanged、旋转、重置）
+        // 会用 mDefaultScale 复位，不更新的话首帧就会被冲回 1.0，导致按适宽渲一遍再按目标尺寸重渲一遍。
+        mDefaultScale = mScale;
 
         // 连续拼页：缩放后页面高度变化，需重算位置
         mPageHeights.clear();
@@ -664,6 +669,8 @@ public class ReaderView
     public boolean onScaleBegin(ScaleGestureDetector detector) {
         tapDisabled = true;
         mScaling = true;
+        // 手势期间只做位图缩放预览，避免每变一档缩放就重渲一次整页
+        setScalePreviewForChildren(true);
         // Ignore any scroll amounts yet to be accounted for: the
         // screen is not showing the effect of them, so they can
         // only confuse the user
@@ -674,6 +681,9 @@ public class ReaderView
 
     public void onScaleEnd(ScaleGestureDetector detector) {
         mScaling = false;
+        // 手势结束：关掉预览，按最终尺寸给每页补一次渲染（尺寸没变则跳过）
+        setScalePreviewForChildren(false);
+        renderChildrenIfSizeChanged();
 //        Debugger.i(TAG, "ReaderView.onScaleEnd: "
 //                + "\nmScale:" + mScale
 //                + "\nfactor:" + detector.getScaleFactor()
@@ -682,6 +692,43 @@ public class ReaderView
 //                + "\nmLastScaleFocusX:" + mLastScaleFocusX
 //                + "\nmLastScaleFocusY:" + mLastScaleFocusY
 //        );
+    }
+
+    /** 双指缩放/滑块拖动期间：子页只做位图缩放预览，不重渲染 */
+    private void setScalePreviewForChildren(boolean preview) {
+        for (int i = 0; i < mChildViews.size(); i++) {
+            View v = mChildViews.valueAt(i);
+            if (v instanceof PageView) {
+                ((PageView) v).setScalePreview(preview);
+            }
+        }
+    }
+
+    /** 手势结束后按最终尺寸补齐渲染（尺寸没变的页会跳过）；先补可见页，再补缓冲页 */
+    private void renderChildrenIfSizeChanged() {
+        View current = mChildViews.get(mCurrent);
+        if (current instanceof PageView) {
+            ((PageView) current).renderIfSizeChanged();
+        }
+        for (int i = 0; i < mChildViews.size(); i++) {
+            View v = mChildViews.valueAt(i);
+            if (v != current && v instanceof PageView) {
+                ((PageView) v).renderIfSizeChanged();
+            }
+        }
+    }
+
+    /**
+     * 供宿主（设置页缩放滑块）在拖动期间开关"位图缩放预览"，避免每变一档就重渲整页。
+     * 松手后需调用 {@link #renderIfSizeChanged()}。
+     */
+    public void setScalePreview(boolean preview) {
+        setScalePreviewForChildren(preview);
+    }
+
+    /** 供宿主调用：缩放拖动结束后按最终尺寸补齐渲染 */
+    public void renderIfSizeChanged() {
+        renderChildrenIfSizeChanged();
     }
 
     @Override
@@ -704,6 +751,9 @@ public class ReaderView
         if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_CANCEL) {
             mUserInteracting = false;
             mScaling = false;
+            // 手势被取消也要关掉预览，否则页面会一直停留在拉伸位图上
+            setScalePreviewForChildren(false);
+            renderChildrenIfSizeChanged();
             if (mScroller.isFinished()) requestLayout();
         }
 

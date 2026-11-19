@@ -119,6 +119,12 @@ public class PageView extends ViewGroup {
     private int mInflightPage = -1;
     private int mInflightWidth;
     private int mInflightHeight;
+    /**
+     * 双指缩放/滑块拖动期间为 true：只做位图缩放预览（onLayout 里 mEntireMat 拉伸），
+     * 不提交整页渲染。否则每变一档缩放就要重渲一次整页（重页 ~200-800ms），
+     * 手势跟手性很差；松手后由 {@link #renderIfSizeChanged()} 补一次。
+     */
+    private boolean mScalePreview;
 
     private Quad mSearchBoxes[][];
     protected Link mLinks[];
@@ -686,7 +692,9 @@ public class PageView extends ViewGroup {
                         Debugger.d(TAG, "[PageLoad] page=" + pageLabel(renderPage)
                                 + " re-render cost=" + cost + "ms（渲染尺寸 " + targetW + "x" + targetH
                                 + " → View " + viewW + "x" + viewH + "）");
-                        renderEntirePage(viewW, viewH, false);
+                        // 这一页已经画好过（mRenderedPage == renderPage）就静默换尺寸，
+                        // 否则换尺寸时清位图会出现白屏
+                        renderEntirePage(viewW, viewH, mRenderedPage == renderPage);
                         return;
                     }
                     mRenderedWidth = targetW;
@@ -782,7 +790,7 @@ public class PageView extends ViewGroup {
         // 不能放在 setPage()：那里只有 fit-page 的 mSize，与真实布局尺寸不一致时会先渲染一张废图。
         boolean exactSpec = View.MeasureSpec.getMode(widthMeasureSpec) == View.MeasureSpec.EXACTLY
                 && View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.EXACTLY;
-        if (exactSpec && !mIsBlank && mErrorIndicator == null
+        if (!mScalePreview && exactSpec && !mIsBlank && mErrorIndicator == null
                 && x > 0 && y > 0 && (mRenderedWidth != x || mRenderedHeight != y)) {
             renderEntirePage(x, y, false);
         }
@@ -818,7 +826,7 @@ public class PageView extends ViewGroup {
             mSearchView.layout(0, 0, w, h);
         }
 
-        if (!mIsBlank && mErrorIndicator == null && w > 0 && h > 0
+        if (!mScalePreview && !mIsBlank && mErrorIndicator == null && w > 0 && h > 0
                 && (mRenderedWidth != w || mRenderedHeight != h)) {
             renderEntirePage(w, h, false);
         }
@@ -842,6 +850,35 @@ public class PageView extends ViewGroup {
         int width = getWidth() > 0 ? getWidth() : mSize.x;
         int height = getHeight() > 0 ? getHeight() : mSize.y;
         renderEntirePage(width, height, true);
+    }
+
+    /**
+     * 缩放手势期间开关"位图缩放预览"。
+     *
+     * <p>开启后 {@link #onMeasure} / {@link #onLayout} 不再提交整页渲染，只把已有位图按新尺寸拉伸，
+     * 手势因此保持跟手；松手时调用 {@link #renderIfSizeChanged()} 补一次清晰渲染。</p>
+     */
+    public void setScalePreview(boolean preview) {
+        mScalePreview = preview;
+    }
+
+    /** 这一页当前是否正在渲染（含已排队的补渲） */
+    public boolean isRendering() {
+        return mDrawEntire != null || mRenderPending;
+    }
+
+    /** 缩放结束后按当前尺寸补一次渲染；尺寸没变（手势没实际改变缩放）则不渲染 */
+    public void renderIfSizeChanged() {
+        int w = getWidth();
+        int h = getHeight();
+        if (w > 0 && h > 0 && (mRenderedWidth != w || mRenderedHeight != h)) {
+            Debugger.i(TAG, "[PageLoad] page=" + pageLabel(mPageNumber)
+                    + " 缩放结束补渲染 size=" + w + "x" + h);
+            // 必须走静默更新（临时位图 + 原子替换）：普通 draw 会在换尺寸时先 clearEntireBitmap，
+            // ImageView 变空 → 松手后白屏 + 转圈再出图（用户可见的"白屏再加载"）。
+            // update=true 时 quietUpdate 分支保留旧位图，渲染完成后才切换。
+            renderEntirePage(w, h, true);
+        }
     }
 
     /**

@@ -89,9 +89,10 @@ PageAdapter#getView → PageView#setPage（只算尺寸，不渲染）
 
 ### 3.1 允许阻塞的两个"闸门"
 
-- **进入批注**：`waitForRenderIdleThen()` —— 批注提交要在主线程做几何换算并调同步 native 写，
-  所以进入批注前在**后台**等页渲染队列空闲（最多 8s，>400ms 弹"正在渲染页面，请稍候…"），
-  超时放弃本次操作。避免"渲染持锁 → 主线程提交批注等锁 → ANR"。
+- **进入批注**：`waitForRenderIdleThen()` —— 进入批注只读一次页尺寸（native），所以**只在本页尺寸
+  未探明且本页正在渲染**时才在后台等它渲完（最多 8s，>600ms 才弹"正在渲染页面，请稍候…"，超时也进入）。
+  不能按"整个渲染队列忙"判断：缩放后缓冲页还在渲、队列长时间为忙，会导致每次点批注都白等并弹提示
+  （尺寸早已缓存，其实可以直接进）。
 - **会话内笔画提交**：`commitStrokeSafely()` —— 会话中的补丁刷新渲染在跑时，笔画先进
   `pendingStrokeCommits` 队列，由后台线程等队列空闲后再在主线程逐笔提交（8s 超时也提交）。
   几何计算仍留在主线程（依赖 `ReaderView` 状态，不能跨线程）。
@@ -151,3 +152,19 @@ PageAdapter#getView → PageView#setPage（只算尺寸，不渲染）
 5. **撤销/取消链路的写**：`deleteLastAnnotation`、`markLocallyErasable`（取消批注、远端撤销）
    仍在主线程直接调 `MuPDFCore`，未走调度器。擦除（画板内 `deleteAnnotationWithOperationIds`）
    已改为批量 + 调度，见 3.1。
+6. **双指缩放不能每帧重渲染**。`onScale` 每回调一次就 `requestLayout`，若照常按新尺寸渲染，
+   一次捏合会产生十几次整页渲染（重页 ~200-800ms/次），手感"一跳一跳"。
+   现在 `onScaleBegin` 打开 `PageView#setScalePreview(true)`：手势期间 `onMeasure`/`onLayout`
+   只把已有位图按新尺寸拉伸（`mEntireMat`），`onScaleEnd`/`ACTION_CANCEL` 再调
+   `renderIfSizeChanged()` 按最终尺寸补一次（先补可见页）。设置页的缩放滑块同样处理。
+   实测：连续改 49 次缩放 → 拖动期 0 次渲染，松手后每页 1 次。
+   **松手补渲染必须走"静默更新"（`update=true`）**：普通 `draw` 路径在尺寸变化时会
+   `clearEntireBitmap` 掉旧位图 → ImageView 变空、出现白屏 + 转圈（用户可见的"抬手后白屏再加载"）；
+   `update=true` 时 `quietUpdate` 分支渲染到临时位图、完成后原子替换，旧图全程可见。
+7. **初始缩放必须在首次布局前生效**。`applyZoomPercent` 如果放在 `postToMainDelayed` 里，
+   首次布局会先按 `mScale = 1.0`（适宽 100%）渲一遍，post 生效后再按目标尺寸重渲一遍 ——
+   打开耗时接近翻倍。实测（3 页、页 1）：42% 时 `2000x2833 847ms + 840x1190 210ms`，
+   `DONE cost=1808ms`；100% 时只有 `2000x2833`，`DONE cost=886ms`（第二遍被"同页同尺寸"去重）。
+   修法：`createUI` 里在首次布局前就 `applyZoomPercent`，并且 `ReaderView.defaultScale` 要同步更新
+   `mDefaultScale`（否则 `refresh()`（首次 `onSizeChanged`/旋转）会把 `mScale` 冲回 1.0）。
+   修复后 42% 只渲一遍 `840x1190`，`DONE cost=336ms`。

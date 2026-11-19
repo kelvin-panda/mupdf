@@ -1291,6 +1291,16 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         PageAdapter pageAdapter = new PageAdapter(this, core, fullWidthScale, "");
         mDocView.setAdapter(pageAdapter);
 
+        // 初始缩放在首次布局前就生效：否则首次布局会按 mScale=1（适宽 100%）先渲一遍，
+        // 等 postToMainDelayed 里 applyZoomPercent 生效后再按目标尺寸重渲一遍，打开耗时接近翻倍。
+        // 实测（3 页文档、页 1）：42% 时 2000x2833 847ms + 840x1190 210ms，DONE cost=1808ms；
+        // 100% 时只有一遍 2000x2833，DONE cost=886ms。
+        // getFitPageZoomPercent() 依赖首页尺寸，这里预热一次（loadPage，毫秒级），之后 getPageSizeIfKnown 命中。
+        if (configuredZoomPercent < 0) {
+            core.getPageSize(0);
+        }
+        applyZoomPercent(resolveInitialZoomPercent(), false);
+
         mSearchTask = new SearchTask(this, core) {
             @Override
             protected void onTextFound(SearchTaskResult result) {
@@ -1327,7 +1337,15 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             if (srcPageIndex != 0) {
                 mDocView.setDisplayedViewIndex(srcPageIndex - 1);
             }
-            applyZoomPercent(resolveInitialZoomPercent(), false);
+            // 首帧已经按目标缩放布局过（见 createUI 里的 applyZoomPercent），这里只在实测尺寸
+            // 与预估不一致时才重新设一次，避免又触发一轮"换尺寸 → 重渲染"。
+            int initialZoomPercent = resolveInitialZoomPercent();
+            float targetScale = fullWidthScale * initialZoomPercent / 100f;
+            if (Math.abs(mDocView.getScale() - targetScale) > targetScale * 0.01f) {
+                applyZoomPercent(initialZoomPercent, false);
+            } else {
+                currentZoomPercent = initialZoomPercent;
+            }
             mDocView.requestLayout();
             mDocView.run();
 
@@ -1806,8 +1824,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         //<editor-fold desc="批注">
         //开启批注
         viewTopAnnotation.setOnClickListener(v -> {
-            // 先等页渲染队列空闲：批注提交会在主线程调 MuPDFCore 的同步 native 方法，
-            // 后台渲染持锁期间（重文档 2~7s/页）主线程会等锁 → ANR。等待在后台线程进行，不占主线程。
+            // 进入批注要读一次页尺寸（native）。只有"本页尺寸未探明且本页正在渲染"时才需要在后台
+            // 等它渲完；其余情况（例如刚缩放完：尺寸早已缓存、只是缓冲页还在渲）直接进入，不弹提示。
             if (waitForRenderIdleThen(v::performClick)) return;
             mDocView.savePosition();
             // 进入批注前冻结文档：否则正在进行的惯性/翻页动画会在批注面板下继续滑动，
@@ -3821,14 +3839,20 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 currentZoomPercent = progress + minZoomPercent;
                 zoomValue.setText(currentZoomPercent + "%");
                 if (fromUser && mDocView != null) {
-                    applyZoomPercent(currentZoomPercent, true);
+                    // 拖动过程中只更新布局并做位图缩放预览，不整页重渲染（松手后补一次）
+                    applyZoomPercent(currentZoomPercent, false);
                 }
             }
 
             public void onStartTrackingTouch(SeekBar sb) {
+                if (mDocView != null) mDocView.setScalePreview(true);
             }
 
             public void onStopTrackingTouch(SeekBar sb) {
+                if (mDocView == null) return;
+                mDocView.setScalePreview(false);
+                mDocView.renderIfSizeChanged();
+                saveDisplaySettings();
             }
         });
         zoomRow.addView(zoomBar);
@@ -4012,6 +4036,14 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         alert.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.mupdf_cancel),
                 (dialog, which) -> dialog.dismiss());
+        // 兜底：拖动滑块过程中弹窗被取消/点外部关闭时 onStopTrackingTouch 可能不触发，
+        // 这里确保"位图缩放预览"复位并补一次渲染，避免页面一直停在拉伸位图上。
+        alert.setOnDismissListener(dialog -> {
+            if (mDocView != null) {
+                mDocView.setScalePreview(false);
+                mDocView.renderIfSizeChanged();
+            }
+        });
         alert.show();
     }
 
@@ -4239,33 +4271,51 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
      * 空闲后再回主线程执行，最多等 {@link #ANNOTATION_ENTRY_WAIT_MS}。</p>
      */
     private boolean waitForRenderIdleThen(Runnable action) {
-        if (core == null || !core.isPageRenderBusy()) return false;
+        if (core == null || !isDisplayedPageRendering()) return false;
         if (annotationEntryPending) return true;
+        // 只有"这一页的尺寸还没探明"时才需要等：尺寸已知（缩放后必然已知）时进入批注不做任何
+        // 会等锁的 native 读取，直接进即可。按整个渲染队列判断会误伤——缩放后缓冲页还在渲，
+        // 队列一直忙，导致每次点批注都白等并弹"正在渲染页面"。
+        if (core.getPageSizeIfKnown(displayedPageIndex()) != null) return false;
         annotationEntryPending = true;
-        Debugger.i(TAG, "等待页渲染队列空闲（" + core.pendingPageRenderCount() + "）后再继续");
+        final PageView target = displayedPageView();
+        Debugger.i(TAG, "本页尺寸未知且正在渲染，等它渲完再进批注");
         new Thread(() -> {
             long started = SystemClock.uptimeMillis();
             long deadline = started + ANNOTATION_ENTRY_WAIT_MS;
             boolean tipShown = false;
-            while (core != null && core.isPageRenderBusy() && SystemClock.uptimeMillis() < deadline) {
-                if (!tipShown && SystemClock.uptimeMillis() - started > 400) {
+            while (core != null && target != null && target.isRendering()
+                    && SystemClock.uptimeMillis() < deadline) {
+                if (!tipShown && SystemClock.uptimeMillis() - started > 600) {
                     tipShown = true;
-                    // 等超过 400ms 才提示，避免正常情况下一闪而过的 toast
+                    // 等超过 600ms 才提示，避免正常情况下一闪而过的 toast
                     toast(getString(R.string.mupdf_page_rendering_wait));
                 }
-                SystemClock.sleep(50);
+                SystemClock.sleep(40);
             }
             postToMain(() -> {
                 annotationEntryPending = false;
                 if (isFinishing() || core == null) return;
-                if (core.isPageRenderBusy()) {
-                    Debugger.i(TAG, "渲染队列仍未空闲，放弃本次操作");
-                    return;
-                }
+                // 超时也进入：进入批注只读一次页尺寸，写操作已有队列保护，不会 ANR
                 action.run();
             });
-        }, "mupdf-wait-render-idle").start();
+        }, "mupdf-wait-page-render").start();
         return true;
+    }
+
+    private int displayedPageIndex() {
+        return mDocView != null ? mDocView.getDisplayedViewIndex() : 0;
+    }
+
+    private PageView displayedPageView() {
+        if (mDocView == null) return null;
+        View view = mDocView.getView(displayedPageIndex());
+        return view instanceof PageView ? (PageView) view : null;
+    }
+
+    private boolean isDisplayedPageRendering() {
+        PageView page = displayedPageView();
+        return page != null && page.isRendering();
     }
 
     /**
