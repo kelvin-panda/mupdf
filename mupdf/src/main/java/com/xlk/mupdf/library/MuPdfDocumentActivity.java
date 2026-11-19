@@ -500,7 +500,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         String sessionId = config.getSessionId();
         if (sessionId == null || sessionId.isEmpty()) {
             sessionId = "mupdf-" + System.currentTimeMillis();
-            Debugger.e("MupdfConfig.sessionId 未设置，已自动生成：" + sessionId);
+            Debugger.i("MupdfConfig.sessionId 未设置，已自动生成：" + sessionId);
         }
         // MupdfHost 是接口，不能放进 Bundle；用静态表按 sessionId 交接，
         // Activity 重建（旋转 / onNewIntent → recreate）后仍能取回同一个 host。
@@ -511,6 +511,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         // 7.0.0：这两个开关从 MupdfMacro 静态字段迁到 MupdfConfig，统一在这里解析进 bundle
         bundle.putBoolean(MupdfMacro.bundle_key_heng_xun_style, config.isHengXunStyle());
         bundle.putBoolean(MupdfMacro.bundle_key_share_annotation_enabled, config.isShareAnnotationEnabled());
+        bundle.putBoolean(MupdfMacro.bundle_key_verbose_log, config.isVerboseLogEnabled());
         bundle.putString(MupdfMacro.bundle_key_file_path, config.getFilePath());
         bundle.putString(MupdfMacro.bundle_key_annotation_save_path, config.getAnnotationSaveDirPath());
         bundle.putString(MupdfMacro.bundle_key_file_uri, config.getFileUri());
@@ -559,7 +560,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
         intent.putExtra(MupdfMacro.mupdf_bundle_key, bundle);
-        Debugger.e(TAG, "打开MuPdfDocumentActivity");
+        Debugger.i(TAG, "打开MuPdfDocumentActivity");
         context.startActivity(intent);
     }
 
@@ -593,7 +594,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         if (sessionActive || core == null) return;
         if (mSessionId.isEmpty()) {
             mSessionId = "mupdf-" + System.currentTimeMillis();
-            Debugger.e("MupdfConfig.sessionId 未设置，已自动生成：" + mSessionId);
+            Debugger.i("MupdfConfig.sessionId 未设置，已自动生成：" + mSessionId);
         }
         sessionActive = true;
         sessionImpl = new SessionImpl();
@@ -747,7 +748,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             Debugger.d("签名画板已在显示，忽略重复通知");
             return;
         }
-        Debugger.e("接收到秘书端通知签名的通知");
+        Debugger.i("接收到秘书端通知签名的通知");
         signatureBoard = new ArtBoardDialog(MuPdfDocumentActivity.this, false, false,
                 new ArtBoardDialog.SignatureListener() {
                     @Override
@@ -917,6 +918,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         state.sessionId = bundle.getString(MupdfMacro.bundle_key_session_id, "");
         state.hengXunStyle = bundle.getBoolean(MupdfMacro.bundle_key_heng_xun_style, false);
         state.shareAnnotationEnabled = bundle.getBoolean(MupdfMacro.bundle_key_share_annotation_enabled, false);
+        state.verboseLogEnabled = bundle.getBoolean(MupdfMacro.bundle_key_verbose_log, false);
         state.uploadEnable = bundle.getBoolean(MupdfMacro.bundle_key_upload_enable, true);
         state.annotationEnable = bundle.getBoolean(MupdfMacro.bundle_key_annotation_enable, true);
         state.signatureEnable = bundle.getBoolean(MupdfMacro.bundle_key_signature_enable, true);
@@ -980,9 +982,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
         state.docKey = uri.toString();
 
-        Debugger.i(TAG, "OPEN filePath " + state.srcFilePath);
-        Debugger.i(TAG, "OPEN URI " + uri);
-        Debugger.i(TAG, "OPEN mimetype " + mimetype);
+        Debugger.d(TAG, "OPEN filePath " + state.srcFilePath);
+        Debugger.d(TAG, "OPEN URI " + uri);
+        Debugger.d(TAG, "OPEN mimetype " + mimetype);
 
         long size = -1;
         Cursor cursor = null;
@@ -1019,9 +1021,9 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         if (mimetype == null || "application/octet-stream".equals(mimetype)) {
             mimetype = state.docTitle;
         }
-        Debugger.i(TAG, "  NAME " + state.docTitle);
-        Debugger.i(TAG, "  SIZE " + size);
-        Debugger.i(TAG, "  MAGIC " + mimetype);
+        Debugger.d(TAG, "  NAME " + state.docTitle);
+        Debugger.d(TAG, "  SIZE " + size);
+        Debugger.d(TAG, "  MAGIC " + mimetype);
 
         if (!state.srcFilePath.isEmpty()) {
             state.docTitle = Util.getFileName(state.srcFilePath);
@@ -1089,6 +1091,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                 + "\nmAnnotationInputTextEnabled=" + state.annotationInputTextEnabled
                 + "\nmBackButtonEnabled=" + state.backButtonEnabled
                 + "\nmInformSignatureEnabled=" + state.informSignatureEnabled
+                + "\nverboseLogEnabled=" + state.verboseLogEnabled
                 + "\nshouldSignature=" + state.shouldSignature
         );
         return state;
@@ -1155,6 +1158,8 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         MupdfMacro.brightness = state.brightness;
         hengXunStyle = state.hengXunStyle;
         shareAnnotationEnabled = state.shareAnnotationEnabled;
+        // 详细日志默认关：只保留异常与关键信息，打开后才输出 d 级（逐渲染/布局/手势等）
+        Debugger.setMinLevel(state.verboseLogEnabled ? android.util.Log.DEBUG : android.util.Log.INFO);
         // 7.0.0：currentMediaId / currentFilePath / currentUri 已移除，
         // 宿主需要当前文件标识时改用 MupdfSession#mediaId() / hasDocument(int)。
     }
@@ -1167,6 +1172,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         String sessionId = "";
         boolean hengXunStyle;
         boolean shareAnnotationEnabled;
+        boolean verboseLogEnabled;
         String srcFilePath;
         String annotationSavePath;
         String srcUri;
@@ -1222,7 +1228,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         fullWidthScale = 1.0f;
         if (isFullScreen) {
             PointF size = core.getPageSize(0);
-            Debugger.i(TAG, "createUI: size=" + size + ",fullWidthScale=" + fullWidthScale);
+            Debugger.d(TAG, "createUI: size=" + size + ",fullWidthScale=" + fullWidthScale);
         }
         mDocView = new ReaderView(this, fullWidthScale) {
             @Override
@@ -1241,7 +1247,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         rvThumbnails.smoothScrollToPosition(i);
                     }
                 }
-                Debugger.i(TAG, "onMoveToChild: currentPageIndex=" + currentPageIndex);
+                Debugger.d(TAG, "onMoveToChild: currentPageIndex=" + currentPageIndex);
                 super.onMoveToChild(i);
             }
 
@@ -1370,7 +1376,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             }
         }, 500L);
 
-        Debugger.i(TAG, "createUI: end");
+        Debugger.d(TAG, "createUI: end");
     }
 
     private void initViews() {
@@ -2009,7 +2015,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         });
         //邀请多人批注
         viewArtInvite.setOnClickListener(v -> {
-            Debugger.e("邀请多人批注");
+            Debugger.i("邀请多人批注");
             dispatchHost(h -> h.onAnnotationInviteRequested(mDocTitle, mediaId, currentPageIndex + 1));
         });
         //提交批注
@@ -2129,13 +2135,13 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             } else {
                 pendingSharedOperationAttempts.remove(operation.getOperationId());
                 processedSharedOperationIds.add(operation.getOperationId());
-                Debugger.e("共享批注操作等待目标超时，operationId="
+                Debugger.i("共享批注操作等待目标超时，operationId="
                         + operation.getOperationId());
             }
         }
 
         if (!changedPages.isEmpty()) {
-            Debugger.e("共享批注批量同步完成，操作数：" + operations.size()
+            Debugger.i("共享批注批量同步完成，操作数：" + operations.size()
                     + "，变更页数：" + changedPages.size());
             refreshAfterSharedChanges(changedPages);
         }
@@ -2146,7 +2152,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         switch (operation.getOperationType()) {
             case MupdfInkBean.OP_ERASE:
                 if (!hasOperationTargets(operation.getTargetOperationIds())) {
-                    Debugger.e("远端操作：擦除目标未就绪，等待重试 targets="
+                    Debugger.i("远端操作：擦除目标未就绪，等待重试 targets="
                             + java.util.Arrays.toString(operation.getTargetOperationIds()));
                     return false;
                 }
@@ -2156,7 +2162,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
                         operation.getTargetOperationIds(), erasedBounds);
                 // 记下被删批注的包围盒：远端擦除/撤销也走局部重绘，否则整页重绘会让对端"闪一下"
                 recordSharedPatchRects(erasedBounds);
-                Debugger.e("远端操作：擦除 targets="
+                Debugger.i("远端操作：擦除 targets="
                         + java.util.Arrays.toString(operation.getTargetOperationIds())
                         + " 变更页=" + erasedPages + " 包围盒=" + erasedBounds.size());
                 changedPages.addAll(erasedPages);
@@ -2381,19 +2387,19 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         boolean hasCurrentPatch = patches.containsKey(currentPageIndex);
         if (currentPageChanged && mAnnotationVisible) {
             // 批注中：页面被浮层盖住，直接重绘这一页即可
-            Debugger.e("共享批注当前页有更新，批注中实时刷新页面");
+            Debugger.i("共享批注当前页有更新，批注中实时刷新页面");
             afterAnnotationRefresh = true;
             scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
         } else if (currentPageChanged && hasCurrentPatch) {
             // 远端新增/擦除落在当前页：只重绘变化的包围盒（约 3~8ms）
-            Debugger.e("共享批注当前页局部刷新（patch），避免整页重绘闪屏");
+            Debugger.i("共享批注当前页局部刷新（patch），避免整页重绘闪屏");
             scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages), patches);
         } else if (currentPageChanged) {
             // 没有包围盒（极少见，如目标在本机已不存在）：只重绘这一页的 View。
             // 不能用 afterAnnotationPreservingScroll()：它会移除并重建所有子 View
             //（mViewCache.clear() + requestLayout + invalidate），远端每次操作都整屏重绘一次，
             // 就是"对端一操作、我这边就闪一下"的来源。
-            Debugger.e("共享批注当前页更新（无包围盒），按页重绘");
+            Debugger.i("共享批注当前页更新（无包围盒），按页重绘");
             scheduleAnnotationPagesUpdate(new ArrayList<>(changedPages));
         } else {
             // 变化的不是当前页：按页更新（有包围盒的页走局部重绘，其它页整页重绘）
@@ -2680,7 +2686,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         try {
             postToMain(() -> {
                 Context applicationContext = getApplicationContext();
-                Debugger.e("当前正在签名中 applicationContext=" + applicationContext);
+                Debugger.i("当前正在签名中 applicationContext=" + applicationContext);
                 Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show();
             });
         } catch (Exception e) {
@@ -2691,7 +2697,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
     private void showButtons() {
         if (isSigning) {
-            Debugger.e("当前正在签名中");
+            Debugger.i("当前正在签名中");
             return;
         }
         if (core == null)
@@ -2856,7 +2862,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             List<Integer> pages = core.deleteAnnotationsByOperationIds(
                     new long[]{addedOperationId});
             if (pages != null) changedPages.addAll(pages);
-            Debugger.e("取消批注：撤回本机笔 operationId=" + addedOperationId
+            Debugger.i("取消批注：撤回本机笔 operationId=" + addedOperationId
                     + " 变更页=" + pages + " 本机剩余登记=" + core.countRegisteredOperations());
             // 本地可能已经不存在（本次会话里又被擦掉过），但**对端那一份仍然要删**，
             // 所以无论本地有没有命中都发这条撤销。
@@ -2893,7 +2899,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         }
 
         if (!undoOperations.isEmpty()) {
-            Debugger.e("取消批注：本地撤回 " + undoOperations.size()
+            Debugger.i("取消批注：本地撤回 " + undoOperations.size()
                     + " 条本机操作，并把删除同步给参与人");
             List<MupdfInkBean> batch = new ArrayList<>(undoOperations);
             dispatchHost(h -> h.onLocalOperations(batch));
@@ -2953,7 +2959,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
 
                 public void onAnimationEnd(Animation animation) {
                     if (runDeferredRefresh && afterAnnotationRefresh) {
-                        Debugger.e("批注期间有收到别人的共享批注，现在进行刷新");
+                        Debugger.i("批注期间有收到别人的共享批注，现在进行刷新");
                         afterAnnotationRefresh = false;
                         afterAnnotationPreservingScroll();
                         //mDocView.setDisplayedViewIndex(mDocView.mCurrent);
@@ -3003,7 +3009,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     private void exit() {
-        Debugger.i(TAG, "---exit---");
+        Debugger.d(TAG, "---exit---");
         if (uploadEnable && hadAnnotation) {
             tipSavePop();
         } else {
@@ -3464,7 +3470,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             int expected = Math.max(1, Math.round(pageW * (pdfSize.y / pdfSize.x)));
             int tolerance = Math.max(4, expected / 20);
             if (pageH <= 0 || Math.abs(pageH - expected) > tolerance) {
-                Debugger.e("批注页高与宽高比不符，按宽高比修正：pageIdx=" + pageIdx
+                Debugger.i("批注页高与宽高比不符，按宽高比修正：pageIdx=" + pageIdx
                         + " 报告页高=" + pageH + " 页宽=" + pageW
                         + " 修正页高=" + expected);
                 return expected;
@@ -4203,7 +4209,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
     }
 
     public void onDestroy() {
-        Debugger.i(TAG, "---onDestroy---start");
+        Debugger.d(TAG, "---onDestroy---start");
         try {
             idleWriteExecutor.shutdown();
         } catch (Exception e) {
@@ -4225,7 +4231,7 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
         pendingPageUpdate = null;
         mainHandler = null;
         if (mDocView != null) {
-            Debugger.i(TAG, "---onDestroy---ReaderView releaseAllBitmaps");
+            Debugger.d(TAG, "---onDestroy---ReaderView releaseAllBitmaps");
             mDocView.releaseAllBitmaps();
         }
         final MuPDFCore coreToClose = core;
@@ -4234,21 +4240,21 @@ public class MuPdfDocumentActivity extends AppCompatActivity implements CancelAd
             if (coreToClose.isPageRenderBusy()) {
                 // native 渲染不可中断，onDestroy 内的同步方法要等它跑完（重文档可到数秒）。
                 // 放到后台线程销毁，否则关闭阅读器时会 ANR。
-                Debugger.i(TAG, "---onDestroy---MuPDFCore 仍有页渲染，转后台线程销毁");
+                Debugger.d(TAG, "---onDestroy---MuPDFCore 仍有页渲染，转后台线程销毁");
                 new Thread(() -> {
                     coreToClose.onDestroy();
                     deleteSourceFileOnExit();
-                    Debugger.i(TAG, "---onDestroy---MuPDFCore 后台销毁完成");
+                    Debugger.d(TAG, "---onDestroy---MuPDFCore 后台销毁完成");
                 }, "mupdf-core-destroy").start();
             } else {
-                Debugger.i(TAG, "---onDestroy---MuPDFCore");
+                Debugger.d(TAG, "---onDestroy---MuPDFCore");
                 coreToClose.onDestroy();
                 deleteSourceFileOnExit();
             }
         } else {
             deleteSourceFileOnExit();
         }
-        Debugger.i(TAG, "---onDestroy---end");
+        Debugger.d(TAG, "---onDestroy---end");
         super.onDestroy();
     }
 

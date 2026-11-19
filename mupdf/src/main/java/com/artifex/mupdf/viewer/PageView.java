@@ -125,6 +125,39 @@ public class PageView extends ViewGroup {
      * 手势跟手性很差；松手后由 {@link #renderIfSizeChanged()} 补一次。
      */
     private boolean mScalePreview;
+    /**
+     * 低清首帧的像素预算：超过它就先渲染一张小图快速出画面（打开大页不再白等），
+     * 之后由 {@link #refineIfLowRes()} 静默补高清。约 0.6MP ≈ 1000×600。
+     * <p>只有"全清像素 ≥ 预算 × {@link #LOW_RES_MIN_RATIO}"时才走低清：页本身就在 1MP 左右时，
+     * 低清只省几十毫秒却要多渲一遍，不划算。</p>
+     */
+    private static final long LOW_RES_PIXEL_BUDGET = 600_000L;
+    /** 全清像素至少是预算的这么多倍，才值得先出一张低清 */
+    private static final long LOW_RES_MIN_RATIO = 3L;
+    /** 滚动期间的预览预算：更小更快，只在手指还按着/还在惯性滚动时使用 */
+    private static final long SCROLL_LOW_RES_BUDGET = 250_000L;
+    /** 滚动中为 true：首帧用更小的预览预算，松手/惯性停止后由 ReaderView 补高清 */
+    private boolean mScrollDeferring;
+    /** 当前屏幕上显示的是低清图，还欠一张高清 */
+    private boolean mLowResPending;
+    /**
+     * 本页是否在可见范围内（ReaderView 每次布局更新）。
+     * 可见页的渲染走高优先级队列，缓冲页让路——否则缓冲页会挡住用户正等着的页。
+     */
+    private boolean mVisibleForRender;
+
+    /** ReaderView 注入：本页是否可见（决定渲染优先级） */
+    public void setVisibleForRender(boolean visible) {
+        mVisibleForRender = visible;
+    }
+
+    /** ReaderView 注入：滚动状态（滚动中只出预览，停下再补高清） */
+    public void setScrollDefer(boolean defer) {
+        mScrollDeferring = defer;
+    }
+
+    /** 低清首帧上屏后的回调（ReaderView 注入：只在页面仍可见时补高清） */
+    private Runnable mLowResDoneListener;
 
     private Quad mSearchBoxes[][];
     protected Link mLinks[];
@@ -215,6 +248,29 @@ public class PageView extends ViewGroup {
         pageCache().release(bitmap);
     }
 
+    /**
+     * 取消渲染前把"正在被写的位图"从 View 上摘下来。
+     *
+     * <p>不这么做的话，下一次渲染的 {@code clearEntireBitmap()} 会 recycle 这张位图，
+     * 而 native 还在往里写（渲染不可中断）→ 崩溃/花屏。摘下来之后位图由任务的
+     * {@code doCleanup()} 在渲染真正结束后回收。</p>
+     */
+    private void abandonEntireBitmapForCancelledRender() {
+        if (mEntireBmCached) {
+            // 缓存持有的位图不会当渲染目标，正常归还即可
+            detachCachedBitmap(true);
+            return;
+        }
+        if (mEntire != null) {
+            mEntire.setImageBitmap(null);
+            mEntire.invalidate();
+        }
+        mEntireBm = null;   // 不 recycle：渲染线程还在写，交给 doCleanup
+        mRenderedWidth = 0;
+        mRenderedHeight = 0;
+        mRenderedPage = -1;
+    }
+
     private void clearEntireBitmap(boolean clearImage) {
         if (mEntireBmCached) {
             detachCachedBitmap(clearImage);
@@ -274,6 +330,10 @@ public class PageView extends ViewGroup {
     private void reinit() {
         // Cancel pending render task
         if (mDrawEntire != null) {
+            // 渲染不可中断（doCancel 故意不 abort）：先把"正在被写的位图"从 View 上摘下来交给任务，
+            // 任务结束后由它的 doCleanup 回收。这样主线程不用为了等渲染而阻塞
+            // （重页一页 4~7s，阻塞会触发看门狗/ANR）。
+            abandonEntireBitmapForCancelledRender();
             mDrawEntire.cancel();
             mDrawEntire = null;
         }
@@ -438,7 +498,7 @@ public class PageView extends ViewGroup {
 //        }
         Point newSize = new Point((int) (size.x * mSourceScale), (int) (size.y * mSourceScale));
         mSize = newSize;
-        Debugger.i(TAG, "setPage: page=" + page + ",size=" + size + ",mParentSize=" + mParentSize + ",mSourceScale=" + mSourceScale + ",mSize=" + mSize);
+        Debugger.d(TAG, "setPage: page=" + page + ",size=" + size + ",mParentSize=" + mParentSize + ",mSourceScale=" + mSourceScale + ",mSize=" + mSize);
 
         if (mErrorIndicator != null)
             return;
@@ -585,6 +645,27 @@ public class PageView extends ViewGroup {
         }
 
         Point renderSize = limitBitmapSize(width, height);
+        // 低清先出：仅"本页第一次出图"且像素超过预算时，先按较小尺寸渲染一张快速显示，
+        // 之后（本页可见且队列空闲时）由 refineIfLowRes() 静默补一张高清，替换过程不闪屏。
+        // 缩放/重绘（update=true 或本页已渲染过）一律直接全清，避免多渲染一遍。
+        final boolean firstPaint = mRenderedPage != mPageNumber;
+        float quality = 1f;
+        if (!update && firstPaint) {
+            long pixels = (long) renderSize.x * renderSize.y;
+            // 滚动中只出"更快更糊"的预览，停下后由 ReaderView 调 refineIfLowRes() 补高清
+            long budget = mScrollDeferring ? SCROLL_LOW_RES_BUDGET : LOW_RES_PIXEL_BUDGET;
+            long minRatio = mScrollDeferring ? 2L : LOW_RES_MIN_RATIO;
+            if (pixels >= budget * minRatio) {
+                quality = (float) Math.sqrt((double) budget / (double) pixels);
+                quality = Math.max(0.2f, Math.min(1f, quality));
+            }
+        }
+        final boolean lowRes = quality < 1f;
+        if (lowRes) {
+            renderSize = new Point(Math.max(1, Math.round(renderSize.x * quality)),
+                    Math.max(1, Math.round(renderSize.y * quality)));
+        }
+        final float renderQuality = quality;
         final boolean quietUpdate = update
                 && mEntire != null
                 && mEntire.getDrawable() != null
@@ -592,9 +673,10 @@ public class PageView extends ViewGroup {
                 && !mEntireBm.isRecycled()
                 && mRenderedPage == mPageNumber;
         final long requestAt = SystemClock.uptimeMillis();
-        Debugger.i(TAG, "[PageLoad] page=" + pageLabel(mPageNumber)
+        if (Debugger.isDebug()) Debugger.d(TAG, "[PageLoad] page=" + pageLabel(mPageNumber)
                 + " render submit kind=" + (update ? "update" : "draw")
-                + " size=" + renderSize.x + "x" + renderSize.y);
+                + " size=" + renderSize.x + "x" + renderSize.y
+                + (lowRes ? "（低清首帧，稍后补高清）" : ""));
         final Bitmap renderBitmap;
         if (quietUpdate) {
             renderBitmap = createBitmapSafely(renderSize.x, renderSize.y);
@@ -645,7 +727,7 @@ public class PageView extends ViewGroup {
             }
         };
 
-        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task) {
+        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task, mVisibleForRender) {
             @Override
             public void onPreExecute() {
                 if (!quietUpdate) {
@@ -710,8 +792,10 @@ public class PageView extends ViewGroup {
                         bitmapAdopted[0] = true;
                     }
                     applyEntireBitmap();
-                    // 渲染结果交给页位图缓存（所有权随之移交）：下次翻回这一页可以直接命中
-                    if (mEntireBm != null && !mEntireBm.isRecycled()) {
+                    mLowResPending = lowRes;
+                    // 渲染结果交给页位图缓存（所有权随之移交）：下次翻回这一页可以直接命中。
+                    // 低清图不能入缓存——缓存 key 是 View 逻辑尺寸，存进去会把后续高清请求毒化成糊图。
+                    if (!lowRes && mEntireBm != null && !mEntireBm.isRecycled()) {
                         mEntireBmCached = pageCache().put(renderPage, targetW, targetH, mEntireBm);
                         // 自适应预算：至少覆盖"可视 ±2 缓冲 + 2 页余量"，避免缓存被在用页撑满后形同虚设
                         pageCache().ensureBudgetForPage((long) targetW * targetH * 4L);
@@ -726,10 +810,15 @@ public class PageView extends ViewGroup {
                     }
                     Debugger.i(TAG, "[PageLoad] page=" + pageLabel(renderPage)
                             + " DONE cost=" + cost + "ms bitmap=" + targetW + "x" + targetH
-                            + " kind=" + (update ? "update" : "draw"));
+                            + " kind=" + (update ? "update" : "draw")
+                            + (lowRes ? "（低清，待补高清）" : ""));
                     // 页面位图已应用：通知外部（批注浮层据此撤掉临时预览，避免同一笔显示两份）
                     if (mRenderCompleteListener != null) {
                         mRenderCompleteListener.onRenderComplete();
+                    }
+                    // 低清首帧已上屏：通知 ReaderView 在本页仍可见且队列空闲时补高清
+                    if (lowRes && mLowResDoneListener != null) {
+                        mLowResDoneListener.run();
                     }
                 } else {
                     Debugger.i(TAG, "[PageLoad] page=" + pageLabel(renderPage)
@@ -809,9 +898,9 @@ public class PageView extends ViewGroup {
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         int w = right - left;
         int h = bottom - top;
-        Debugger.i(TAG, "onLayout: changed:" + changed + ",left:" + left + ",top:" + top + ",right:" + right + ",bottom:" + bottom + ",w:" + w + ",h:" + h);
+        if (Debugger.isDebug()) Debugger.d(TAG, "onLayout: changed:" + changed + ",left:" + left + ",top:" + top + ",right:" + right + ",bottom:" + bottom + ",w:" + w + ",h:" + h);
         if (mEntire != null) {
-            Debugger.i(TAG, "onLayout: mEntire:" + mEntire.getWidth() + " x " + mEntire.getHeight() + ",mSize:" + mSize);
+            if (Debugger.isDebug()) Debugger.d(TAG, "onLayout: mEntire:" + mEntire.getWidth() + " x " + mEntire.getHeight() + ",mSize:" + mSize);
             int bitmapW = mEntireBm != null && !mEntireBm.isRecycled() ? mEntireBm.getWidth() : mSize.x;
             int bitmapH = mEntireBm != null && !mEntireBm.isRecycled() ? mEntireBm.getHeight() : mSize.y;
             if (bitmapW > 0 && bitmapH > 0) {
@@ -865,6 +954,32 @@ public class PageView extends ViewGroup {
     /** 这一页当前是否正在渲染（含已排队的补渲） */
     public boolean isRendering() {
         return mDrawEntire != null || mRenderPending;
+    }
+
+    /** 当前显示的是低清图时，按 View 尺寸补一张高清（静默替换，不闪屏、无白屏） */
+    public void refineIfLowRes() {
+        if (!mLowResPending) return;
+        int w = getWidth();
+        int h = getHeight();
+        if (w <= 0 || h <= 0) return;
+        if (mRenderedWidth != w || mRenderedHeight != h) {
+            // 尺寸已经变了：新的渲染会自己走"低清→补高清"流程
+            mLowResPending = false;
+            return;
+        }
+        mLowResPending = false;   // 先清标志，避免重复排队；update=true 保证走静默替换
+        Debugger.i(TAG, "[PageLoad] page=" + pageLabel(mPageNumber) + " 补高清 size=" + w + "x" + h);
+        renderEntirePage(w, h, true);
+    }
+
+    /** 是否还在等高清（供 ReaderView 判断） */
+    public boolean isLowRes() {
+        return mLowResPending;
+    }
+
+    /** ReaderView 注入：低清首帧上屏后回调（用于"页面仍可见时补高清"） */
+    public void setLowResDoneListener(Runnable listener) {
+        mLowResDoneListener = listener;
     }
 
     /** 缩放结束后按当前尺寸补一次渲染；尺寸没变（手势没实际改变缩放）则不渲染 */
@@ -949,7 +1064,7 @@ public class PageView extends ViewGroup {
             }
         };
 
-        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task) {
+        mDrawEntire = new CancellableAsyncTask<Void, Boolean>(task, true) {
             @Override
             public void onPostExecute(Boolean result) {
                 mDrawEntire = null;
@@ -1074,9 +1189,9 @@ public class PageView extends ViewGroup {
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH)
                     bm.eraseColor(0);
                 try {
-                    Debugger.i(TAG, "getDrawPageTask doInBackground start mCore.drawPage page:" + taskPageNumber);
+                    if (Debugger.isDebug()) Debugger.d(TAG, "getDrawPageTask doInBackground start mCore.drawPage page:" + taskPageNumber);
                     mCore.drawPage(bm, taskPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
-                    Debugger.i(TAG, "getDrawPageTask doInBackground end mCore.drawPage page:" + taskPageNumber);
+                    if (Debugger.isDebug()) Debugger.d(TAG, "getDrawPageTask doInBackground end mCore.drawPage page:" + taskPageNumber);
                     return new Boolean(true);
                 } catch (Throwable e) {
                     Debugger.e(TAG, Debugger.getFullStackTrace(e));
@@ -1102,9 +1217,9 @@ public class PageView extends ViewGroup {
                         Build.VERSION.SDK_INT < Build.VERSION_CODES.ICE_CREAM_SANDWICH)
                     bm.eraseColor(0);
                 try {
-                    Debugger.i(TAG, "getUpdatePageTask doInBackground updatePage start");
+                    if (Debugger.isDebug()) Debugger.d(TAG, "getUpdatePageTask doInBackground updatePage start");
                     mCore.updatePage(bm, taskPageNumber, sizeX, sizeY, patchX, patchY, patchWidth, patchHeight, cookie);
-                    Debugger.i(TAG, "getUpdatePageTask doInBackground updatePage end");
+                    if (Debugger.isDebug()) Debugger.d(TAG, "getUpdatePageTask doInBackground updatePage end");
                     return new Boolean(true);
                 } catch (Throwable e) {
                     Debugger.e(TAG, Debugger.getFullStackTrace(e));

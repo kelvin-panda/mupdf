@@ -172,6 +172,12 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt, Mupd
         if (intent.getBooleanExtra("watchdog", false)) {
             startMainThreadWatchdog();
         }
+        // 抗锯齿等级（MuPDF 全局，默认 8）：0 关闭，2/4 逐级提高质量，越低越快
+        int aaLevel = intent.getIntExtra("aa_level", -1);
+        if (aaLevel >= 0) {
+            com.artifex.mupdf.fitz.Context.setAntiAliasLevel(aaLevel);
+            Log.i(TAG, "[Test] setAntiAliasLevel=" + aaLevel);
+        }
         Log.i(TAG, "[Test] open pdf_path=" + path + ",cacheBytes=" + cacheBytes);
         MupdfConfig.Builder builder = new MupdfConfig.Builder()
                 .sessionId("example-test-" + System.currentTimeMillis())
@@ -187,7 +193,8 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt, Mupd
                 .wpsOpenEnable(false)
                 .watermarkEnable(false)
                 .pageBitmapCacheBytes(cacheBytes)
-                .pageBitmapCachePages(intent.getIntExtra("cache_pages", 0));
+                .pageBitmapCachePages(intent.getIntExtra("cache_pages", 0))
+                .verboseLogEnabled(intent.getBooleanExtra("verbose_log", false));
         MuPdfDocumentActivity.jump(this, builder.build());
     }
 
@@ -255,6 +262,7 @@ public class MainActivity extends AppCompatActivity implements CancelAdapt, Mupd
                 //界面水印
                 // 7.0.0：原 MupdfMacro.isHengXunVersion 静态开关迁到这里
                 .hengXunStyle(bd.cbHengxun.isChecked())
+                .verboseLogEnabled(bd.cbVerboseLog.isChecked())      //详细日志（默认关）
                 .build();
         MuPdfDocumentActivity.jump(this, mupdfConfig);
     }

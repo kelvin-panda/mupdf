@@ -62,6 +62,10 @@ public class ReaderView
             mViewCache = new LinkedList<View>();
     private boolean mUserInteracting;  // Whether the user is interacting
     private boolean mScaling;    // Whether the user is currently pinch zooming
+    /** 最近一次布局算出的可见页范围（用于"只给可见页补高清"） */
+    private int mFirstVisible = 0;
+    private int mLastVisible = 0;
+    /** 打开时要"低清先出"的目标页；-1 表示已经用掉了 */
     private float mScale = 1.0f;
     private float mDefaultScale = 1.0f;// 存放默认宽度占满时的比例
 
@@ -70,6 +74,8 @@ public class ReaderView
     private int mScrollY = 0;
     // 每页缩放后的像素高度，key=页面索引
     private final SparseArray<Integer> mPageHeights = new SparseArray<>();
+    /** 页顶 Y 坐标数组：findPageAtY 二分用（recalculatePagePositions 时同步刷新） */
+    private int[] mPageTops = new int[0];
     // 每页在文档坐标系中的 Y 坐标(top)，key=页面索引
     private final SparseArray<Integer> mPagePositions = new SparseArray<>();
     // 文档总高度(px)
@@ -395,6 +401,7 @@ public class ReaderView
     public void setDisplayedViewIndex(int i) {
         if (mAdapter != null && 0 <= i && i < mAdapter.getCount()) {
             int fromPage = mCurrent;
+            // 跳到的这一页就是"打开时要先出画面的页"：允许它先出一张低清
             onMoveOffChild(mCurrent);
             mCurrent = i;
             onMoveToChild(i);
@@ -499,11 +506,11 @@ public class ReaderView
      * 批注后调用
      */
     public void afterAnnotation() {
-        Debugger.i("afterAnnotation：start");
+        Debugger.d("afterAnnotation：start");
 
         mResetLayout = true;
         if (mAdapter == null) {
-            Debugger.i("afterAnnotation：adapter is null");
+            Debugger.d("afterAnnotation：adapter is null");
             return;
         }
 
@@ -526,11 +533,11 @@ public class ReaderView
         requestLayout();
         invalidate();
 
-        Debugger.i("afterAnnotation：end");
+        Debugger.d("afterAnnotation：end");
     }
 
     public void refresh() {
-        Debugger.i("ReaderView refresh");
+        Debugger.d("ReaderView refresh");
         mResetLayout = true;
 
         // 复位到默认缩放：必须重新 clamp，否则横屏存的 42% 转到竖屏后会小于最小缩放
@@ -566,7 +573,7 @@ public class ReaderView
     }
 
     public void run() {
-        Debugger.e(TAG, "run: mScroller.isFinished() =" + mScroller.isFinished() + ",mUserInteracting=" + mUserInteracting);
+        if (Debugger.isDebug()) Debugger.d(TAG, "run: mScroller.isFinished() =" + mScroller.isFinished() + ",mUserInteracting=" + mUserInteracting);
         if (!mScroller.isFinished()) {
             mScroller.computeScrollOffset();
             int x = mScroller.getCurrX();
@@ -582,7 +589,7 @@ public class ReaderView
     }
 
     public boolean onDown(MotionEvent arg0) {
-        Debugger.i(TAG, "GestureDetector onDown ");
+        if (Debugger.isDebug()) Debugger.d(TAG, "GestureDetector onDown ");
         mScroller.forceFinished(true);
         // 用户接管滚动：放弃跳页时的重锚目标，避免下一次 layout 又把位置拉回目标页顶部
         mPendingCurrentAfterRestore = -1;
@@ -591,7 +598,7 @@ public class ReaderView
 
     public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX,
                            float velocityY) {
-        Debugger.i(TAG, "GestureDetector onFling velocityX:" + velocityX + ",velocityY:" + velocityY + ",mScaling:" + mScaling + ",isSimulating:" + isSimulating);
+        if (Debugger.isDebug()) Debugger.d(TAG, "GestureDetector onFling velocityX:" + velocityX + ",velocityY:" + velocityY + ",mScaling:" + mScaling + ",isSimulating:" + isSimulating);
         if (mScaling) return true;
         if (isSimulating) return true;
 
@@ -605,12 +612,12 @@ public class ReaderView
     }
 
     public void onLongPress(MotionEvent e) {
-        Debugger.i(TAG, "GestureDetector onLongPress ");
+        if (Debugger.isDebug()) Debugger.d(TAG, "GestureDetector onLongPress ");
     }
 
     public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX,
                             float distanceY) {
-        Debugger.i(TAG, "GestureDetector onScroll distanceX:" + distanceX + ",distanceY:" + distanceY);
+        if (Debugger.isDebug()) Debugger.d(TAG, "GestureDetector onScroll distanceX:" + distanceX + ",distanceY:" + distanceY);
         PageView pageView = (PageView) getDisplayedView();
         if (!tapDisabled)
             onDocMotion();
@@ -623,11 +630,11 @@ public class ReaderView
     }
 
     public void onShowPress(MotionEvent e) {
-        Debugger.i(TAG, "GestureDetector onShowPress ");
+        if (Debugger.isDebug()) Debugger.d(TAG, "GestureDetector onShowPress ");
     }
 
     public void defaultScale(float scale) {
-        Debugger.i(TAG, "ReaderView.defaultScale: " + scale);
+        if (Debugger.isDebug()) Debugger.d(TAG, "ReaderView.defaultScale: " + scale);
         float previousScale = mScale;
         mScale = clampScale(scale);
         // 宿主/设置页显式指定的"默认缩放"要记住：refresh()（首次 onSizeChanged、旋转、重置）
@@ -657,7 +664,7 @@ public class ReaderView
         float focusY = detector.getFocusY();
         int docFocusY = mScrollY + (int)focusY;
         mScrollY = (int)(docFocusY * factor - focusY);
-        Debugger.i(TAG, "ReaderView.onScale: previousScale:" + previousScale
+        if (Debugger.isDebug()) Debugger.d(TAG, "ReaderView.onScale: previousScale:" + previousScale
                 + "\nscaleFactor:" + scaleFactor
                 + "\nmScale:" + mScale
                 + "\nfactor:" + factor
@@ -694,12 +701,52 @@ public class ReaderView
 //        );
     }
 
+    /** 低清首帧上屏回调：只在用户没在拖动/缩放、且本页仍可见时补高清 */
+    private void onPageLowResRendered() {
+        if (mScaling || mUserInteracting) return;
+        refineVisiblePages();
+    }
+
+    /** 给当前可见的页补高清（缓冲页保持低清，翻到时再补） */
+    private void refineVisiblePages() {
+        for (int i = Math.max(0, mFirstVisible); i <= mLastVisible; i++) {
+            View v = mChildViews.get(i);
+            if (v instanceof PageView) {
+                ((PageView) v).refineIfLowRes();
+            }
+        }
+    }
+
     /** 双指缩放/滑块拖动期间：子页只做位图缩放预览，不重渲染 */
     private void setScalePreviewForChildren(boolean preview) {
         for (int i = 0; i < mChildViews.size(); i++) {
             View v = mChildViews.valueAt(i);
             if (v instanceof PageView) {
                 ((PageView) v).setScalePreview(preview);
+            }
+        }
+    }
+
+    /** 上一次布局的滚动位置：用于判断翻页方向（预取偏向） */
+    private int mLastScrollY = 0;
+
+    /** 滚动中：子页首帧只出更快更糊的预览；停下后（onLayout2 的 settle 分支）关掉并补高清 */
+    private void setScrollDeferForChildren(boolean defer) {
+        for (int i = 0; i < mChildViews.size(); i++) {
+            View v = mChildViews.valueAt(i);
+            if (v instanceof PageView) {
+                ((PageView) v).setScrollDefer(defer);
+            }
+        }
+    }
+
+    /** 标记每个子页是否在可见范围内：决定它的渲染任务进高优先级还是低优先级 */
+    private void updateChildRenderPriority(int firstVisible, int lastVisible) {
+        for (int i = 0; i < mChildViews.size(); i++) {
+            View v = mChildViews.valueAt(i);
+            if (v instanceof PageView) {
+                int pageIndex = mChildViews.keyAt(i);
+                ((PageView) v).setVisibleForRender(pageIndex >= firstVisible && pageIndex <= lastVisible);
             }
         }
     }
@@ -823,7 +870,7 @@ public class ReaderView
 
     private void onLayout2(boolean changed, int left, int top, int right,
                            int bottom) {
-        Debugger.i(TAG, "onLayout2: start changed:" + changed + "," + left + "," + top + "," + right + "," + bottom);
+        if (Debugger.isDebug()) Debugger.d(TAG, "onLayout2: start changed:" + changed + "," + left + "," + top + "," + right + "," + bottom);
         if (isInEditMode()) return;
 
         int screenWidth = right - left;
@@ -865,13 +912,15 @@ public class ReaderView
         if (mScrollY < 0) mScrollY = 0;
         if (mScrollY > maxScroll) mScrollY = maxScroll;
 
-        Debugger.d(TAG, "onLayout2: mScrollY=" + mScrollY + ", mCurrent=" + mCurrent + ", totalHeight=" + mTotalDocumentHeight);
+        if (Debugger.isDebug()) Debugger.d(TAG, "onLayout2: mScrollY=" + mScrollY + ", mCurrent=" + mCurrent + ", totalHeight=" + mTotalDocumentHeight);
 
         // --- 4. 确定可见页面范围 ---
         int viewTop = mScrollY;
         int viewBottom = mScrollY + screenHeight;
         int firstVisible = findPageAtY(viewTop);
         int lastVisible = findPageAtY(viewBottom);
+        mFirstVisible = firstVisible;
+        mLastVisible = lastVisible;
 
         // --- 5. 回收缓冲区外的页面 ---
         int[] recycled = recycleOutside(firstVisible, lastVisible);
@@ -881,8 +930,19 @@ public class ReaderView
         //        (b) 若高度变化，重算 mPagePositions 并重锚 mScrollY
         //        (c) 用最终的 mPagePositions/mScrollY 统一布局
         int buffer = VISUAL_BUFFER_SCREENS;
-        int loadFirst = Math.max(0, firstVisible - buffer);
-        int loadLast = Math.min(count - 1, lastVisible + buffer);
+        // 预取偏向滚动方向：往下翻时下面多预取一屏，往上翻时上面多预取（命中率更高、总量不变）
+        boolean scrollingDown = mScrollY >= mLastScrollY;
+        int bufferBefore = scrollingDown ? Math.max(1, buffer - 1) : buffer;
+        int bufferAfter = scrollingDown ? buffer : Math.max(1, buffer - 1);
+        int loadFirst = Math.max(0, firstVisible - bufferBefore);
+        int loadLast = Math.min(count - 1, lastVisible + bufferAfter);
+        mLastScrollY = mScrollY;
+
+        // 滚动/惯性中：新进窗口的页先出"更快更糊"的预览，停下后再补高清
+        // （否则重文档每翻到一页都要等 4~7s 的整页渲染）
+        setScrollDeferForChildren(mUserInteracting);
+        // 可见页的渲染走高优先级，缓冲页/缩略图让路
+        updateChildRenderPriority(firstVisible, lastVisible);
 
         // (a) 加载子View（触发 measureView，更新 mPageHeights）
         //     顺序很关键：AsyncTask 是串行执行的，按页序入队会让目标页的渲染任务排在
@@ -956,6 +1016,7 @@ public class ReaderView
         // --- 7. 滚动停止时更新 mCurrent ---
         boolean settled = !mUserInteracting && mScroller.isFinished() && !mAnnotationMultiTouch;
         if (settled) {
+            setScrollDeferForChildren(false);   // 停下：后续新页按正常预算渲染
             if (mPendingCurrentAfterRestore >= 0) {
                 updateCurrent(mPendingCurrentAfterRestore);
                 mPendingCurrentAfterRestore = -1;
@@ -964,13 +1025,18 @@ public class ReaderView
             }
         }
 
-        Debugger.i(TAG, "onLayout2: invalidate mCurrent=" + mCurrent + " mScrollY=" + mScrollY);
+        if (Debugger.isDebug()) Debugger.d(TAG, "onLayout2: invalidate mCurrent=" + mCurrent + " mScrollY=" + mScrollY);
         invalidate();
+        // 页面位置已确定：可见页若还停在低清首帧上，按最终尺寸补一张高清
+        // （缓冲页保持低清，翻到可见时再由这里补，避免占满渲染队列）
+        if (!mScaling && !mUserInteracting) {
+            refineVisiblePages();
+        }
         // 文档位置已确定，通知批注浮层同步重绘（否则浮层笔画会停留在旧屏幕位置）
         if (mScrollChangeListener != null) {
             mScrollChangeListener.run();
         }
-        Debugger.i(TAG, "onLayout2: end");
+        if (Debugger.isDebug()) Debugger.d(TAG, "onLayout2: end");
     }
 
     @Override
@@ -1008,6 +1074,14 @@ public class ReaderView
         View v = mChildViews.get(i);
         if (v == null) {
             v = mAdapter.getView(i, getCached(), this);
+            // 必须在 addAndMeasureChild 之前设置：那里会 measure → onMeasure → 立刻提交首帧渲染
+            if (v instanceof PageView) {
+                PageView pv = (PageView) v;
+                pv.setVisibleForRender(i >= mFirstVisible && i <= mLastVisible);
+                pv.setScrollDefer(mUserInteracting);
+                // 低清首帧上屏后回调：只在"本页仍可见"时补高清
+                pv.setLowResDoneListener(this::onPageLowResRendered);
+            }
             addAndMeasureChild(i, v);
             onChildSetup(i, v);
         }
@@ -1086,9 +1160,13 @@ public class ReaderView
         if (!mPositionsDirty) return;
         mPagePositions.clear();
         int count = mAdapter != null ? mAdapter.getCount() : 0;
+        if (mPageTops.length < count) {
+            mPageTops = new int[count];
+        }
         int y = 0;
         for (int i = 0; i < count; i++) {
             mPagePositions.put(i, y);
+            mPageTops[i] = y;
             int h = getPageHeight(i);
             y += h + GAP;
         }
@@ -1100,18 +1178,29 @@ public class ReaderView
     public int findPageAtY(int y) {
         recalculatePagePositions();
         int count = mAdapter != null ? mAdapter.getCount() : 0;
-        for (int i = 0; i < count; i++) {
-            int top = mPagePositions.get(i, 0);
-            int bottom = top + getPageHeight(i);
-            if (y < top) {
-                if (i == 0) return 0;
-                int prevBottom = mPagePositions.get(i - 1, 0) + getPageHeight(i - 1);
-                return (y - prevBottom <= top - y) ? i - 1 : i;
+        if (count <= 0) return 0;
+        if (y <= mPageTops[0]) return 0;
+        // 二分找"最后一个 top <= y 的页"：old 实现是 O(N) 线性扫，而 onLayout2 每帧要调两次，
+        // 500~1000 页的文档会在滚动时每帧花几毫秒
+        int lo = 0;
+        int hi = count - 1;
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (mPageTops[mid] <= y) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
             }
-            if (y >= top && y < bottom) return i;
         }
-        // y 落在文档末尾之后 → 返回最后一页
-        return count > 0 ? count - 1 : 0;
+        int top = mPageTops[lo];
+        int bottom = top + getPageHeight(lo);
+        if (y < bottom) return lo;
+        // y 落在页间空隙或文末：取更近的一页（保持旧语义）
+        if (lo + 1 < count) {
+            int nextTop = mPageTops[lo + 1];
+            return (y - bottom <= nextTop - y) ? lo : lo + 1;
+        }
+        return lo;
     }
 
     /** 返回视口中心线所在的页面索引 */

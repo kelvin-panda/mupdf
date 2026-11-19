@@ -72,6 +72,8 @@ public class MupdfConfig {
     private final boolean shareAnnotationConfigured;
     private final boolean hengXunStyle;
     private final boolean hengXunStyleConfigured;
+    /** 是否输出详细日志（默认关）：关时只保留异常与关键事件，日志量可降 ~70% */
+    private final boolean verboseLogEnabled;
 
     public MupdfConfig(MupdfConfig.Builder builder) {
         this.filePath = builder.filePath;
@@ -115,6 +117,7 @@ public class MupdfConfig {
         this.shareAnnotationConfigured = builder.shareAnnotationConfigured;
         this.hengXunStyle = builder.hengXunStyle;
         this.hengXunStyleConfigured = builder.hengXunStyleConfigured;
+        this.verboseLogEnabled = builder.verboseLogEnabled;
     }
 
     public String getFilePath() {
@@ -300,6 +303,16 @@ public class MupdfConfig {
      * 宿主是否显式配置过 {@link #isHengXunStyle()}。
      * 未配置时库回退读 {@code MupdfMacro.isHengXunVersion}，保证 6.x 行为不变。
      */
+    /**
+     * 是否输出详细日志（默认 false）。
+     *
+     * <p>关时只保留「异常」与「关键信息」（打开/翻页/渲染完成/批注写/错误）；
+     * 开时额外输出逐渲染明细、布局、手势、装页等调试日志，排障用。</p>
+     */
+    public boolean isVerboseLogEnabled() {
+        return verboseLogEnabled;
+    }
+
     public boolean isHengXunStyleConfigured() {
         return hengXunStyleConfigured;
     }
@@ -348,6 +361,7 @@ public class MupdfConfig {
                 ", shareAnnotationConfigured=" + shareAnnotationConfigured +
                 ", hengXunStyle=" + hengXunStyle +
                 ", hengXunStyleConfigured=" + hengXunStyleConfigured +
+                    ", verboseLogEnabled=" + verboseLogEnabled +
                 '}';
     }
 
@@ -435,6 +449,7 @@ public class MupdfConfig {
         private boolean shareAnnotationConfigured = false;
         private boolean hengXunStyle = false;
         private boolean hengXunStyleConfigured = false;
+        private boolean verboseLogEnabled = false;
 
         /**
          * 设置PDF预览文件（文件绝对路径）。
@@ -757,6 +772,19 @@ public class MupdfConfig {
          *
          * @param enable true or false
          */
+        /**
+         * 是否输出详细日志（默认 false = 只留异常与关键信息）。
+         *
+         * <p>打开后会多出逐渲染明细（[Render] 三段耗时）、布局细节（onLayout2）、
+         * 手势/缩放/装页等日志，供排障；正式包里建议保持关闭。</p>
+         *
+         * @param enable true = 输出 DEBUG 级日志
+         */
+        public Builder verboseLogEnabled(boolean enable) {
+            this.verboseLogEnabled = enable;
+            return this;
+        }
+
         public Builder hengXunStyle(boolean enable) {
             this.hengXunStyle = enable;
             this.hengXunStyleConfigured = true;

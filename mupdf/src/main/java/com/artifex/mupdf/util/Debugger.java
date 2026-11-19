@@ -16,6 +16,28 @@ public class Debugger {
     private static final String LINE_SEP = System.getProperty("line.separator");
     private static final String TAG = "mupdf";
 
+    /**
+     * 最低日志级别：默认 {@link Log#INFO}（`d` 级不写）。
+     *
+     * <p>滚动时 {@code onLayout2}/{@code onLayout} 每帧都会打日志，实测一次 1.2s 拖动产生
+     * 961 行 logcat；这些写入 + 字符串拼接本身就在占主线程时间。宿主调试时调
+     * {@link #setMinLevel(int)} 打开。</p>
+     */
+    private static volatile int sMinLevel = Log.INFO;
+
+    public static void setMinLevel(int level) {
+        sMinLevel = level;
+    }
+
+    /** 热路径拼字符串前先判断，避免白白构造字符串 */
+    public static boolean isDebug() {
+        return sMinLevel <= Log.DEBUG;
+    }
+
+    public static boolean isInfo() {
+        return sMinLevel <= Log.INFO;
+    }
+
     public static void e(Exception e) {
         String fullStackTrace = getFullStackTrace(e);
         Log.e(TAG, fullStackTrace);
@@ -30,12 +52,17 @@ public class Debugger {
         Log.e(TAG, tag + " - " + msg);
     }
 
+    /** Throwable 版本：调度器/渲染线程捕获到的是 Throwable（含 Error），不能只收 Exception */
+    public static void e(String tag, Throwable t) {
+        Log.e(TAG, tag + " - " + getFullStackTrace(t));
+    }
+
     public static void i(String tag, String msg) {
-        Log.i(TAG, tag + " - " + msg);
+        if (sMinLevel <= Log.INFO) Log.i(TAG, tag + " - " + msg);
     }
 
     public static void d(String tag, String msg) {
-        Log.d(TAG, tag + " - " + msg);
+        if (sMinLevel <= Log.DEBUG) Log.d(TAG, tag + " - " + msg);
     }
 
     public static void e(String msg) {
@@ -43,11 +70,11 @@ public class Debugger {
     }
 
     public static void i(String msg) {
-        Log.i(TAG, msg);
+        if (sMinLevel <= Log.INFO) Log.i(TAG, msg);
     }
 
     public static void d(String msg) {
-        Log.d(TAG, msg);
+        if (sMinLevel <= Log.DEBUG) Log.d(TAG, msg);
     }
 
     public static String getFullStackTrace(Throwable throwable) {

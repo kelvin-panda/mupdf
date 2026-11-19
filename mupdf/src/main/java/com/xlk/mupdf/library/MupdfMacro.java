@@ -245,6 +245,8 @@ public class MupdfMacro {
      * 共享批注入口开关（原 {@code MupdfMacro.shareAnnotationEnable}）。
      */
     public static final String bundle_key_share_annotation_enabled = "bundle_key_share_annotation_enabled";
+    /** 是否输出详细日志（默认关，见 MupdfConfig.Builder#verboseLogEnabled） */
+    public static final String bundle_key_verbose_log = "verboseLog";
 
     // 变量
     //

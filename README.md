@@ -1,18 +1,66 @@
 
 [![](https://jitpack.io/v/com.github.kelvin-panda/mupdf.svg)](https://jitpack.io/#com.github.kelvin-panda/mupdf)
 # 更新
-## 7.0.12
-1. **修复「共享批注时对端一操作，本机就闪屏刷新」**
-   - 原因：远端擦除 / 撤销没有笔迹包围盒，`refreshAfterSharedChanges()` 只能退回
-     `afterAnnotationPreservingScroll()` → `ReaderView#afterAnnotation()`，而它会
-     **移除并重建所有子 View**（`mAdapter.refresh()` + `mViewCache.clear()` + `requestLayout()` + `invalidate()`），
-     整屏重绘一次 → 肉眼就是闪一下。远端新增走的是 `updatePatch()` 局部重绘，所以不闪
-   - 现在 `MuPDFCore#deleteAnnotationsByOperationIds(...)` 会通过出参 `List<DeletedBounds>` 返回
-     被删批注的包围盒（PDF 点），宿主把它换算成页内显示像素并入 `sharedPatchRects`，
-     远端擦除 / 撤销也走 `updatePatch()` 局部重绘
-   - 即便个别情况下拿不到包围盒，也只重绘当前页的 `PageView`（`pv.update()`），不再整屏重建
-2. 新增日志：`远端操作：擦除 … 包围盒=N`、`共享批注当前页更新（无包围盒），按页重绘`
-3. **翻页/跳页性能：三层缓存，手动点"上一页/下一页"基本不再重新渲染**
+## 7.0.15（已发布 tag）
+
+1. **打开更快：低清先出 + 空闲补高清**
+   - 首帧像素超过预算（0.6MP）时先渲一张小图立刻铺满显示（约全清的 1/3~1/5 时间），
+     之后在"本页仍可见 + 用户没在拖动/缩放"时静默补一张高清（临时位图 + 原子替换，不闪屏、不白屏）；
+   - 只有"全清像素 ≥ 预算 × 3"才走低清（≈1MP 的页不触发，避免多渲一遍）；
+   - 实测：`8页.pdf`（115MB 图片页）页 1 首帧 **7.25s → 4.0s**；5.66MP 的页 **888ms → 285ms**；
+     1MP 的页不变（319ms）
+2. **滚动/缩放不再"动不动重新加载"**
+   - 滚动/惯性期间新进窗口的页只出更小预算的预览（0.25MP），停下（settle）后补高清；
+   - 双指缩放期间只做位图拉伸预览，松手后每可见页渲染一次；
+   - 页渲染固定到**单线程**（`dl` 显示列表缓存按线程归属）→ `dl=hit` 稳定命中，
+     省掉每页 40~140ms 的 `loadPage + toDisplayList`
+3. **新增渲染优先级调度器 `RenderScheduler`**
+   - 单线程 + 两级队列：可见页首帧/补高清/批注 patch 走高优先级；缓冲页预览与缩略图走低优先级，
+     且**排队中**的低优先级任务可取消（渲染一旦开始仍不可中断，避免 native 栈残留 SIGSEGV）；
+   - `CancellableAsyncTask` 由 `AsyncTask` 改为基于该调度器（AsyncTask 内部的 `FutureTask` 无法参与优先级）；
+   - 顺带修掉：回收子 View / 关闭文档时不再在**主线程**等渲染结束（位图交给任务，结束后由 `doCleanup` 回收）——
+     重文档"渲染中关闭"从看门狗命中 2 次降到 **0**，无 ANR
+4. **缩略图复用显示列表**：缩略图在渲染线程上以低优先级绘制并写入显示列表缓存，之后打开该页可直接命中
+5. **布局查找 O(N) → O(log N)**：`findPageAtY` 改二分 + 页顶坐标数组（`onLayout2` 每帧调两次，
+   500~1000 页文档滚动不再线性扫描全文档）
+6. **预取偏向滚动方向**：向下翻时下面多预取一屏，向上翻反之（总量不变、命中率更高）
+7. **日志可配置，默认只留异常与关键信息**
+   - 新增 `MupdfConfig.Builder.verboseLogEnabled(boolean)`（**默认 false**）：关闭时 `d` 级日志不输出，
+     热路径也用 `Debugger.isDebug()` 守卫跳过字符串拼接；
+   - 默认保留：`bundle config`（开档现场全量配置）、`[Open]`、`[PageLoad] DONE`（含耗时）、`[Nav]`、
+     `[Layout]`（仅变化时）、`[Write]/[Stroke]`、`[批注删除]`、共享批注同步、`[Thumb]`、`auto budget`、全部异常；
+   - 实测同一次"打开→缩放→退出"：**176 行 → 默认 63 行**（0 条 `d`、0 条误报 `e`），开启详细日志 648 行；
+   - 另修正 21 处"把正常流程打成 `ERROR`"的日志（`gotoPage`、`addActivity`、共享批注事件等），避免污染错误上报
+8. example 的「功能开关」新增 **「详细日志」CheckBox（默认不勾）**；自动化入口支持 `--ez verbose_log true`
+
+## 7.0.14（已发布 tag）
+1. **修复「打开时按缩放设置渲染两遍，重文档打开慢」**
+   - 原因：初始缩放在 `postToMainDelayed` 里才生效，首次布局先按 `mScale = 1.0`（适宽 100%）渲一遍，
+     缩放生效后再按目标尺寸重渲一遍。实测 3 页文档页 1：42% 时 `2000x2833 847ms + 840x1190 210ms`，
+     `DONE cost=1808ms`；100% 时只有一遍（`886ms`，第二遍被"同页同尺寸"去重）
+   - 现在 `createUI` 里首次布局前就 `applyZoomPercent(...)`（无保存缩放时先 `core.getPageSize(0)` 预热，
+     毫秒级），并让 `ReaderView#defaultScale` 同步 `mDefaultScale`（否则 `refresh()` 会把缩放冲回 1.0）、
+     `refresh()` 复位时 `clampScale`
+   - 实测：42% / 默认视图页 1 的 `DONE cost` 由 **1808ms 降到 336ms**；100% 场景不变（871ms）
+2. **双指缩放不再逐帧重渲染**
+   - 原因：`onScale` 每回调一次 `requestLayout`，每个新尺寸都提交一次整页渲染（重页 200~800ms/次）；
+     实测连续 48 次缩放变化提交 10 次渲染
+   - 现在手势期间 `PageView#setScalePreview(true)`：只把已有位图按新尺寸拉伸（`mEntireMat`），
+     松手 / 取消时 `renderIfSizeChanged()` 按最终尺寸补一次，且**可见页优先**；设置页的缩放滑块同样处理
+   - 实测：连续 49 次缩放变化 → 拖动期 **0 次**渲染，松手后每页 1 次（3 页文档共 3 次）
+3. **修复「松手后白屏 + 转圈再加载」**
+   - 原因：松手补渲染走 `draw` 路径，`ensureEntireBitmap(新尺寸)` 会 `clearEntireBitmap` 掉旧位图，
+     ImageView 变空 → 白屏 + 转圈，直到新位图渲完
+   - 现在补渲染走**静默更新**（`update=true`：渲染到临时位图，完成后原子替换），旧图全程可见
+   - 实测：松手瞬间连拍 3 帧，页面内容非白像素占比 60.8%（与稳定态一致，无白屏）
+4. **修复「缩放后点批注总弹"正在渲染页面，请稍候…"」**
+   - 原因：入口闸门按"整个渲染队列是否忙"判断，缩放后可见页 + 缓冲页都要补渲，队列长时间为忙 →
+     每次都白等并弹提示；而进入批注只读一次页尺寸，缩放后早已缓存，实际可以直接进
+   - 现在只在本页**尺寸未探明且本页正在渲染**时才后台等待（600ms 才提示、超时也进入，不再放弃点击）
+   - 实测：缩放后立即点批注**直接进画板**、无提示；115MB 文档首屏 7.2s 渲染中点击批注 ANR=0
+
+## 7.0.13（已发布 tag）
+1. **翻页/跳页性能：三层缓存，手动点"上一页/下一页"基本不再重新渲染**
    - 跳页改为**增量刷新**：`ReaderView#setDisplayedViewIndex` 不再 `mResetLayout = true` 整屏重建，
      只重锚滚动位置，由 `recycleOutside` 增量回收/补齐；缓冲窗口内来回翻**一次渲染都不需要**
    - 新增**页位图 LRU 缓存**（`PageBitmapCache`）：预算默认**自适应**——起步 24MB，
@@ -23,24 +71,35 @@
      省掉 `loadPage + toDisplayList`；批注/水印/重排版后自动失效。缩略图渲染不入缓存（缓存与线程绑定）
    - 缓冲页改为**从当前页向两侧扩散加载**：`AsyncTask` 串行执行，目标页的渲染任务现在最先入队
    - 页尺寸缓存（`MuPDFCore#pageSizeCache`）不再被 `refresh()` 清空，旋转/重置不再重新 `loadPage` 整本文档
-4. **修复 ANR（重文档必现）**：115MB 文档打开时，`getFitPageZoomPercent()` 调 `MuPDFCore#getPageSize()`
+2. **修复 ANR（重文档必现）**：115MB 文档打开时，`getFitPageZoomPercent()` 调 `MuPDFCore#getPageSize()`
    （synchronized）撞上首页 7.4s 的渲染，主线程等锁 → ANR
    - `pageSizeCache` 改 `ConcurrentHashMap`，`getPageSize`/`getPageSizeOf` 增加**无锁快路径**，新增 `getPageSizeIfKnown`
    - `MuPDFCore#postNative(Runnable)`：UI 触发的 native 调用统一走后台线程（大纲、PDF 水印、
      签名表创建/填写签名行、**签名提交**、自由文本批注已改，签名提交期间禁用提交/取消按钮防重复）；
-     进入批注前在后台等待"页渲染队列"空闲（最多 8s，超过 400ms 弹"正在渲染页面，请稍候…"），
-     避免提交批注时主线程等锁
+     进入批注前在后台等待（7.0.14 起已收窄为"只等本页"，见上）
    - 退出时若仍有页在渲染，`MuPDFCore#onDestroy()` 转后台线程执行（主线程 1ms 返回）
    - **批注会话内笔画提交排队**（`commitStrokeSafely`）：会话中的补丁刷新渲染在跑时，笔画先入队，
      由后台线程等渲染队列空闲后再在主线程逐笔提交，主线程不再等 native 锁
    - **文本标记与擦除同样走"等空闲再写"**（`runOnMainWhenRenderIdle`，单线程调度保证顺序）；
      擦除按手势合并成批提交（`[Write]` 从 8+ 次降到 1 次），擦除完成回调会等写落地后再上报
    - reflowable 重排版（`core.layout()`）搬后台线程，旋转 EPUB 不再等渲染锁
-5. 缩略图预取让路：页面渲染排队/进行中时暂停缩略图（后台轮询，最多 3s），
+3. 缩略图预取让路：页面渲染排队/进行中时暂停缩略图（后台轮询，最多 3s），
    实测 115MB 文档里 4 张缩略图曾把下一页渲染推迟约 2.8s
-6. 日志分级 + 架构文档：每页记账日志（`[PageLoad] setPage / render submit / deferred / discarded`）降为 `d`，
+4. 日志分级 + 架构文档：每页记账日志（`[PageLoad] setPage / render submit / deferred / discarded`）降为 `d`，
    只保留 `[PageLoad] DONE`（含耗时）、`[Render]`（三段耗时）、`[Nav]`、`[Layout]` 在 `i`；
    新增 [docs/paging-cache.md](docs/paging-cache.md)（三层缓存 / 所有权 / `postNative` 契约 / 排障对照）
+
+## 7.0.12（已发布 tag）
+1. **修复「共享批注时对端一操作，本机就闪屏刷新」**
+   - 原因：远端擦除 / 撤销没有笔迹包围盒，`refreshAfterSharedChanges()` 只能退回
+     `afterAnnotationPreservingScroll()` → `ReaderView#afterAnnotation()`，而它会
+     **移除并重建所有子 View**（`mAdapter.refresh()` + `mViewCache.clear()` + `requestLayout()` + `invalidate()`），
+     整屏重绘一次 → 肉眼就是闪一下。远端新增走的是 `updatePatch()` 局部重绘，所以不闪
+   - 现在 `MuPDFCore#deleteAnnotationsByOperationIds(...)` 会通过出参 `List<DeletedBounds>` 返回
+     被删批注的包围盒（PDF 点），宿主把它换算成页内显示像素并入 `sharedPatchRects`，
+     远端擦除 / 撤销也走 `updatePatch()` 局部重绘
+   - 即便个别情况下拿不到包围盒，也只重绘当前页的 `PageView`（`pv.update()`），不再整屏重建
+2. 新增日志：`远端操作：擦除 … 包围盒=N`、`共享批注当前页更新（无包围盒），按页重绘`
 ## 7.0.11（已发布 tag）
 本次发布把 **7.0.5 ~ 7.0.10 的全部修复**合并成一个可依赖的版本（这几个版本只在本地产出过、没有单独打 tag），
 升级到 7.0.11 即等于拿到下面所有内容：
@@ -247,7 +306,7 @@ Add it in your `settings.gradle.kts` at the end of repositories:
 
 ```
 	dependencies {
-	        implementation("com.github.kelvin-panda:mupdf:7.0.12")
+	        implementation("com.github.kelvin-panda:mupdf:7.0.15")
 	}
 ```
 **依赖方module**
@@ -314,6 +373,28 @@ if (s != null && s.isActive()) {
     s.receiveRemoteOperations(remoteOps);
 }
 ```
+
+## 可选：页位图缓存预算（7.0.13+）
+
+默认自适应（24MB 起步 → 覆盖"可视±2 + 2 页"，普通设备上限 192MB、低内存 64MB）。需要更深回看或整份缓存时显式配置：
+
+```java
+new MupdfConfig.Builder()
+    // 按页数：回看深度 = N 页（含可视缓冲），按"N × 单页位图"给预算，512MB 硬上限
+    .pageBitmapCachePages(14)
+    // 或按字节（优先级最高，配了它 pages 就被忽略）
+    // .pageBitmapCacheBytes(300L * 1024 * 1024)
+    .build();
+```
+
+| 配置 | 预算 | 是否受限 |
+|---|---|---|
+| 都不配（默认） | `7 × 单页位图`（起步 24MB） | 是（192MB / 低内存 64MB） |
+| `pageBitmapCachePages(n)` | `n × 单页位图` | 否，但有 512MB 硬上限 |
+| `pageBitmapCacheBytes(b)` | `b` | 否，且关闭自适应 |
+
+预算会在每页首帧渲染后按实际位图大小自动抬升，日志里可看到
+`PageBitmapCache - auto budget 24MB -> 151MB（单页 21MB，覆盖 7 页）`。
 
 # 从 6.x 迁移到 7.0.0
 

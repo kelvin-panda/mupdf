@@ -221,6 +221,14 @@
             android:layout_rowWeight="1"
             android:layout_columnWeight="1"
             android:text="打开后提交签名" />
+
+        <!-- 详细日志：默认不勾（只输出异常与关键信息）；勾选后输出 DEBUG 级排障日志 -->
+        <CheckBox
+            android:id="@+id/cbVerboseLog"
+            android:layout_rowWeight="1"
+            android:layout_columnWeight="1"
+            android:checked="false"
+            android:text="详细日志" />
     </GridLayout>
 
 

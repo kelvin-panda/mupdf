@@ -31,6 +31,11 @@
 
 入口：顶部工具栏「批注」按钮（`viewTopAnnotation`，需 `MupdfConfig.annotationEnable = true`）。
 
+0. （7.0.14 起）入口闸门**只在本页尺寸未探明且本页正在渲染**时才在后台等它渲完
+   （最多 8s，超过 600ms 才弹「正在渲染页面，请稍候…」，超时也进入）。
+   > 之前按"整个渲染队列是否忙"判断：缩放后可见页 + 缓冲页都要补渲，队列长时间为忙，
+   > 导致每次点批注都白等并弹提示；而进入批注只读一次页尺寸，缩放后早已缓存（`getPageSizeIfKnown`），
+   > 实际可以直接进。
 1. `mDocView.savePosition()`：记录当前页方位（退出后恢复用）；
 2. `mDocView.stopScrollAnimation()`：**冻结惯性/翻页滚动动画**。
    > 原因：画板覆盖在 PDF 之上并吃掉所有触摸，`ReaderView.onDown()` 中的
@@ -123,6 +128,10 @@ else                                 →  draw()               // 绘制
    - 手指抬起后保留该笔的实时预览，直到页面把它渲染出来再撤销；
    - 滚动/重排时浮层跟随文档（`ReaderView.setScrollChangeListener` → 画板 `invalidate()` + 位图平移）。
 
+**渲染忙时的提交排队（7.0.13+）**：会话内的补丁刷新渲染在跑时，`commitStrokeSafely()` 把笔画放进
+`pendingStrokeCommits`，由后台线程等渲染队列空闲后再在主线程逐笔提交（8s 超时也提交），
+主线程不再等 native 锁（日志：`[Stroke] 页渲染进行中（N），笔画先排队`）。
+
 ### 2.4 擦除 / 撤销 / 取消
 
 - **擦除**：`MuPDFCore.deleteAnnotationWithOperationIds(pageIdx, pageW, pageH, localX, localY)`
@@ -130,11 +139,17 @@ else                                 →  draw()               // 绘制
   - `findShouldDeleteAnnotation()` 以 ±20px 容差命中；
   - 有 `operationId` 的走 `deleteAnnotationsByOperationIds()`，没有的直接 `deleteAnnotation()`；
   - 返回被删的 operationId 集合 → `eraseListener` → `recordLocalOperation(OP_ERASE)`。
+  - （7.0.13+）画板侧通过 `setWriteScheduler(...)` 注入 `runOnMainWhenRenderIdle`：**一次手势内的
+    擦除点合并成一批**，渲染空闲时执行（`[Write]` 次数从 8+ 降到 1）；"擦除完成"回调
+    (`notifyEraseFinished`) 会等这批写落地后再上报，避免对端漏删。
 - **撤销（`viewArtRevoke`）**：
   1. 优先弹本机操作栈 `localOperationIds` → 造 `OP_UNDO` → `applyUndoOperation()`
      （删除目标 `OP_ADD` 的批注 / 恢复被 `OP_ERASE` 删掉的批注）→ `artBoard.clearStrokes()`；
   2. 本地栈为空时回退 `savedAnnotationPages` 最后一组页 → `core.deleteLastAnnotation(page)`
      （删除该页**最后一条**批注）。
+  > ⚠️ 撤销/取消宿主的 `deleteLastAnnotation()`、`markLocallyErasable()` 仍是**主线程直调**
+  > `MuPDFCore`；会话内补丁刷新在跑时会等锁（几百 ms）。改法已明确（同擦除注入
+  > `runOnMainWhenRenderIdle`），尚未实施。
 - **取消批注（`viewArtClose` → `cancelAnnotationAndHide`）**：
   对会话内所有 `OP_ADD` 生成 `OP_UNDO` 并广播；再按 `savedAnnotationPages` 的会话起点逐页
   `deleteLastAnnotation()`；`hadAnnotation` 回滚到 `hadAnnotationBeforeCurrentSession`；隐藏画板。
@@ -338,3 +353,6 @@ sequenceDiagram
 | 批注中双指拖动时笔画错位 | `ReaderView` 的惯性/翻页动画在批注期间仍在跑（画板吃掉触摸，`onDown` 不执行） | 落笔、双指接管、进入批注三处调用 `stopScrollAnimation()` |
 | 绘制后"闪屏"（非整屏闪） | 预览线宽用的是 `paintWidth` 像素，而 PDF 批注线宽是 `paintWidth/3` 磅按页面比例渲染，交接瞬间粗细跳变 | 预览线宽改用 `(paintWidth/3f) × getPageDisplayScale(page)`；撤预览延后一帧 |
 | 每笔提交都要整页重绘（约 160ms） | 提交后为显示新批注，重绘了整页 2200×3111 位图并替换 | 改为**局部 patch 重绘**（`PageView.updatePatch`）：只渲染笔迹包围盒并贴回当前位图，实测 3–8ms，与整页重绘结果逐像素一致 |
+| 会话内画笔提交撞上补丁刷新渲染 → 主线程等锁卡顿 | 提交在主线程同步调 `MuPDFCore`（单锁），渲染持锁期间只能等 | 7.0.13：`commitStrokeSafely()` 笔画排队，渲染空闲后再逐笔提交 |
+| 高亮/擦除撞上渲染 → 卡顿；一次擦除手势触发几十次 native 写 + 刷新 | 每个 MOVE 都直接调 `deleteAnnotationWithOperationIds` 并 `update()` | 7.0.13：文本标记/擦除统一走 `runOnMainWhenRenderIdle`（单线程调度），擦除按手势合并成批（`[Write]` 8+ → 1），完成回调等写落地后再上报 |
+| 缩放后点「批注」总弹"正在渲染页面，请稍候…"、实际不影响绘制 | 入口闸门按"整个渲染队列忙"判断，缩放后缓冲页在渲导致长时间为忙 | 7.0.14：只在本页尺寸未探明且本页正在渲染时才等（600ms 才提示、超时也进入）；尺寸已知直接进 |

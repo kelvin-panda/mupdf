@@ -1,6 +1,7 @@
 # 分页与页缓存（Paging & Page Cache）
 
-本文记录 7.0.12 起的分页渲染与缓存结构。改动这一块前请先读完"关键不变量"，其中任何一条被破坏都会表现为
+本文记录 **7.0.12 起**的分页渲染与缓存结构（7.0.13 重构缓存/批注写路径、7.0.14 修打开与缩放渲染、7.0.15 低清首帧 + 渲染优先级调度 + 日志分级）。
+改动这一块前请先读完"关键不变量"，其中任何一条被破坏都会表现为
 **页面花屏 / 贴错页 / native 崩溃 / ANR**。
 
 ## 1. 三层缓存
@@ -108,11 +109,14 @@ PageAdapter#getView → PageView#setPage（只算尺寸，不渲染）
 > 两者都在 `CancellableTaskDefinition#doCleanup` 里减数。缩略图让路和笔画排队都依赖这个计数，
 > 新增渲染入口时必须成对调用 `beginPageRender()` / `endPageRender()`。
 
-### 3.2 仍未迁移（需要返回值，或需双机验证）
+### 3.2 仍未迁移（需要返回值，或需宿主侧配合）
 
-- 共享批注链路：`addSharedAnnotations`、`deleteAnnotationsByOperationIds`（**待双机联调**）
-- 批注会话内的 `addTextMarkupAnnotation`、`deleteLastAnnotation`、`markLocallyErasable`
-  （已被 3.1 的闸门覆盖大部分窗口）
+- 共享批注链路的宿主实现（`addSharedAnnotations`、`deleteAnnotationsByOperationIds`）：
+  **库侧已双机验证通过**（2026-11 两台平板：B→A、A→B、擦除同步、强制/普通邀请、拒绝回传、
+  渲染中收操作均正常，见 5.6/6 的实测数据）；宿主侧那几处仍未改成"后台收集结果 → 主线程刷新"，
+  属于宿主 App 的改造范围，不是库的问题。
+- 批注会话内的 `addTextMarkupAnnotation`、`deleteLastAnnotation`、`markLocallyErasable`：
+  文本标记与擦除已覆盖（3.1）；`deleteLastAnnotation` / `markLocallyErasable` 仍主线程直调。
 
 ## 4. 日志与排障
 
@@ -141,7 +145,8 @@ PageAdapter#getView → PageView#setPage（只算尺寸，不渲染）
 1. **预渲染不可行**：`MuPDFCancellableTaskDefinition#doCancel()` 故意不 `cookie.abort()`
    （abort 会让 native device 栈残留导致 SIGSEGV），渲染一旦开始不可抢占，
    后台预渲染只会拖慢用户当前页。要"点哪都秒开"必须先做渲染优先级队列。
-2. **共享批注链路**仍需双机联调后改造（见 3.2）。
+2. **共享批注链路的宿主改造**（`addSharedAnnotations` 等）仍未做，属宿主 App 范围；
+   库侧链路已于 2026-11 双机实测通过（见 3.2）。
 3. **大文档首次布局**会对全部页做一次 `loadPage` 取尺寸（约 1~3ms/页）。
    实测发生在任何渲染开始之前，不会等锁；若要彻底去掉，需要"估算定位 + 拿到真实尺寸后自校正"的改造。
 4. 页位图预算默认自适应（`24MB → 页数 × 单页位图`，默认 7 页、上限 192MB / 低内存 64MB）。
@@ -168,3 +173,17 @@ PageAdapter#getView → PageView#setPage（只算尺寸，不渲染）
    修法：`createUI` 里在首次布局前就 `applyZoomPercent`，并且 `ReaderView.defaultScale` 要同步更新
    `mDefaultScale`（否则 `refresh()`（首次 `onSizeChanged`/旋转）会把 `mScale` 冲回 1.0）。
    修复后 42% 只渲一遍 `840x1190`，`DONE cost=336ms`。
+
+8. **低清首帧 + 空闲补高清（7.0.15）**：首帧像素 ≥ 预算 × 3 时，先按 `LOW_RES_PIXEL_BUDGET`（0.6MP）
+   渲一张小图立即上屏，随后在本页仍可见、且用户没在拖动/缩放时调 `refineIfLowRes()` 补高清
+   （`update=true` 静默替换）。**低清图不能入页位图缓存**（缓存 key 是逻辑尺寸，会把后续高清请求毒化成糊图）。
+   滚动/惯性期间用更小预算（`SCROLL_LOW_RES_BUDGET = 0.25MP`）出预览，settle 后统一补高清。
+9. **渲染必须走 `RenderScheduler`（单线程 + 优先级，7.0.15）**：显示列表缓存按线程归属，
+   渲染换线程就会 `dl` 全部 miss（每页多 40~140ms）；两级队列保证可见页/补高清插队、缓冲页与缩略图让路。
+   **取消只对排队中的任务有效**：渲染一旦开始不可中断（不 abort），因此 `PageView.reinit()` 必须在
+   `cancel()` 前把正在写的位图从 View 上摘下来（`abandonEntireBitmapForCancelledRender()`），
+   由任务的 `doCleanup()` 结束后回收；否则下一次 `clearEntireBitmap()` 会 recycle 掉正在被 native 写的位图。
+   另：`cancel()` **不能**在主线程等渲染结束（重页 4~7s → 看门狗/ANR）。
+10. **日志级别（7.0.15）**：`MupdfConfig.Builder.verboseLogEnabled(false)` 默认只输出异常与关键信息；
+   `d` 级日志（`[Render]` 三段耗时、`gotoPage`、`defaultScale`、`onLayout2`、装页等）需要显式开启，
+   热路径日志同时用 `Debugger.isDebug()` 守卫避免拼字符串。`bundle config`（开档全量配置）保留在 INFO。

@@ -284,7 +284,7 @@ public class MuPDFCore {
                 pageNum = pageCount - 1;
             else if (pageNum < 0)
                 pageNum = 0;
-            Debugger.e(TAG, "gotoPage currentPage=" + currentPage + ",pageNum =" + pageNum);
+            if (Debugger.isDebug()) Debugger.d(TAG, "gotoPage currentPage=" + currentPage + ",pageNum =" + pageNum);
             /* *** 如果签名未完成期间激活了页面跳转，会概率性崩溃在page.destroy() *** */
             if (pageNum != currentPage) {
                 if (page != null) {
@@ -300,7 +300,7 @@ public class MuPDFCore {
                 currentPage = -1;
 
                 if (doc != null) {
-                    Debugger.i(TAG, "gotoPage: loadPage pageNum:" + pageNum);
+                    if (Debugger.isDebug()) Debugger.d(TAG, "gotoPage: loadPage pageNum:" + pageNum);
                     page = doc.loadPage(pageNum);
                     Rect b = page.getBounds();
                     pageWidth = b.x1 - b.x0;
@@ -308,9 +308,9 @@ public class MuPDFCore {
                     if (pageWidth > 0 && pageHeight > 0) {
                         pageSizeCache.put(pageNum, new PointF(pageWidth, pageHeight));
                     }
-                    Debugger.i(TAG, "gotoPage: pageNum:" + pageNum + ",pageWidth:" + pageWidth + ",pageHeight:" + pageHeight);
+                    if (Debugger.isDebug()) Debugger.d(TAG, "gotoPage: pageNum:" + pageNum + ",pageWidth:" + pageWidth + ",pageHeight:" + pageHeight);
                 } else {
-                    Debugger.i(TAG, "gotoPage: doc is null");
+                    Debugger.e(TAG, "gotoPage: doc is null");
                 }
 
                 currentPage = pageNum;
@@ -487,7 +487,7 @@ public class MuPDFCore {
         Integer previous = pageDrawCount.get(pageNum);
         int drawNo = previous == null ? 1 : previous + 1;
         pageDrawCount.put(pageNum, drawNo);
-        Debugger.i(TAG, "[Render] page=" + (pageNum + 1) + "/" + pageCount
+        if (Debugger.isDebug()) Debugger.d(TAG, "[Render] page=" + (pageNum + 1) + "/" + pageCount
                 + " dl=" + (fromCache ? "hit" : "build")
                 + " load=" + loadMs + "ms build=" + buildMs + "ms run=" + runMs + "ms"
                 + " total=" + (SystemClock.uptimeMillis() - requestAt) + "ms"
@@ -624,7 +624,7 @@ public class MuPDFCore {
         int green = Color.green(color);
         int blue = Color.blue(color);
         int alpha = Color.alpha(color);
-        Debugger.i(TAG, "parseColor: color=" + color + ",[" + red + "," + green + "," + blue + "," + alpha + "]");
+        Debugger.d(TAG, "parseColor: color=" + color + ",[" + red + "," + green + "," + blue + "," + alpha + "]");
         // 红绿蓝 且颜色范围值都是 :0-1
         return new float[]{red / 255f, green / 255f, blue / 255f};
     }
@@ -705,7 +705,7 @@ public class MuPDFCore {
             Rect bounds = page.getBounds();
             float realWidth = bounds.x1 - bounds.x0;
             float realHeight = bounds.y1 - bounds.y0;
-            Debugger.i(TAG, "addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize + ",page宽高=" + realWidth + "," + realHeight);
+            if (Debugger.isDebug()) Debugger.d(TAG, "addAnnotation: pageNum:" + pageNum + ",paintSize=" + paintSize + ",page宽高=" + realWidth + "," + realHeight);
             for (int i = 0; i < inkList.length; i++) {
                 Point point = inkList[i];
                 float tx = point.x;
@@ -713,7 +713,7 @@ public class MuPDFCore {
                 point.x = realWidth / width * point.x;
                 point.y = realHeight / height * point.y;
                 percentPoints[i] = new Point(point.x / realWidth, point.y / realHeight);
-                Debugger.i(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
+                if (Debugger.isDebug()) Debugger.d(TAG, "addAnnotation: 原坐标【" + tx + "," + ty + "】,计算后【" + point.x + "," + point.y + "】");
             }
             PDFPage pdfPage = (PDFPage) page;
             PDFAnnotation pdfAnnotation = createAnnotation(pdfPage, type, paintSize, paintColor, inkList);
@@ -724,7 +724,7 @@ public class MuPDFCore {
             boolean update1 = pdfPage.update();
             registerAnnotation(operationId, pageNum, pdfAnnotation);
             invalidatePageCache();
-            Debugger.i(TAG, "addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
+            if (Debugger.isDebug()) Debugger.d(TAG, "addAnnotation 添加批注 type=" + type + ",update=" + update + ",update1=" + update1);
             return percentPoints;
         } catch (Exception e) {
             Debugger.e(TAG, "addAnnotation Exception: " + e);
@@ -908,7 +908,7 @@ public class MuPDFCore {
             float y1 = realHeight / height * Math.max(startPt.y, endPt.y);
             Rect selection = new Rect(x0, y0, x1, y1);
 
-            Debugger.i(TAG, "addTextMarkupAnnotation: page selection=" + selection + " color=" + color[0] + "," + color[1] + "," + color[2]);
+            Debugger.d(TAG, "addTextMarkupAnnotation: page selection=" + selection + " color=" + color[0] + "," + color[1] + "," + color[2]);
 
             PDFPage pdfPage = (PDFPage) page;
             // dpi=72让JNI内部screen→page换算为恒等变换
@@ -1110,7 +1110,7 @@ public class MuPDFCore {
                 }
             }
             if (candidatePages.isEmpty()) {
-                Debugger.e(TAG + " [批注删除] operationId=" + operationId + " 本机无登记，跳过");
+                if (Debugger.isDebug()) Debugger.d(TAG + " [批注删除] operationId=" + operationId + " 本机无登记，跳过");
                 continue;
             }
 
@@ -1132,7 +1132,7 @@ public class MuPDFCore {
                     pdfPage.update();
                     removed = true;
                     if (!changedPages.contains(pageIndex)) changedPages.add(pageIndex);
-                    Debugger.e(TAG + " [批注删除] operationId=" + operationId + " page=" + pageIndex
+                    Debugger.i(TAG + " [批注删除] operationId=" + operationId + " page=" + pageIndex
                             + " 删除=" + deleteCount + " 剩余=" + countAnnotations(pageIndex));
                 } catch (Exception e) {
                     Debugger.e(TAG + " deleteAnnotationsByOperationId Exception", e);
@@ -1189,13 +1189,13 @@ public class MuPDFCore {
         if (annotations == null) {
             return;
         }
-        Debugger.i(TAG, "logAnnotations: 批注数量：" + annotations.length);
+        Debugger.d(TAG, "logAnnotations: 批注数量：" + annotations.length);
         for (PDFAnnotation annotation : annotations) {
             boolean hasInkList = annotation.hasInkList();
             boolean hasLine = annotation.hasLine();
-            Debugger.i(TAG, "logAnnotations: hasInkList:" + hasInkList + ",hasLine:" + hasLine);
+            Debugger.d(TAG, "logAnnotations: hasInkList:" + hasInkList + ",hasLine:" + hasLine);
             if (hasInkList) {
-                Debugger.i(TAG, "logAnnotations: InkListCount：" + annotation.getInkListCount());
+                Debugger.d(TAG, "logAnnotations: InkListCount：" + annotation.getInkListCount());
                 Point[][] inkList = annotation.getInkList();
                 for (Point[] points : inkList) {
                     Debugger.d(TAG, "logAnnotations: 墨迹坐标数量：" + points.length);
@@ -1212,7 +1212,7 @@ public class MuPDFCore {
                 }
             }
         }
-        Debugger.i(TAG, "logAnnotations end");
+        Debugger.d(TAG, "logAnnotations end");
     }
 
     static class AnnotationPathBean {
@@ -1253,7 +1253,7 @@ public class MuPDFCore {
         List<AnnotationPathBean> annotationPathBeans = new ArrayList<>();
         List<Path> pathList = null;
         Path path = null;
-        Debugger.i(TAG, "annotations2path: 批注数量：" + annotations.length);
+        if (Debugger.isDebug()) Debugger.d(TAG, "annotations2path: 批注数量：" + annotations.length);
         for (PDFAnnotation annotation : annotations) {
             int type = annotation.getType();
             pathList = new ArrayList<>();
@@ -1314,10 +1314,10 @@ public class MuPDFCore {
                     pathList.add(path);
                 }
             }
-            Debugger.i(TAG, "annotations2path pathList=" + pathList.size());
+            if (Debugger.isDebug()) Debugger.d(TAG, "annotations2path pathList=" + pathList.size());
             annotationPathBeans.add(new AnnotationPathBean(pathList, annotation, areaHit));
         }
-        Debugger.i(TAG, "annotations2path annotationPathBeans=" + annotationPathBeans.size());
+        if (Debugger.isDebug()) Debugger.d(TAG, "annotations2path annotationPathBeans=" + annotationPathBeans.size());
         return annotationPathBeans;
     }
 
@@ -1461,7 +1461,7 @@ public class MuPDFCore {
         }, new Util.OnProgressUpdateListener() {
             @Override
             public void onProgressUpdate(double progress) {
-                Debugger.i(TAG, "onProgressUpdate: " + progress);
+                if (Debugger.isDebug()) Debugger.d(TAG, "onProgressUpdate: " + progress);
             }
         });
         Debugger.i(TAG, "srcPath:" + srcPath + ",destPath:" + destPath + ",copy:" + copy);

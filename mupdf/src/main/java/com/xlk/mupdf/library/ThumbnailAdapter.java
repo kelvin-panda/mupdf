@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.artifex.mupdf.util.Debugger;
 import com.artifex.mupdf.viewer.MuPDFCore;
+import com.artifex.mupdf.viewer.RenderScheduler;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,6 +35,8 @@ public class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.View
     private static final long PAGE_RENDER_YIELD_INTERVAL_MS = 50L;
     /** 让路最长等待：超时后照常生成，避免缩略图永远出不来 */
     private static final long PAGE_RENDER_YIELD_TIMEOUT_MS = 3000L;
+    /** 在页面渲染线程上绘制缩略图的最长等待（避免阻塞缩略图线程过久） */
+    private static final long THUMB_DRAW_TIMEOUT_MS = 15000L;
 
     private int currentPage = 0;          // 当前正在阅读的页码
     private final Context context;
@@ -171,8 +174,16 @@ public class ThumbnailAdapter extends RecyclerView.Adapter<ThumbnailAdapter.View
             int renderHeight = Math.round(pageSize.y * scale);
 
             Bitmap bitmap = Bitmap.createBitmap(renderWidth, renderHeight, Bitmap.Config.ARGB_8888);
-            // 缩略图每页只画一次：不占用页显示列表缓存（缓存项还与创建线程绑定）
-            core.drawPage(bitmap, pageNum, renderWidth, renderHeight, 0, 0, renderWidth, renderHeight, null, false);
+            // 以低优先级提交到"页面渲染线程"：显示列表缓存按线程归属，同线程才能被后续打开该页复用；
+            // 低优先级保证缩略图永远排在可见页/补高清之后。
+            RenderScheduler.Task drawTask =
+                    RenderScheduler.get().submit(() ->
+                            core.drawPage(bitmap, pageNum, renderWidth, renderHeight,
+                                    0, 0, renderWidth, renderHeight, null, true), false);
+            if (!drawTask.await(THUMB_DRAW_TIMEOUT_MS)) {
+                Debugger.i(TAG, "[Thumb] 在渲染线程上绘制超时 page=" + (pageNum + 1));
+                return null;
+            }
             return bitmap;
         } catch (Exception e) {
             e.printStackTrace();

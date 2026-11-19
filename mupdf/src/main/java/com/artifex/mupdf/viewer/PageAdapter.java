@@ -63,14 +63,14 @@ public class PageAdapter extends BaseAdapter {
             int parentWidth = point.x;
             int parentHeight = point.y;
             Point parentSize = new Point(parentWidth, parentHeight);
-            Debugger.i(TAG, "getView: parentSize=" + parentSize);
+            if (Debugger.isDebug()) Debugger.d(TAG, "getView: parentSize=" + parentSize);
             pageView = new PageView(mContext, mCore, parentSize, mWaterMark);
         } else {
             pageView = (PageView) convertView;
         }
 
         PointF pageSize = mPageSizes.get(position);
-        Debugger.i(TAG, "getView: position=" + position + ",pageSize=" + pageSize);
+        if (Debugger.isDebug()) Debugger.d(TAG, "getView: position=" + position + ",pageSize=" + pageSize);
         if (pageSize != null) {
             // 我们已经知道页面大小。
             // 立即设置
@@ -82,7 +82,7 @@ public class PageAdapter extends BaseAdapter {
                 @Override
                 protected PointF doInBackground(Void... arg0) {
                     try {
-                        Debugger.i(TAG, "getView doInBackground: ");
+                        if (Debugger.isDebug()) Debugger.d(TAG, "getView doInBackground: ");
                         return mCore.getPageSize(position);
                     } catch (RuntimeException e) {
                         return null;
@@ -92,7 +92,7 @@ public class PageAdapter extends BaseAdapter {
                 @Override
                 protected void onPostExecute(PointF result) {
                     int page = pageView.getPage();
-                    Debugger.i(TAG, "getView onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
+                    if (Debugger.isDebug()) Debugger.d(TAG, "getView onPostExecute: result=" + result + ",page=" + page + ",position=" + position);
                     // 注意：这里不能再乘以 fullWidthScale(mScale)。
                     // setPage 与 mSearchView 的高亮坐标都假定传给它的 size 就是 MuPDFCore.getPageSize
                     // 返回的原始页面尺寸(72dpi 点)，预先缩放会破坏搜索高亮 Quad 与文字的精确对齐。
